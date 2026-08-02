@@ -128,7 +128,6 @@ public class GameActivity extends SDLActivity {
     public int safeAreaLeft = 0;
     public int safeAreaBottom = 0;
     public int safeAreaRight = 0;
-    private SecondaryDisplayHost secondaryDisplayHost;
 
     private static native void nativeSetDefaultStreamValues(int sampleRate, int framesPerBurst);
 
@@ -190,7 +189,6 @@ public class GameActivity extends SDLActivity {
             String create = savedInstanceState.getString(STATE_PENDING_CREATE);
             if (create != null) pendingCreateSuggestedName = create;
         }
-        secondaryDisplayHost = new SecondaryDisplayHost(this);
         metrics = getResources().getDisplayMetrics();
 
         // Set low-latency audio values
@@ -325,9 +323,6 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
-        if (secondaryDisplayHost != null) {
-            secondaryDisplayHost.close();
-        }
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -337,9 +332,6 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
-        if (secondaryDisplayHost != null) {
-            secondaryDisplayHost.pause();
-        }
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -352,9 +344,6 @@ public class GameActivity extends SDLActivity {
     public void onResume() {
         super.onResume();
         setupSecondaryDisplay();
-        if (secondaryDisplayHost != null) {
-            secondaryDisplayHost.resume();
-        }
     }
 
     /**
@@ -541,32 +530,32 @@ public class GameActivity extends SDLActivity {
     @Keep
     public static boolean hasCompanionDisplay() {
         GameActivity self = (GameActivity) mSingleton;
-        return self != null && self.secondaryDisplayHost != null
-                && self.secondaryDisplayHost.isAvailable();
+        return self != null && findSecondaryDisplay(self) != null;
     }
 
     @Keep
     public static boolean presentCompanionDisplay(
             int width, int height, byte[] rgba, int backgroundColor) {
-        GameActivity self = (GameActivity) mSingleton;
-        return self != null && self.secondaryDisplayHost != null
-                && self.secondaryDisplayHost.present(
-                        width, height, rgba, backgroundColor);
+        if (rgba == null || width <= 0 || height <= 0
+                || rgba.length != (long) width * height * 4) return false;
+        setSecondaryEnabled(true);
+        SecondaryPresentation p = secondaryPresentation;
+        if (p == null) return false;
+        p.setBackground(backgroundColor);
+        p.updateFrame(java.nio.ByteBuffer.wrap(rgba), width, height);
+        return true;
     }
 
     @Keep
     public static String pollCompanionDisplayTouch() {
-        GameActivity self = (GameActivity) mSingleton;
-        return self == null || self.secondaryDisplayHost == null
-                ? null : self.secondaryDisplayHost.pollTouch();
+        synchronized (secondaryTouches) {
+            return secondaryTouches.pollFirst();
+        }
     }
 
     @Keep
     public static void closeCompanionDisplay() {
-        GameActivity self = (GameActivity) mSingleton;
-        if (self != null && self.secondaryDisplayHost != null) {
-            self.secondaryDisplayHost.close();
-        }
+        setSecondaryEnabled(false);
     }
 
     /**
@@ -1319,9 +1308,14 @@ public class GameActivity extends SDLActivity {
     // in src/jni/love/src/common/android.cpp.
     private static volatile SecondaryPresentation secondaryPresentation;
     private static volatile boolean secondaryEnabled = false;
+    private static final int MAX_SECONDARY_TOUCHES = 32;
+    private static final java.util.ArrayDeque<String> secondaryTouches =
+        new java.util.ArrayDeque<>();
 
     @Keep
     public static void setSecondaryEnabled(final boolean on) {
+        if (secondaryEnabled == on
+                && (on ? secondaryPresentation != null : secondaryPresentation == null)) return;
         secondaryEnabled = on;
         final GameActivity self = (GameActivity) mSingleton;
         if (self == null) return;
@@ -1336,29 +1330,15 @@ public class GameActivity extends SDLActivity {
         GameActivity self = (GameActivity) mSingleton;
         if (self == null || !secondaryEnabled || secondaryPresentation != null) return;
         try {
-            android.hardware.display.DisplayManager dm =
-                (android.hardware.display.DisplayManager) self.getSystemService(Context.DISPLAY_SERVICE);
-            if (dm == null) return;
-            Display chosen = null;
-            for (Display d : dm.getDisplays()) {
-                android.graphics.Point size = new android.graphics.Point();
-                d.getRealSize(size);
-                Log.d("GameActivity", "display id=" + d.getDisplayId() + " name=" + d.getName()
-                    + " size=" + size.x + "x" + size.y);
-                if (chosen == null && d.getDisplayId() != Display.DEFAULT_DISPLAY) {
-                    chosen = d;
-                }
-            }
-            if (chosen == null) {
-                Display[] pres =
-                    dm.getDisplays(android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
-                if (pres != null && pres.length > 0) chosen = pres[0];
-            }
+            Display chosen = findSecondaryDisplay(self);
             if (chosen == null) {
                 Log.d("GameActivity", "no secondary display found");
                 return;
             }
             SecondaryPresentation p = new SecondaryPresentation(self, chosen);
+            p.setOnDismissListener(dialog -> {
+                if (secondaryPresentation == p) secondaryPresentation = null;
+            });
             p.show();
             secondaryPresentation = p;
             Log.d("GameActivity", "secondary display presentation started on id=" + chosen.getDisplayId());
@@ -1368,9 +1348,25 @@ public class GameActivity extends SDLActivity {
         }
     }
 
+    private static Display findSecondaryDisplay(GameActivity self) {
+        android.hardware.display.DisplayManager dm =
+            (android.hardware.display.DisplayManager) self.getSystemService(Context.DISPLAY_SERVICE);
+        if (dm == null) return null;
+        Display chosen = null;
+        for (Display d : dm.getDisplays()) {
+            if (chosen == null && d.getDisplayId() != Display.DEFAULT_DISPLAY
+                    && d.getState() != Display.STATE_OFF) chosen = d;
+        }
+        if (chosen != null) return chosen;
+        Display[] presentations = dm.getDisplays(
+            android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
+        return presentations != null && presentations.length > 0 ? presentations[0] : null;
+    }
+
     private static void teardownSecondaryDisplay() {
         SecondaryPresentation p = secondaryPresentation;
         secondaryPresentation = null;
+        synchronized (secondaryTouches) { secondaryTouches.clear(); }
         if (p != null) {
             try { p.dismiss(); } catch (Throwable t) {}
         }
@@ -1447,6 +1443,10 @@ public class GameActivity extends SDLActivity {
         void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
             frameView.updateFrame(buf, w, h);
         }
+
+        void setBackground(int color) {
+            frameView.setFrameBackground(color);
+        }
     }
 
     private static class FrameView extends View {
@@ -1455,6 +1455,8 @@ public class GameActivity extends SDLActivity {
         private final android.graphics.Paint paint = new android.graphics.Paint();
         private final Object lock = new Object();
         private int fw, fh;
+        private int backgroundColor = 0xFF000000;
+        private int activePointer = -1;
 
         FrameView(Context context) {
             super(context);
@@ -1476,6 +1478,53 @@ public class GameActivity extends SDLActivity {
             postInvalidate();
         }
 
+        void setFrameBackground(int color) {
+            synchronized (lock) { backgroundColor = color; }
+            postInvalidate();
+        }
+
+        private void enqueueTouch(String event) {
+            synchronized (secondaryTouches) {
+                if (secondaryTouches.size() >= MAX_SECONDARY_TOUCHES) {
+                    secondaryTouches.clear();
+                    secondaryTouches.addLast("cancel,0,0");
+                } else {
+                    secondaryTouches.addLast(event);
+                }
+            }
+        }
+
+        private int logicalX(float x) {
+            return Math.min(fw - 1, Math.max(0, (int) ((x - dst.left) * fw / dst.width())));
+        }
+
+        private int logicalY(float y) {
+            return Math.min(fh - 1, Math.max(0, (int) ((y - dst.top) * fh / dst.height())));
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            synchronized (lock) {
+                int action = event.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_DOWN && fw > 0
+                        && dst.contains((int) event.getX(), (int) event.getY())) {
+                    activePointer = event.getPointerId(0);
+                    enqueueTouch("down," + logicalX(event.getX()) + "," + logicalY(event.getY()));
+                } else if (action == android.view.MotionEvent.ACTION_UP && activePointer >= 0) {
+                    int index = event.findPointerIndex(activePointer);
+                    if (index >= 0 && fw > 0) {
+                        enqueueTouch("up," + logicalX(event.getX(index)) + ","
+                            + logicalY(event.getY(index)));
+                    }
+                    activePointer = -1;
+                } else if (action == android.view.MotionEvent.ACTION_CANCEL) {
+                    activePointer = -1;
+                    enqueueTouch("cancel,0,0");
+                }
+            }
+            return true;
+        }
+
         @Override
         protected void onDraw(android.graphics.Canvas canvas) {
             synchronized (lock) {
@@ -1486,7 +1535,7 @@ public class GameActivity extends SDLActivity {
                 int dw = fw * s, dh = fh * s;
                 int dx = (vw - dw) / 2, dy = (vh - dh) / 2;
                 dst.set(dx, dy, dx + dw, dy + dh);
-                canvas.drawColor(0xFF000000);
+                canvas.drawColor(backgroundColor);
                 canvas.drawBitmap(bitmap, null, dst, paint);
             }
         }
