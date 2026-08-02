@@ -18,10 +18,9 @@
 
 local Check = {}
 
--- Kanto Gear builds are released from the product repository. Pointing this
--- host at upstream could offer an official payload without the companion
--- bridge and silently remove the feature the installed app exists for.
-Check.REPO = "AverageConsumer/kanto-gear"
+-- Fork builds must never follow the official release feed: a payload without
+-- the companion bridge would silently remove the feature this host exists for.
+Check.REPO = "AverageConsumer/gen1recomp"
 
 local CMD = "update_check_cmd"
 local STATE = "update_check_state"

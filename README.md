@@ -6,6 +6,11 @@
 > by [Kanto Gear](https://github.com/AverageConsumer/kanto-gear). End users
 > should start with the Kanto Gear release page; general Gen1Recomp users should
 > use the [official project](https://github.com/bryanthaboi/gen1recomp).
+>
+> Its release asset is a separate **Gen1Recomp Android Test** APK. It uses the
+> package ID `io.github.averageconsumer.gen1recomp.androidtest`, contains no
+> bundled mods, and installs beside the official app. Kanto Gear and the
+> optional Voxel renderer remain normal mod ZIPs.
 
 A native LÖVE2D recreation of Poke Red, Blue and Yellow. The engine and map
 behavior are hand-written Lua; game data and graphics are decoded from a ROM

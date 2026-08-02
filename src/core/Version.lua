@@ -7,6 +7,7 @@ local Version = {
   engine = "0.0.0-dev",   -- game/engine release (semver).  Repo default is the
                           -- "-dev" placeholder; CI stamps the real X.Y.Z into
                           -- the packed game.love only, never the working tree.
+  selfUpdate = false,      -- fork builds must not replace their companion code
   shell = 1,              -- native-shell contract this build implements
   minShell = 1,           -- lowest shell contract that can RUN this payload.
                           -- Bump only when a payload needs a newer native

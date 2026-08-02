@@ -858,6 +858,8 @@ R.render_pipelines = {
     -- shown in the options menu; the ladder labels default to OFF/ON
     label = f.str,
     levels = f.opt(f.list(f.str)),
+    -- level used only when no value has ever been persisted for this pipeline
+    default = f.opt(f.num),
     -- keyboard key that cycles the ladder, checked after the engine's own
     -- display hotkeys so a pipeline can never shadow one
     hotkey = f.opt(f.str),

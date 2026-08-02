@@ -233,7 +233,8 @@ function Pipelines.applyOptions(opts)
   broken = {}
   local world = nil
   for _, entry in ipairs(Pipelines.list()) do
-    local stored = type(bucket) == "table" and bucket[entry.id] or 0
+    local stored = type(bucket) == "table" and bucket[entry.id]
+                   or entry.def.default or 0
     local level = math.floor(tonumber(stored) or 0)
     if level < 0 then level = 0 end
     local max = Pipelines.maxLevel(entry.id)

@@ -13,7 +13,7 @@ local Json = require("src.link.Json")
 
 -- releaseUrl is the fixed public landing page the UI links on needs_full
 eq(Check.releaseUrl(),
-   "https://github.com/AverageConsumer/kanto-gear/releases/latest",
+   "https://github.com/AverageConsumer/gen1recomp/releases/latest",
    "releaseUrl points at the repo's latest release")
 
 -- parseRelease: a well-formed release with the .love payload and its sums
