@@ -121,8 +121,9 @@ int w_presentSecondaryDisplay(lua_State *L)
 	auto frame = luax_checktype<love::image::ImageData>(L, 1);
 	unsigned int backgroundColor = 0xFF000000U
 		| ((unsigned int) luaL_optinteger(L, 2, 0) & 0x00FFFFFFU);
+	const char *preference = luaL_optstring(L, 3, "auto");
 	luax_pushboolean(L, instance()->presentSecondaryDisplay(frame->getWidth(), frame->getHeight(),
-		frame->getData(), frame->getSize(), backgroundColor));
+		frame->getData(), frame->getSize(), backgroundColor, preference));
 	return 1;
 }
 

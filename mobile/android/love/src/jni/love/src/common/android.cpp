@@ -292,31 +292,39 @@ bool hasSecondaryDisplay()
 {
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
-	jmethodID method = env->GetStaticMethodID(activity, "hasCompanionDisplay", "()Z");
+	jmethodID method = env->GetStaticMethodID(activity, "hasSecondaryDisplay", "()Z");
 	jboolean result = env->CallStaticBooleanMethod(activity, method);
 	env->DeleteLocalRef(activity);
 	return result;
 }
 
 bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
-	unsigned int backgroundColor)
+	unsigned int backgroundColor, const char *preference)
 {
 	if (rgba == nullptr || size == 0 || size > (size_t) INT32_MAX)
 		return false;
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
 	jmethodID method = env->GetStaticMethodID(activity, "presentCompanionDisplay",
-		"(II[BI)Z");
+		"(II[BILjava/lang/String;)Z");
 	jbyteArray value = env->NewByteArray((jsize) size);
 	if (value == nullptr)
 	{
 		env->DeleteLocalRef(activity);
 		return false;
 	}
+	jstring target = env->NewStringUTF(preference != nullptr ? preference : "auto");
+	if (target == nullptr)
+	{
+		env->DeleteLocalRef(value);
+		env->DeleteLocalRef(activity);
+		return false;
+	}
 	env->SetByteArrayRegion(value, 0, (jsize) size, (const jbyte *) rgba);
 	jboolean result = env->CallStaticBooleanMethod(activity, method, width, height, value,
-		(jint) backgroundColor);
+		(jint) backgroundColor, target);
 	env->DeleteLocalRef(value);
+	env->DeleteLocalRef(target);
 	env->DeleteLocalRef(activity);
 	return result;
 }
