@@ -81,6 +81,8 @@ public:
 	int getRequestedMSAA() const;
 
 	virtual love::image::ImageData *newImageData(love::image::Image *module, int slice, int mipmap, const Rect &rect);
+	virtual bool requestImageData();
+	virtual love::image::ImageData *pollImageData(love::image::Image *module);
 	virtual void generateMipmaps() = 0;
 
 	virtual int getMSAA() const = 0;

@@ -54,6 +54,8 @@ public:
 	ptrdiff_t getHandle() const override;
 
 	love::image::ImageData *newImageData(love::image::Image *module, int slice, int mipmap, const Rect &rect) override;
+	bool requestImageData() override;
+	love::image::ImageData *pollImageData(love::image::Image *module) override;
 	void generateMipmaps() override;
 
 	int getMSAA() const override
@@ -107,6 +109,9 @@ private:
 	GLenum status;
 
 	int actualSamples;
+	GLuint readbackBuffer;
+	GLsync readbackFence;
+	size_t readbackSize;
 
 	static SupportedFormat supportedFormats[PIXELFORMAT_MAX_ENUM];
 	static SupportedFormat checkedFormats[PIXELFORMAT_MAX_ENUM];

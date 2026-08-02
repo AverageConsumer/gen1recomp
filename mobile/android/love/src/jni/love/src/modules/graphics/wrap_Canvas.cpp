@@ -116,6 +116,31 @@ int w_Canvas_newImageData(lua_State *L)
 	return 1;
 }
 
+int w_Canvas_requestImageData(lua_State *L)
+{
+	Canvas *canvas = luax_checkcanvas(L, 1);
+	bool requested = false;
+	luax_catchexcept(L, [&](){ requested = canvas->requestImageData(); });
+	luax_pushboolean(L, requested);
+	return 1;
+}
+
+int w_Canvas_pollImageData(lua_State *L)
+{
+	Canvas *canvas = luax_checkcanvas(L, 1);
+	love::image::Image *image = luax_getmodule<love::image::Image>(L, love::image::Image::type);
+	love::image::ImageData *data = nullptr;
+	luax_catchexcept(L, [&](){ data = canvas->pollImageData(image); });
+	if (data == nullptr)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	luax_pushtype(L, data);
+	data->release();
+	return 1;
+}
+
 int w_Canvas_generateMipmaps(lua_State *L)
 {
 	Canvas *c = luax_checkcanvas(L, 1);
@@ -139,6 +164,8 @@ static const luaL_Reg w_Canvas_functions[] =
 	{ "getMSAA", w_Canvas_getMSAA },
 	{ "renderTo", w_Canvas_renderTo },
 	{ "newImageData", w_Canvas_newImageData },
+	{ "requestImageData", w_Canvas_requestImageData },
+	{ "pollImageData", w_Canvas_pollImageData },
 	{ "generateMipmaps", w_Canvas_generateMipmaps },
 	{ "getMipmapMode", w_Canvas_getMipmapMode },
 	{ 0, 0 }

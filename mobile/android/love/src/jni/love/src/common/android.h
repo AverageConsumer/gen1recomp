@@ -98,6 +98,12 @@ bool restartApp();
  **/
 bool httpDownload(const char *url, const char *destPath, const char *userAgent, const char *accept);
 
+bool hasSecondaryDisplay();
+bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
+	unsigned int backgroundColor = 0xFF000000U);
+std::string pollSecondaryDisplayTouch();
+void closeSecondaryDisplay();
+
 /*
  * Helper functions for the filesystem module
  */

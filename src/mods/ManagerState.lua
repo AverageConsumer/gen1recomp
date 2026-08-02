@@ -870,24 +870,56 @@ function ManagerState:optionValue(modId, row)
   return v
 end
 
-function ManagerState:setOption(modId, key, value)
+function ManagerState:setOption(modId, key, value, skipLinks)
+  local changes = { [key] = value }
+  if not skipLinks then
+    local schema = self.game.mods and self.game.mods.optionSchemas
+      and self.game.mods.optionSchemas[modId] or {}
+    local stored = self.game.mods and self.game.mods.modOptions
+      and self.game.mods.modOptions[modId]
+    local function current(optionKey)
+      if changes[optionKey] ~= nil then return changes[optionKey] end
+      if stored and stored[optionKey] ~= nil then return stored[optionKey] end
+      for _, candidate in ipairs(schema) do
+        if candidate.key == optionKey then return candidate.default end
+      end
+    end
+    for _, row in ipairs(schema) do
+      if row.key == key then
+        for linkedKey, linkedValue in pairs(
+            row.sets and row.sets[value] or {}) do
+          if type(linkedValue) == "function" then
+            linkedValue = linkedValue(current)
+          end
+          changes[linkedKey] = linkedValue
+        end
+        break
+      end
+    end
+  end
   local save = self.game.save
   if save and save.options then
     save.options.modOptions = save.options.modOptions or {}
     local t = save.options.modOptions
     t[modId] = t[modId] or {}
-    t[modId][key] = value
+    for changedKey, changedValue in pairs(changes) do
+      t[modId][changedKey] = changedValue
+    end
   end
   local loader = self.game.mods
   if loader then
     loader.modOptions = loader.modOptions or {}
     loader.modOptions[modId] = loader.modOptions[modId] or {}
-    loader.modOptions[modId][key] = value
+    for changedKey, changedValue in pairs(changes) do
+      loader.modOptions[modId][changedKey] = changedValue
+    end
   end
   self:persistOptions()
   if loader and loader.events then
-    loader.events:emit("mod.options_changed",
-      { mod = modId, key = key, value = value })
+    for changedKey, changedValue in pairs(changes) do
+      loader.events:emit("mod.options_changed",
+        { mod = modId, key = changedKey, value = changedValue })
+    end
   end
 end
 
@@ -980,7 +1012,7 @@ function ManagerState:buildOptionRows(m, schema)
       for _, row in ipairs(schema) do
         if type(row) == "table" and type(row.key) == "string"
             and OPTION_TYPES[row.type] then
-          self:setOption(modId, row.key, row.default)
+          self:setOption(modId, row.key, row.default, true)
         end
       end
       self:notify("DEFAULTS RESTORED")
@@ -993,6 +1025,11 @@ function ManagerState:openOptions(m)
   if not schema then
     self:notify("NO OPTIONS")
     return
+  end
+  for _, row in ipairs(schema) do
+    if row.sync then
+      self:setOption(m.id, row.key, self:optionValue(m.id, row))
+    end
   end
   self.optionRows = self:buildOptionRows(m, schema)
   self:goTo("options")

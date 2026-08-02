@@ -128,6 +128,7 @@ public class GameActivity extends SDLActivity {
     public int safeAreaLeft = 0;
     public int safeAreaBottom = 0;
     public int safeAreaRight = 0;
+    private SecondaryDisplayHost secondaryDisplayHost;
 
     private static native void nativeSetDefaultStreamValues(int sampleRate, int framesPerBurst);
 
@@ -189,6 +190,7 @@ public class GameActivity extends SDLActivity {
             String create = savedInstanceState.getString(STATE_PENDING_CREATE);
             if (create != null) pendingCreateSuggestedName = create;
         }
+        secondaryDisplayHost = new SecondaryDisplayHost(this);
         metrics = getResources().getDisplayMetrics();
 
         // Set low-latency audio values
@@ -323,6 +325,9 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        if (secondaryDisplayHost != null) {
+            secondaryDisplayHost.close();
+        }
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -332,6 +337,9 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
+        if (secondaryDisplayHost != null) {
+            secondaryDisplayHost.pause();
+        }
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -344,6 +352,9 @@ public class GameActivity extends SDLActivity {
     public void onResume() {
         super.onResume();
         setupSecondaryDisplay();
+        if (secondaryDisplayHost != null) {
+            secondaryDisplayHost.resume();
+        }
     }
 
     /**
@@ -525,6 +536,37 @@ public class GameActivity extends SDLActivity {
     @Keep
     public static boolean showSaveFilePicker() {
         return showFilePicker(PICKED_SAVE_FILENAME);
+    }
+
+    @Keep
+    public static boolean hasCompanionDisplay() {
+        GameActivity self = (GameActivity) mSingleton;
+        return self != null && self.secondaryDisplayHost != null
+                && self.secondaryDisplayHost.isAvailable();
+    }
+
+    @Keep
+    public static boolean presentCompanionDisplay(
+            int width, int height, byte[] rgba, int backgroundColor) {
+        GameActivity self = (GameActivity) mSingleton;
+        return self != null && self.secondaryDisplayHost != null
+                && self.secondaryDisplayHost.present(
+                        width, height, rgba, backgroundColor);
+    }
+
+    @Keep
+    public static String pollCompanionDisplayTouch() {
+        GameActivity self = (GameActivity) mSingleton;
+        return self == null || self.secondaryDisplayHost == null
+                ? null : self.secondaryDisplayHost.pollTouch();
+    }
+
+    @Keep
+    public static void closeCompanionDisplay() {
+        GameActivity self = (GameActivity) mSingleton;
+        if (self != null && self.secondaryDisplayHost != null) {
+            self.secondaryDisplayHost.close();
+        }
     }
 
     /**

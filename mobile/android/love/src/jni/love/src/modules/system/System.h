@@ -127,6 +127,12 @@ public:
 	 **/
 	virtual bool createFile(const char *suggestedName = nullptr) const;
 
+	virtual bool hasSecondaryDisplay() const;
+	virtual bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
+		unsigned int backgroundColor = 0xFF000000U) const;
+	virtual std::string pollSecondaryDisplayTouch() const;
+	virtual void closeSecondaryDisplay() const;
+
 	/**
 	 * Pokéwalker: stage pending real-world steps (steps_pending.json in the
 	 * save dir) from the platform step source. Android-only; false elsewhere.

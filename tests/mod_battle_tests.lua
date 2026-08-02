@@ -236,6 +236,12 @@ do
     function() error("autoCatch must not roll") end, nil,
     { ballDef = { randMax = 0, autoCatch = true } })
   check(auto == true, "autoCatch skips every roll")
+  local preview = Catching.chance("POKE_BALL", mon, { catchRate = 100 })
+  local expected = 101 * 86 * 100 / (256 * 256)
+  check(math.abs(preview - expected) < 0.000001,
+    "catch preview matches the stock discrete rolls")
+  eq(Catching.chance("MASTER_BALL", mon, { catchRate = 0 }), 100,
+    "autoCatch previews as certain")
 
   -- an attempt override doubles the rate then falls through to the math
   local caught = Catching.attempt("MOD_BALL", mon, { catchRate = 100 },
@@ -246,6 +252,9 @@ do
         return ctx.vanillaAttempt()
       end } })
   check(caught == true, "an attempt override rewrites the rate and delegates")
+  eq(Catching.chance("MOD_BALL", mon, { catchRate = 100 }, nil,
+    { ballDef = { attempt = function() end } }), nil,
+    "custom attempt logic does not advertise invented odds")
 
   -- toss/flicker resolve from the records
   local game = makeGame({ Pokemon.new(Data, "BULBASAUR", 20) })
