@@ -1314,16 +1314,32 @@ public class GameActivity extends SDLActivity {
 
     @Keep
     public static void setSecondaryEnabled(final boolean on) {
-        if (secondaryEnabled == on
-                && (on ? secondaryPresentation != null : secondaryPresentation == null)) return;
-        secondaryEnabled = on;
         final GameActivity self = (GameActivity) mSingleton;
+        if (secondaryEnabled == on
+                && (on ? self != null && presentationIsPreferred(self)
+                       : secondaryPresentation == null)) return;
+        secondaryEnabled = on;
         if (self == null) return;
         self.runOnUiThread(new Runnable() {
             @Override public void run() {
-                if (on) setupSecondaryDisplay(); else teardownSecondaryDisplay();
+                if (on) {
+                    if (!presentationIsPreferred(self)) teardownSecondaryDisplay();
+                    setupSecondaryDisplay();
+                } else {
+                    teardownSecondaryDisplay();
+                }
             }
         });
+    }
+
+    private static boolean presentationIsPreferred(GameActivity self) {
+        SecondaryPresentation p = secondaryPresentation;
+        Display gameDisplay = self.getWindowManager().getDefaultDisplay();
+        Display presentationDisplay = p != null ? p.getDisplay() : null;
+        return presentationDisplay != null && (gameDisplay == null
+            || presentationDisplay.getDisplayId() != gameDisplay.getDisplayId()
+                && (gameDisplay.getDisplayId() == Display.DEFAULT_DISPLAY
+                    || presentationDisplay.getDisplayId() == Display.DEFAULT_DISPLAY));
     }
 
     private static void setupSecondaryDisplay() {
@@ -1352,15 +1368,24 @@ public class GameActivity extends SDLActivity {
         android.hardware.display.DisplayManager dm =
             (android.hardware.display.DisplayManager) self.getSystemService(Context.DISPLAY_SERVICE);
         if (dm == null) return null;
-        Display chosen = null;
-        for (Display d : dm.getDisplays()) {
-            if (chosen == null && d.getDisplayId() != Display.DEFAULT_DISPLAY
-                    && d.getState() != Display.STATE_OFF) chosen = d;
-        }
-        if (chosen != null) return chosen;
+        Display gameDisplay = self.getWindowManager().getDefaultDisplay();
+        int gameDisplayId = gameDisplay != null
+            ? gameDisplay.getDisplayId() : Display.DEFAULT_DISPLAY;
+        Display handheldDisplay = dm.getDisplay(Display.DEFAULT_DISPLAY);
+        if (gameDisplayId != Display.DEFAULT_DISPLAY && handheldDisplay != null
+                && handheldDisplay.getState() != Display.STATE_OFF) return handheldDisplay;
         Display[] presentations = dm.getDisplays(
             android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
-        return presentations != null && presentations.length > 0 ? presentations[0] : null;
+        Display chosen = findOtherDisplay(presentations, gameDisplayId);
+        return chosen != null ? chosen : findOtherDisplay(dm.getDisplays(), gameDisplayId);
+    }
+
+    private static Display findOtherDisplay(Display[] displays, int gameDisplayId) {
+        if (displays == null) return null;
+        for (Display d : displays) {
+            if (d.getDisplayId() != gameDisplayId && d.getState() != Display.STATE_OFF) return d;
+        }
+        return null;
     }
 
     private static void teardownSecondaryDisplay() {
