@@ -222,16 +222,18 @@ bool System::hasSecondaryDisplay() const
 }
 
 bool System::presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
-	unsigned int backgroundColor) const
+	unsigned int backgroundColor, const char *preference) const
 {
 #ifdef LOVE_ANDROID
-	return love::android::presentSecondaryDisplay(width, height, rgba, size, backgroundColor);
+	return love::android::presentSecondaryDisplay(width, height, rgba, size,
+		backgroundColor, preference);
 #else
 	LOVE_UNUSED(width);
 	LOVE_UNUSED(height);
 	LOVE_UNUSED(rgba);
 	LOVE_UNUSED(size);
 	LOVE_UNUSED(backgroundColor);
+	LOVE_UNUSED(preference);
 	return false;
 #endif
 }

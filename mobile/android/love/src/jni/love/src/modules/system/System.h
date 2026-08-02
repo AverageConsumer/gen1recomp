@@ -129,7 +129,8 @@ public:
 
 	virtual bool hasSecondaryDisplay() const;
 	virtual bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
-		unsigned int backgroundColor = 0xFF000000U) const;
+		unsigned int backgroundColor = 0xFF000000U,
+		const char *preference = "auto") const;
 	virtual std::string pollSecondaryDisplayTouch() const;
 	virtual void closeSecondaryDisplay() const;
 

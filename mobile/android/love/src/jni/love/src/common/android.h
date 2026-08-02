@@ -100,7 +100,7 @@ bool httpDownload(const char *url, const char *destPath, const char *userAgent, 
 
 bool hasSecondaryDisplay();
 bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
-	unsigned int backgroundColor = 0xFF000000U);
+	unsigned int backgroundColor = 0xFF000000U, const char *preference = "auto");
 std::string pollSecondaryDisplayTouch();
 void closeSecondaryDisplay();
 
