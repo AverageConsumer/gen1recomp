@@ -294,7 +294,9 @@ eq(Check.parseSums(nil, "anything"), nil, "parseSums(nil, target) returns nil wi
 -- ---------------------------------------------------------------------------
 
 eq(Check.releaseUrl(),
-   "https://github.com/bryanthaboi/gen1recomp/releases/latest",
+   "https://github.com/AverageConsumer/gen1recomp/releases/latest",
    "releaseUrl points at the repo's latest release")
+eq(require("src.core.Version").selfUpdate, false,
+   "fork builds keep the self-updater disabled")
 
 T.finish("update")

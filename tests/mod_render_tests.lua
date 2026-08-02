@@ -97,6 +97,7 @@ local FILES = {
     mod.content.render_pipelines:register("diorama", {
       label = "DIORAMA",
       levels = { "OFF", "LOW", "HIGH" },
+      default = 2,
       hotkey = "7",
       priority = 20,
       available = function() return T.available end,
@@ -148,6 +149,13 @@ eq(list[1].id, "diorama", "the higher-priority pipeline sorts first")
 eq(list[2].id, "grade", "the lower-priority pipeline sorts second")
 check(list[1].id ~= "_owners" and list[2].id ~= "_owners",
   "the provenance key is not mistaken for a pipeline")
+
+Pipelines.applyOptions({})
+eq(Pipelines.level("diorama"), 2,
+  "a pipeline may declare its fresh-install level")
+Pipelines.applyOptions({ pipelines = { diorama = 0 } })
+eq(Pipelines.level("diorama"), 0,
+  "an explicitly persisted OFF wins over the declared default")
 
 -- ------- switched off costs nothing
 

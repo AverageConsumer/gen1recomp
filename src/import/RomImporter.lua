@@ -572,6 +572,7 @@ end
 -- import-only run all skip the release check so headless and CI runs never spin
 -- up the background worker or reach out to the network.
 local function updaterAllowed()
+  if require("src.core.Version").selfUpdate == false then return false end
   if not (love.filesystem.isFused and love.filesystem.isFused()) then return false end
   if os.getenv("POKEPORT_AUTOPILOT") or os.getenv("POKEPORT_DRIVER") then return false end
   if os.getenv("POKEPORT_IMPORT_ONLY") == "1" then return false end
