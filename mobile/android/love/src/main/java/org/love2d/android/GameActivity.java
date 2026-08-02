@@ -60,6 +60,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.DisplayMetrics;
 import android.view.*;
@@ -70,13 +71,27 @@ import androidx.core.app.ActivityCompat;
 
 public class GameActivity extends SDLActivity {
     private static DisplayMetrics metrics = null;
+    // AYN keeps a disabled built-in panel registered as ON. Its system mode is
+    // the usable-state signal: 0 = both, 1 = main only, 2 = second only.
+    private static final String DUAL_SCREEN_DISPLAY_MODE = "dual_screen_display_mode";
+    private static final String AYN_SECOND_SCREEN = "Screen-2";
+    private static volatile int dualScreenDisplayMode = -1;
     private android.hardware.display.DisplayManager displayManager;
     private boolean companionDisplayListenerRegistered;
+    private boolean dualScreenModeObserverRegistered;
     private final android.hardware.display.DisplayManager.DisplayListener companionDisplayListener =
         new android.hardware.display.DisplayManager.DisplayListener() {
             @Override public void onDisplayAdded(int displayId) { rebindSecondaryDisplay(); }
             @Override public void onDisplayRemoved(int displayId) { rebindSecondaryDisplay(); }
             @Override public void onDisplayChanged(int displayId) { rebindSecondaryDisplay(); }
+        };
+    private final android.database.ContentObserver dualScreenModeObserver =
+        new android.database.ContentObserver(new Handler(Looper.getMainLooper())) {
+            @Override public void onChange(boolean selfChange, Uri uri) {
+                refreshDualScreenDisplayMode();
+                Log.d("GameActivity", "dual-screen mode changed to " + dualScreenDisplayMode);
+                rebindSecondaryDisplay();
+            }
         };
     private static String gamePath = "";
     private static Vibrator vibrator = null;
@@ -335,10 +350,7 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
-        if (displayManager != null && companionDisplayListenerRegistered) {
-            displayManager.unregisterDisplayListener(companionDisplayListener);
-            companionDisplayListenerRegistered = false;
-        }
+        unregisterCompanionDisplayObservers();
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -352,10 +364,7 @@ public class GameActivity extends SDLActivity {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
         }
-        if (displayManager != null && companionDisplayListenerRegistered) {
-            displayManager.unregisterDisplayListener(companionDisplayListener);
-            companionDisplayListenerRegistered = false;
-        }
+        unregisterCompanionDisplayObservers();
         teardownSecondaryDisplay();
         super.onPause();
     }
@@ -363,11 +372,33 @@ public class GameActivity extends SDLActivity {
     @Override
     public void onResume() {
         super.onResume();
+        refreshDualScreenDisplayMode();
         if (displayManager != null && !companionDisplayListenerRegistered) {
             displayManager.registerDisplayListener(companionDisplayListener, null);
             companionDisplayListenerRegistered = true;
         }
+        if (dualScreenDisplayMode != -1 && !dualScreenModeObserverRegistered) {
+            getContentResolver().registerContentObserver(
+                Settings.System.getUriFor(DUAL_SCREEN_DISPLAY_MODE), false, dualScreenModeObserver);
+            dualScreenModeObserverRegistered = true;
+        }
         setupSecondaryDisplay();
+    }
+
+    private void refreshDualScreenDisplayMode() {
+        dualScreenDisplayMode = Settings.System.getInt(
+            getContentResolver(), DUAL_SCREEN_DISPLAY_MODE, -1);
+    }
+
+    private void unregisterCompanionDisplayObservers() {
+        if (displayManager != null && companionDisplayListenerRegistered) {
+            displayManager.unregisterDisplayListener(companionDisplayListener);
+            companionDisplayListenerRegistered = false;
+        }
+        if (dualScreenModeObserverRegistered) {
+            getContentResolver().unregisterContentObserver(dualScreenModeObserver);
+            dualScreenModeObserverRegistered = false;
+        }
     }
 
     /**
@@ -1359,7 +1390,8 @@ public class GameActivity extends SDLActivity {
     public static void setSecondaryEnabled(final boolean on) {
         final GameActivity self = (GameActivity) mSingleton;
         if (secondaryEnabled == on
-                && (on ? self != null && presentationIsPreferred(self)
+                && (on ? self != null && (presentationIsPreferred(self)
+                                      || findSecondaryDisplay(self) == null)
                        : secondaryPresentation == null)) return;
         secondaryEnabled = on;
         if (self == null) return;
@@ -1434,7 +1466,7 @@ public class GameActivity extends SDLActivity {
             ? gameDisplay.getDisplayId() : Display.DEFAULT_DISPLAY;
         Display handheldDisplay = dm.getDisplay(Display.DEFAULT_DISPLAY);
         boolean handheldAvailable = gameDisplayId != Display.DEFAULT_DISPLAY
-            && handheldDisplay != null && handheldDisplay.getState() != Display.STATE_OFF;
+            && isDisplayUsable(handheldDisplay);
         Display[] presentations = dm.getDisplays(
             android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
         Display chosen = findOtherDisplay(presentations, gameDisplayId);
@@ -1447,9 +1479,15 @@ public class GameActivity extends SDLActivity {
     private static Display findOtherDisplay(Display[] displays, int gameDisplayId) {
         if (displays == null) return null;
         for (Display d : displays) {
-            if (d.getDisplayId() != gameDisplayId && d.getState() != Display.STATE_OFF) return d;
+            if (d.getDisplayId() != gameDisplayId && isDisplayUsable(d)) return d;
         }
         return null;
+    }
+
+    private static boolean isDisplayUsable(Display display) {
+        if (display == null || display.getState() == Display.STATE_OFF) return false;
+        if (dualScreenDisplayMode == 1 && AYN_SECOND_SCREEN.equals(display.getName())) return false;
+        return dualScreenDisplayMode != 2 || display.getDisplayId() != Display.DEFAULT_DISPLAY;
     }
 
     private static void teardownSecondaryDisplay() {
