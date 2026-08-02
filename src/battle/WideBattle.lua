@@ -252,7 +252,7 @@ local function drawMoveMenu(battle)
 end
 
 local function drawTextArea(battle)
-  if not battle:bottomUIVisible() then return end
+  if battle.bottomUIVisible and not battle:bottomUIVisible() then return end
   if battle.phase == "messages" and (battle.current or battle.animPlaying) then
     drawMessageBox(battle)
   elseif battle.phase == "menu" then
