@@ -15,6 +15,10 @@ local Screens = require("src.ui.Screens")
 
 local Game = {}
 
+local function renderVisible(stack, state)
+  return state and (not stack.renderVisible or stack:renderVisible(state))
+end
+
 -- dev-mode gate for the F5/backtick hotkeys; false keeps every src/dev
 -- module unloaded, so a player boot never touches a byte of dev code
 local devMode = os.getenv("POKEPORT_DEV") == "1" or _G.POKEPORT_DEV_MODE == true
@@ -437,7 +441,7 @@ function Game:draw()
     local state = self.stack.states[i]
     local wideState = state and state.isWideBattleLayout
       and state:isWideBattleLayout()
-    if self.stack:renderVisible(state) and state.draw then
+    if renderVisible(self.stack, state) and state.draw then
       if classicOffset ~= 0 and not wideState then
         love.graphics.push()
         love.graphics.translate(classicOffset, 0)
@@ -454,7 +458,7 @@ function Game:draw()
   local zones, worldZones, zoneOwner
   for i = #self.stack.states, 1, -1 do
     local s = self.stack.states[i]
-    if self.stack:renderVisible(s) and s.sgbPalettes then
+    if renderVisible(self.stack, s) and s.sgbPalettes then
       zones = s:sgbPalettes(self)
       zoneOwner = s
       break
