@@ -109,6 +109,38 @@ int w_createFile(lua_State *L)
 	return 1;
 }
 
+int w_hasSecondaryDisplay(lua_State *L)
+{
+	luax_pushboolean(L, instance()->hasSecondaryDisplay());
+	return 1;
+}
+
+int w_presentSecondaryDisplay(lua_State *L)
+{
+	auto frame = luax_checktype<love::image::ImageData>(L, 1);
+	unsigned int backgroundColor = 0xFF000000U
+		| ((unsigned int) luaL_optinteger(L, 2, 0) & 0x00FFFFFFU);
+	luax_pushboolean(L, instance()->presentSecondaryDisplay(frame->getWidth(), frame->getHeight(),
+		frame->getData(), frame->getSize(), backgroundColor));
+	return 1;
+}
+
+int w_pollSecondaryDisplayTouch(lua_State *L)
+{
+	std::string touch = instance()->pollSecondaryDisplayTouch();
+	if (touch.empty())
+		lua_pushnil(L);
+	else
+		luax_pushstring(L, touch);
+	return 1;
+}
+
+int w_closeSecondaryDisplay(lua_State *L)
+{
+	instance()->closeSecondaryDisplay();
+	return 0;
+}
+
 int w_syncHealthSteps(lua_State *L)
 {
 	luax_pushboolean(L, instance()->syncHealthSteps());
@@ -150,6 +182,10 @@ static const luaL_Reg functions[] =
 	{ "vibrate", w_vibrate },
 	{ "pickFile", w_pickFile },
 	{ "createFile", w_createFile },
+	{ "hasSecondaryDisplay", w_hasSecondaryDisplay },
+	{ "presentSecondaryDisplay", w_presentSecondaryDisplay },
+	{ "pollSecondaryDisplayTouch", w_pollSecondaryDisplayTouch },
+	{ "closeSecondaryDisplay", w_closeSecondaryDisplay },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
 	{ "httpDownload", w_httpDownload },

@@ -288,6 +288,70 @@ bool httpDownload(const char *url, const char *destPath, const char *userAgent, 
 	return result;
 }
 
+bool hasSecondaryDisplay()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "hasCompanionDisplay", "()Z");
+	jboolean result = env->CallStaticBooleanMethod(activity, method);
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
+bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
+	unsigned int backgroundColor)
+{
+	if (rgba == nullptr || size == 0 || size > (size_t) INT32_MAX)
+		return false;
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "presentCompanionDisplay",
+		"(II[BI)Z");
+	jbyteArray value = env->NewByteArray((jsize) size);
+	if (value == nullptr)
+	{
+		env->DeleteLocalRef(activity);
+		return false;
+	}
+	env->SetByteArrayRegion(value, 0, (jsize) size, (const jbyte *) rgba);
+	jboolean result = env->CallStaticBooleanMethod(activity, method, width, height, value,
+		(jint) backgroundColor);
+	env->DeleteLocalRef(value);
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
+std::string pollSecondaryDisplayTouch()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "pollCompanionDisplayTouch",
+		"()Ljava/lang/String;");
+	jstring value = (jstring) env->CallStaticObjectMethod(activity, method);
+	std::string result;
+	if (value != nullptr)
+	{
+		const char *utf = env->GetStringUTFChars(value, nullptr);
+		if (utf != nullptr)
+		{
+			result = utf;
+			env->ReleaseStringUTFChars(value, utf);
+		}
+		env->DeleteLocalRef(value);
+	}
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
+void closeSecondaryDisplay()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "closeCompanionDisplay", "()V");
+	env->CallStaticVoidMethod(activity, method);
+	env->DeleteLocalRef(activity);
+}
+
 /*
  * Helper functions for the filesystem module
  */

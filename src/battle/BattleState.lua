@@ -36,6 +36,7 @@ local romText = RomText
 local BattleState = {}
 BattleState.__index = BattleState
 BattleState.isOpaque = true
+BattleState.isBattleState = true
 
 function BattleState:romText(label, fallback, ...)
   return romText(self.data, label, fallback, ...)
@@ -116,6 +117,19 @@ end
 function BattleState:sgbPalettes()
   if self:wideLayout() then return WideBattle.zones() end
   return nil
+end
+
+function BattleState:bottomUIVisible()
+  if not Runtime.wantsHook("battle.bottom_ui_visible") then return true end
+  return Runtime.call("battle.bottom_ui_visible", function() return true end,
+                      self) ~= false
+end
+
+function BattleState:moveGridNavigation()
+  if self:wideLayout() then return true end
+  if not Runtime.wantsHook("battle.move_grid_navigation") then return false end
+  return Runtime.call("battle.move_grid_navigation", function() return false end,
+                      self) == true
 end
 
 local Rulesets = {
@@ -998,7 +1012,7 @@ function BattleState:startMessage(item)
     local npos = text:find("[\n\v]", pos)
     local chunk = npos and text:sub(pos, npos - 1) or text:sub(pos)
     local codes = Font.encode(chunk)
-    self.lines[#self.lines + 1] = { codes = codes, cont = cont }
+    self.lines[#self.lines + 1] = { codes = codes, cont = cont, text = chunk }
     self.total = self.total + #codes
     if not npos then break end
     cont = text:sub(npos, npos) == "\v"
@@ -1027,6 +1041,18 @@ function BattleState:beginMsgLine()
     self.scrollPx = 8
   end
   self.shown[#self.shown + 1] = {}
+end
+
+function BattleState:visibleText()
+  if self.phase ~= "messages" or not (self.current or self.animPlaying) then
+    return nil
+  end
+  local out, count = {}, #(self.shown or {})
+  for i = math.max(1, self.lineIndex - count + 1), self.lineIndex do
+    local line = self.lines and self.lines[i]
+    if line then out[#out + 1] = line.text or "" end
+  end
+  return #out > 0 and out or nil
 end
 
 function BattleState:updateQueue()
@@ -1671,6 +1697,85 @@ function BattleState:playerHasPP()
   return false
 end
 
+-- Shared semantic choices for the native menu and trusted mod facades.
+-- Callers name the action; this state remains the only place that validates
+-- battle phase, locks, PP and disabled slots before changing the turn.
+function BattleState:chooseMenu(choice)
+  if self.phase ~= "menu" then return nil, "battle menu is not active" end
+  if choice == "fight" and self.ghost then
+    self:say(Strings("%s is too\nscared to move!", self.player.name))
+    self.phase = "messages"
+    self.afterQueue = "menu"
+    self:act(function()
+      self:executeAction(self.enemy, self.player, self:enemyAction())
+    end)
+    self:act(function() self:endOfTurn() end)
+  elseif choice == "fight" then
+    local fightLock = self:fightLockedAction(self.player)
+    if fightLock then
+      self:resolveTurn(fightLock)
+    elseif not self:playerHasPP() then
+      self:say(Strings("%s has no\nmoves left!", self.player.name))
+      self:resolveTurn({ id = "STRUGGLE", pp = 1, struggle = true })
+    else
+      self.phase = "moveSelect"
+      self.moveIndex = math.min(self.moveIndex, #self.player.curMoves)
+      self.moveSwapIndex = nil
+    end
+  elseif choice == "run" then
+    self:tryRun()
+  elseif choice == "item" then
+    self:openItems()
+  elseif choice == "pkmn" then
+    self:openParty()
+  else
+    return nil, "unknown battle menu choice"
+  end
+  return true
+end
+
+function BattleState:chooseMove(index)
+  if self.phase ~= "moveSelect" then return nil, "move menu is not active" end
+  local mv = self.player.curMoves[index]
+  if not mv then return nil, "invalid move slot" end
+  self.moveIndex = index
+  if self.player.disabledSlot == index then
+    self:say(self:romText("_MoveDisabledText", "The move is\ndisabled!"))
+    self.phase = "messages"
+    self.afterQueue = "menu"
+  elseif mv.pp <= 0 then
+    self:say(self:romText("_MoveNoPPText", "No PP left for\nthis move!"))
+    self.phase = "messages"
+    self.afterQueue = "menu"
+  else
+    self:resolveTurn(mv)
+  end
+  return true
+end
+
+function BattleState:cancelMove()
+  if self.phase ~= "moveSelect" then return nil, "move menu is not active" end
+  self.moveSwapIndex = nil
+  self.phase = "menu"
+  return true
+end
+
+function BattleState:chooseMimic(index)
+  if self.phase ~= "mimicSelect" then return nil, "mimic menu is not active" end
+  if type(index) ~= "number" or index % 1 ~= 0 then
+    return nil, "invalid mimic slot"
+  end
+  local pick = self.mimicMoves and self.mimicMoves[index]
+  if not pick then return nil, "invalid mimic slot" end
+  local ctx = self.mimicCtx
+  self.mimicIndex = index
+  self.mimicMoves, self.mimicCtx = nil, nil
+  self.phase = "messages"
+  self.nextInsert = 0
+  self:applyMimic(ctx.user, ctx.target, ctx.moveInst, pick.slot)
+  return true
+end
+
 function BattleState:swapMoves(i, j)
   if i == j then return end
   local moves = self.player.curMoves
@@ -1816,38 +1921,7 @@ function BattleState:update(dt)
     self.menuIndex = row * 2 + col + 1
     if input:wasPressed("a") then
       local choice = ({ "fight", "pkmn", "item", "run" })[self.menuIndex]
-      if choice == "fight" and self.ghost then
-        self:say(Strings("%s is too\nscared to move!", self.player.name))
-        self.phase = "messages"
-        self.afterQueue = "menu"
-        self:act(function()
-          self:executeAction(self.enemy, self.player, self:enemyAction())
-        end)
-        self:act(function() self:endOfTurn() end)
-      elseif choice == "fight" then
-        -- After the menu: own trapping/Bide or foe Wrap skips the move
-        -- list and forces the locked action (core.asm:320-329)
-        local fightLock = self:fightLockedAction(self.player)
-        if fightLock then
-          self:resolveTurn(fightLock)
-          return
-        end
-        if not self:playerHasPP() then
-          -- _NoMovesLeftText, then Struggle engages
-          self:say(Strings("%s has no\nmoves left!", self.player.name))
-          self:resolveTurn({ id = "STRUGGLE", pp = 1, struggle = true })
-          return
-        end
-        self.phase = "moveSelect"
-        self.moveIndex = math.min(self.moveIndex, #self.player.curMoves)
-        self.moveSwapIndex = nil
-      elseif choice == "run" then
-        self:tryRun()
-      elseif choice == "item" then
-        self:openItems()
-      else
-        self:openParty()
-      end
+      self:chooseMenu(choice)
     end
     return
   end
@@ -1857,7 +1931,7 @@ function BattleState:update(dt)
     -- The widescreen layout lays the four slots out as a 2x2 grid, so all
     -- four directions navigate it; nil means no direction was pressed and
     -- A / B / SELECT below behave the same in either layout.
-    local grid = self:wideLayout()
+    local grid = self:moveGridNavigation()
                  and WideBattle.navigate(self.moveIndex, #moves, input)
     if grid then
       self.moveIndex = grid
@@ -1873,26 +1947,14 @@ function BattleState:update(dt)
         self.moveSwapIndex = self.moveIndex
       end
     elseif input:wasPressed("b") then
-      self.moveSwapIndex = nil
-      self.phase = "menu"
+      self:cancelMove()
     elseif input:wasPressed("a") then
       if self.moveSwapIndex then
         self:swapMoves(self.moveSwapIndex, self.moveIndex)
         self.moveSwapIndex = nil
         return
       end
-      local mv = moves[self.moveIndex]
-      if self.player.disabledSlot == self.moveIndex then
-        self:say(self:romText("_MoveDisabledText", "The move is\ndisabled!"))
-        self.phase = "messages"
-        self.afterQueue = "menu"
-      elseif mv.pp <= 0 then
-        self:say(self:romText("_MoveNoPPText", "No PP left for\nthis move!"))
-        self.phase = "messages"
-        self.afterQueue = "menu"
-      else
-        self:resolveTurn(mv)
-      end
+      self:chooseMove(self.moveIndex)
     end
     return
   end
@@ -1914,12 +1976,7 @@ function BattleState:update(dt)
     elseif input:wasPressed("down") then
       self.mimicIndex = self.mimicIndex < #moves and self.mimicIndex + 1 or 1
     elseif input:wasPressed("a") then
-      local pick = moves[self.mimicIndex]
-      local ctx = self.mimicCtx
-      self.mimicMoves, self.mimicCtx = nil, nil
-      self.phase = "messages"
-      self.nextInsert = 0 -- the copy's anim + text go to the queue head
-      self:applyMimic(ctx.user, ctx.target, ctx.moveInst, pick.slot)
+      self:chooseMimic(self.mimicIndex)
     end
     return
   end
@@ -2171,6 +2228,13 @@ function BattleState:catchAttempt(ball, rateOverride)
   return Catching.attempt(ball, self.enemy.mon, self.enemy.def, self.rng,
     rateOverride, { ballDef = self:ballDef(ball),
                     statuses = self.data.statuses, battle = self })
+end
+
+function BattleState:catchChance(ball, rateOverride)
+  if Runtime.wantsHook("catch.rate") then return nil end
+  return Catching.chance(ball, self.enemy.mon, self.enemy.def, rateOverride,
+    { ballDef = self:ballDef(ball), statuses = self.data.statuses,
+      battle = self })
 end
 
 -- wAICount: item/switch uses per enemy Pokémon for this trainer class
@@ -5107,7 +5171,7 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
   -- .mimicmenu) wipes rows 7+.  The port draws pics above the menu
   -- layer in the colorized pipeline, so clip them to the visible rows.
   local g = love.graphics
-  local clipY = not skipMenuClip
+  local clipY = not skipMenuClip and self:bottomUIVisible()
                 and (self.phase == "mimicSelect" and 56
                      or self.phase == "moveSelect" and 64)
                 or nil
@@ -5340,6 +5404,7 @@ function BattleState:drawHUDs(slide)
 end
 
 function BattleState:drawTextArea()
+  if not self:bottomUIVisible() then return end
   Font.drawBox(0, 12, 20, 6)
   love.graphics.setColor(0, 0, 0, 1)
   if self.phase == "messages" and (self.current or self.animPlaying) then

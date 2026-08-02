@@ -57,6 +57,12 @@ function ItemEffects.healsHP(id)
       or id == "REVIVE" or id == "MAX_REVIVE"
 end
 
+function ItemEffects.isBattleMedicine(id)
+  return HEAL_AMOUNT[id] ~= nil or STATUS_HEAL[id] ~= nil
+      or id == "MAX_POTION" or id == "FULL_RESTORE"
+      or id == "REVIVE" or id == "MAX_REVIVE"
+end
+
 -- Does this item need a party-member target?
 function ItemEffects.needsTarget(id, itemDef)
   return HEAL_AMOUNT[id] or STATUS_HEAL[id] or id == "MAX_POTION"
@@ -129,6 +135,8 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   -- ItemUseTMHM all refuse mid-battle (jp nz, ItemUseNotTime)
   if battle and (VITAMINS[itemId] or STONES[itemId] or itemId == "PP_UP"
                  or itemId == "RARE_CANDY" or itemId == "COIN_CASE"
+                 or itemId == "ESCAPE_ROPE" or itemId == "REPEL"
+                 or itemId == "SUPER_REPEL" or itemId == "MAX_REPEL"
                  or (itemDef and itemDef.machine)) then
     return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!",
                                save.player.name) }

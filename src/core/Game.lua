@@ -437,7 +437,7 @@ function Game:draw()
     local state = self.stack.states[i]
     local wideState = state and state.isWideBattleLayout
       and state:isWideBattleLayout()
-    if state and state.draw then
+    if self.stack:renderVisible(state) and state.draw then
       if classicOffset ~= 0 and not wideState then
         love.graphics.push()
         love.graphics.translate(classicOffset, 0)
@@ -461,7 +461,7 @@ function Game:draw()
   local zones, worldZones, zoneOwner
   for i = #self.stack.states, 1, -1 do
     local s = self.stack.states[i]
-    if s.sgbPalettes then
+    if self.stack:renderVisible(s) and s.sgbPalettes then
       zones = s:sgbPalettes(self)
       zoneOwner = s
       break
