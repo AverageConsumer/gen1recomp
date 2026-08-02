@@ -21,6 +21,7 @@
 // LOVE
 #include "wrap_System.h"
 #include "sdl/System.h"
+#include "image/ImageData.h"
 
 namespace love
 {
