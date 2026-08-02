@@ -18,7 +18,10 @@
 
 local Check = {}
 
-Check.REPO = "bryanthaboi/gen1recomp"
+-- Kanto Gear builds are released from the product repository. Pointing this
+-- host at upstream could offer an official payload without the companion
+-- bridge and silently remove the feature the installed app exists for.
+Check.REPO = "AverageConsumer/kanto-gear"
 
 local CMD = "update_check_cmd"
 local STATE = "update_check_state"
