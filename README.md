@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > This branch is the **unofficial Kanto Gear host fork**, based on Gen1Recomp
-> 0.1.60. It adds the Android secondary-display, hotplug and touch bridge used
+> 0.1.63. It adds the Android secondary-display, hotplug and touch bridge used
 > by [Kanto Gear](https://github.com/AverageConsumer/kanto-gear). End users
 > should start with the Kanto Gear release page; general Gen1Recomp users should
 > use the [official project](https://github.com/bryanthaboi/gen1recomp).
