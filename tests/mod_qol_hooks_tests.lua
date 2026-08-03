@@ -11,6 +11,7 @@ local Stats = require("src.pokemon.Stats")
 local Zoom = require("src.render.Zoom")
 local ListMenu = require("src.ui.ListMenu")
 local NamingScreen = require("src.ui.NamingScreen")
+local PartyMenu = require("src.ui.PartyMenu")
 local Player = require("src.world.Player")
 local Music = require("src.core.Music")
 
@@ -209,6 +210,33 @@ do
   battle.wideLayout = function() return true end
   check(BattleState.moveGridNavigation(battle),
     "the native wide move grid remains enabled without a mod")
+end
+
+-- ------- ui.party.grid_navigation (authoritative second-screen party grid)
+
+do
+  local field = setmetatable({}, PartyMenu)
+  local battle = setmetatable({ battle = {} }, PartyMenu)
+  check(PartyMenu.gridIndex(1, 6, "down") == 3
+      and PartyMenu.gridIndex(3, 6, "right") == 4
+      and PartyMenu.gridIndex(5, 5, "down") == 1
+      and PartyMenu.gridIndex(4, 5, "down") == 2,
+    "party grid navigation follows the visible two-column layout")
+  check(not field:gridNavigation() and not battle:gridNavigation(),
+    "party navigation stays a vertical list without a mod")
+  local unsub = wrap("ui.party.grid_navigation", function() return true end)
+  check(not field:gridNavigation() and battle:gridNavigation(),
+    "a mod can opt only a battle party menu into grid navigation")
+  local game = {
+    save = { party = { {}, {}, {}, {}, {}, {} } },
+    input = { wasPressed = function(_, key) return key == "down" end },
+  }
+  local menu = PartyMenu.new(game, { battle = {} })
+  menu:update(0)
+  check(menu.index == 3, "Down follows the companion party grid")
+  unsub()
+  menu:update(0)
+  check(menu.index == 4, "removing ownership restores the native list at once")
 end
 
 -- ------- screen.render_visible (second-screen native menu mirrors)

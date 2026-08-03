@@ -108,6 +108,25 @@ PartyMenu.iconFrames = {
   PIKACHU   = { rest = 0, alt = 3 }, -- Yellow: PikachuSprite tile 0 <-> 12
 }
 
+-- Companion UIs may draw the battle party as a two-column grid.  Keep the
+-- field menu and unmodded battle menu on Gen 1's native vertical navigation.
+function PartyMenu.gridIndex(index, count, direction)
+  if count < 1 then return nil end
+  local row, col = math.floor((index - 1) / 2), (index - 1) % 2
+  if direction == "left" or direction == "right" then
+    local other = row * 2 + (1 - col) + 1
+    return other <= count and other or index
+  end
+  local step = direction == "up" and -1 or direction == "down" and 1
+  if not step then return nil end
+  local rows = math.ceil(count / 2)
+  for offset = 1, rows do
+    local other = ((row + step * offset) % rows) * 2 + col + 1
+    if other <= count then return other end
+  end
+  return index
+end
+
 -- Which 16x16 frame of `name`'s sheet to draw; `ih` (sheet pixel
 -- height) only matters for the fallback, which keeps the old uniform
 -- behavior for icons outside the table (BALL/HELIX y-bob instead).
@@ -293,6 +312,13 @@ function PartyMenu:close()
   if self.game.stack:top() == self then self.game.stack:pop() end
 end
 
+function PartyMenu:gridNavigation()
+  if not self.battle
+      or not Runtime.wantsHook("ui.party.grid_navigation") then return false end
+  return Runtime.call("ui.party.grid_navigation", function() return false end,
+                      self) == true
+end
+
 function PartyMenu:update(dt)
   -- icon animation counter; 320 = a whole cycle at every HP speed
   self.blink = ((self.blink or 0) + 1) % 320
@@ -474,7 +500,17 @@ function PartyMenu:update(dt)
     return
   end
 
-  if input:wasPressed("up") then
+  local grid
+  if self:gridNavigation() then
+    local direction = input:wasPressed("left") and "left"
+      or input:wasPressed("right") and "right"
+      or input:wasPressed("up") and "up"
+      or input:wasPressed("down") and "down"
+    grid = PartyMenu.gridIndex(self.index, #party, direction)
+  end
+  if grid then
+    self.index = grid
+  elseif input:wasPressed("up") then
     self.index = self.index > 1 and self.index - 1 or math.max(1, #party)
   elseif input:wasPressed("down") then
     self.index = self.index < #party and self.index + 1 or 1
