@@ -11,6 +11,10 @@
 > package ID `io.github.averageconsumer.gen1recomp.androidtest`, contains no
 > bundled mods, and installs beside the official app. Kanto Gear and the
 > optional Voxel renderer remain normal mod ZIPs.
+>
+> Future APKs from this fork keep that package ID and the same signing key.
+> Install them over the existing test app to retain its ROM cache, saves and
+> settings; uninstalling the app removes its Android app data.
 
 A native LÖVE2D recreation of Poke Red, Blue and Yellow. The engine and map
 behavior are hand-written Lua; game data and graphics are decoded from a ROM
