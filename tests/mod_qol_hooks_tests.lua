@@ -196,6 +196,20 @@ do
   g.getScissor, g.intersectScissor = getScissor, intersectScissor
 end
 
+-- ------- battle.status_hud_visible (second-screen HP/status HUD)
+
+do
+  local BattleState = require("src.battle.BattleState")
+  check(BattleState.statusHUDVisible({}),
+    "battle status HUD is visible without a mod")
+  local unsub = wrap("battle.status_hud_visible", function() return false end)
+  check(not BattleState.statusHUDVisible({}),
+    "a mod can move the battle status HUD off the main screen")
+  unsub()
+  check(BattleState.statusHUDVisible({}),
+    "battle status HUD returns when the hook is removed")
+end
+
 -- ------- battle.move_grid_navigation (authoritative second-screen move grid)
 
 do

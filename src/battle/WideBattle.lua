@@ -128,7 +128,8 @@ local function drawIntroBalls(battle)
 end
 
 local function drawHUDs(battle, slide)
-  if battle.enemy and not battle.showEnemyTrainer
+  local showStatus = battle:statusHUDVisible()
+  if showStatus and battle.enemy and not battle.showEnemyTrainer
       and not battle.enemySendingOut and not battle:growInScale(battle.enemy)
       and slide == 0 and not battle.introBalls and not battle.enemy.fainted then
     drawStatusPanel(battle, battle.enemy, 0, 0, false)
@@ -139,7 +140,7 @@ local function drawHUDs(battle, slide)
   -- item, not a HUD element (DisplayBattleMenu prints wNumSafariBalls inside
   -- the battle menu box, engine/battle/core.asm:2074-2079), so it rides in
   -- drawCommandMenu below like the classic layout's (#540).
-  if not battle.safari and battle.player and not battle.demo
+  if showStatus and not battle.safari and battle.player and not battle.demo
       and not battle.showPlayerBack and slide == 0 then
     drawStatusPanel(battle, battle.player, 184, 56, true)
   end
