@@ -50,12 +50,12 @@ end
 
 -- A compact, read-only view of the active map for companion UIs.  Each row
 -- uses " " for blocked terrain, "." for walkable land, "~" for water and
--- "+" for a door/warp.  Mods get the useful shape without owning Map or its
--- renderer internals.
+-- "+" for a door/warp. Markers expose only active exits and untaken items;
+-- mods get the useful shape without owning Map or its renderer internals.
 function WorldAPI:mapOverview()
   local ow = self:overworld()
   if not ow or not ow.map then return nil, NO_OVERWORLD end
-  local map, rows = ow.map, {}
+  local map, rows, markers = ow.map, {}, {}
   for y = 0, map.heightCells - 1 do
     local row = {}
     for x = 0, map.widthCells - 1 do
@@ -65,8 +65,25 @@ function WorldAPI:mapOverview()
     end
     rows[#rows + 1] = table.concat(row)
   end
+  for _, warp in ipairs(map.def.warps or {}) do
+    markers[#markers + 1] = { kind = "warp", x = warp.x, y = warp.y }
+  end
+  local game, save = self.game, self.game.save or {}
+  for _, obj in ipairs(map.def.objects or {}) do
+    if obj.item and obj.item ~= "0" and obj.item ~= 0
+        and ow.objectVisible(save, map.id, obj) then
+      markers[#markers + 1] = { kind = "item", x = obj.x, y = obj.y }
+    end
+  end
+  local hidden = game.data and game.data.field and game.data.field.hiddenItems
+  for _, item in ipairs(hidden and hidden[map.id] or {}) do
+    local key = map.id .. "_" .. item.x .. "_" .. item.y
+    if not (save.hiddenTaken and save.hiddenTaken[key]) then
+      markers[#markers + 1] = { kind = "hidden", x = item.x, y = item.y }
+    end
+  end
   return { mapId = map.id, width = map.widthCells,
-           height = map.heightCells, rows = rows }
+           height = map.heightCells, rows = rows, markers = markers }
 end
 
 local function acceptsMenuInput(game, ow)
