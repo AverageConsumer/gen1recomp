@@ -75,6 +75,7 @@ local function battleWith(fx, sprites)
     drawBallRow = function() end,
     statusLabel = function() return "" end,
     statusHUDVisible = function() return true end,
+    caughtMarkerVisible = function() return false end,
   }
 end
 

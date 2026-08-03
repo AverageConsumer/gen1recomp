@@ -101,8 +101,14 @@ local function drawStatusPanel(battle, battler, x, y, player)
   Font.drawBox(tx, ty, tw, th)
   love.graphics.setColor(0, 0, 0, 1)
 
-  local nameWidth = player and 64 or 80
-  Font.draw(fitName(battler.name, nameWidth), x + 8, y + 8)
+  local caught = not player and battle:caughtMarkerVisible()
+  local nameWidth = player and 64 or caught and 72 or 80
+  local name = fitName(battler.name, nameWidth)
+  local drawn = Font.draw(name, x + 8, y + 8)
+  if caught then
+    battle:drawCaughtBall(x + 8 + drawn, y + 8)
+    love.graphics.setColor(0, 0, 0, 1)
+  end
   levelAt(battle, battler, x + tw * 8 - 40, y + 8)
 
   HudTiles.drawHPBar(battle.data, tx + 1, ty + 2, {
