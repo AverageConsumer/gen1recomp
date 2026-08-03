@@ -1560,6 +1560,20 @@ public class GameActivity extends SDLActivity {
             if (hasFocus) applyImmersive();
         }
 
+        @Override
+        public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+            GameActivity activity = (GameActivity) mSingleton;
+            return activity != null ? activity.dispatchKeyEvent(event) : super.dispatchKeyEvent(event);
+        }
+
+        @Override
+        public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+            GameActivity activity = (GameActivity) mSingleton;
+            return activity != null
+                ? activity.dispatchGenericMotionEvent(event)
+                : super.dispatchGenericMotionEvent(event);
+        }
+
         private void applyImmersive() {
             android.view.Window w = getWindow();
             if (w == null) return;
