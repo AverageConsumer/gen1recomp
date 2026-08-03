@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.63",
+          "date": "2026-08-03",
+          "size": 9316977,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.63/gen1recomp-0.1.63-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #623 Game Corner Prize Exchange various issues\n- #624 Coins purschase menu missing your current money and coins\n- #636 Inaccurate Old Man tutorial in yellow + misc issues relating to him\n- #637 True color broken on Hall of Fame and Party Stats when using the wide battle option\n- #639 Pokédex can't show the correct stats when you catch 100 or more pokémon + overly simplified layout\n- #650 Rocket Hideout Progression Bug - Stuck with door closed after defeating Jessie and James in Yellow\n- #697 Missaligned HUD on Hall of Fame\n- #704 Player doesn't follow Prof. Oak to the Hall of Fame on the first screen\n- #722 Issues with Giovanni in Silph C.O.\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.1.62",
           "date": "2026-08-03",
           "size": 9309934,

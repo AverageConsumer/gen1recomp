@@ -577,7 +577,7 @@ function Game:keypressed(key)
     return
   elseif key == "1" then
     -- cycle GAME SPEED (0.25X → 200X, logic only; audio unaffected);
-    -- R2/L2 on gamepad do the same (see gamepadpressed)
+    -- shoulders/triggers on gamepad do the same (see gamepadpressed)
     self:_cycleSpeed(1)
     return
   elseif key == "2" then
@@ -660,12 +660,15 @@ function Game:gamepadpressed(joystick, button)
   -- a controller is being used: the touch overlay steps aside until the
   -- next screen touch (mobile only; a no-op elsewhere)
   TouchControls:noteGamepad()
-  -- shoulder buttons cycle GAME SPEED (R2/rightshoulder = faster,
-  -- L2/leftshoulder = slower; same as keyboard hotkey 1)
-  if button == "rightshoulder" then
+  -- shoulder buttons and analog triggers cycle GAME SPEED (R1/RB or
+  -- R2/RT = faster, L1/LB or L2/LT = slower; same as keyboard hotkey
+  -- 1).  LÖVE reports an analog trigger as gamepadpressed once it
+  -- crosses the press threshold, so a trigger pull lands here like any
+  -- other pad button.
+  if button == "rightshoulder" or button == "righttrigger" then
     self:_cycleSpeed(1)
     return
-  elseif button == "leftshoulder" then
+  elseif button == "leftshoulder" or button == "lefttrigger" then
     self:_cycleSpeed(-1)
     return
   end
