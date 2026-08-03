@@ -1491,7 +1491,7 @@ local function buildPrompt(imp, m, spec)
     label(panel, spec.hint, 12 * m.s + 1, C("detail"))
   end
   textField(imp, panel, spec.key .. "-field", spec.text or "", nil, true)
-  local btnRow = mk({ parent = panel, width = "100%",
+  local btnRow = mk({ parent = panel, width = "100%", height = m.btnH,
     positioning = "flex", flexDirection = "horizontal",
     justifyContent = "flex-end", gap = 8 * m.s })
   if spec.paste then
@@ -1519,7 +1519,7 @@ local function buildConfirmModal(imp, m)
   for _, line in ipairs(c.lines or {}) do
     label(panel, line, 12 * m.s + 1, C("detail"))
   end
-  local btnRow = mk({ parent = panel, width = "100%",
+  local btnRow = mk({ parent = panel, width = "100%", height = m.btnH,
     positioning = "flex", flexDirection = "horizontal", gap = 10 * m.s })
   button(imp, btnRow, "confirm-yes", c.yesLabel or Strings("OK"), {
     flex = 1, h = m.btnH, size = 13 * m.s + 1, kind = "primary",
