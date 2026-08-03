@@ -12,6 +12,8 @@ local PaletteFX = require("src.render.PaletteFX")
 local Pipelines = require("src.render.Pipelines")
 local PixelCanvas = require("src.render.PixelCanvas")
 local Runtime = require("src.mods.Runtime")
+-- leaf module (no renderer dependency), so requiring it here cannot cycle
+local FaithfulRes = require("src.core.FaithfulRes")
 
 local Renderer = {}
 
@@ -124,7 +126,16 @@ end
 function Renderer:fitScale()
   local _, _, pw, ph = displayMetrics()
   local w, h = self:uiSize()
-  return math.max(1, math.floor(math.min(pw / w, ph / h)))
+  local s = math.max(1, math.floor(math.min(pw / w, ph / h)))
+  -- FAITHFUL RATIO on mobile locks the scale here rather than by resizing the
+  -- window, which a phone does not have (see src/core/FaithfulRes.lua).  The
+  -- cap is the largest WHOLE multiple the display holds, so the picture is as
+  -- big as exact pixels allow and the remainder is bars.  Computed per frame
+  -- off the live drawable size, so a rotate re-derives it with nothing to
+  -- re-apply.
+  local cap = FaithfulRes.scaleCap()
+  if cap and cap < s then s = cap end
+  return s
 end
 
 -- Integer framebuffer pixels per GB pixel for the UI pass.
@@ -224,6 +235,21 @@ end
 -- tilt is inactive).
 function Renderer:worldViewSize()
   local _, _, pw, ph = displayMetrics()
+  -- FAITHFUL RATIO on mobile.  The world pass deliberately expands to cover the
+  -- WHOLE display, so letterbox voids become more map instead of black bars.
+  -- That is why the lock appeared to do nothing in the overworld: it shrank
+  -- the UI blit while the map kept filling the screen -- and showed MORE of
+  -- the map, because a smaller scale fits more world pixels in.
+  --
+  -- Size the view against the LOCKED VIEWPORT rather than the display.  A
+  -- desktop lock gets this for free by making the window exactly 160N x 144N;
+  -- this is the same sum with the viewport standing in for the window, so
+  -- both platforms show the same map area at the same zoom.
+  local cap = FaithfulRes.scaleCap()
+  if cap then
+    local uiw, uih = self:uiSize()
+    pw, ph = uiw * cap, uih * cap
+  end
   local sp = Zoom.scale(self:fitScale())
   local vw, vh = math.ceil(pw / sp), math.ceil(ph / sp)
   -- Even sizes keep Camera:follow on integer pixels (viewW/2 is integral),

@@ -621,7 +621,9 @@ check(PaletteFX.pal({ palettes = nil }, "ROUTE") == gbc.palettes.ROUTE,
 check(PaletteFX.effectiveColors(gbc.palettes.MEWMON) == gbc.palettes.MEWMON,
       "RED++ passes zone colors through like GBC")
 -- issue #84: CELADON_DINER shares LOBBY block 29 (table top) with
--- CELADON_MART_ROOF (#52); both need the $37->$5a BROWN alias
+-- CELADON_MART_ROOF (#52); both need the $37->$5a BROWN alias.
+-- Issue #689: blocks 45 and 49 also form tables with tile $37 on their
+-- flat surfaces; CELADON_DINER uses all three.
 do
   local aliases = PaletteFX.TILE_ALIASES
   local roof = aliases and aliases.CELADON_MART_ROOF
@@ -630,11 +632,20 @@ do
         "CELADON_MART_ROOF and CELADON_DINER both have TILE_ALIASES")
   check(diner == roof,
         "diner reuses the same lobby table-top alias as the mart roof")
+  check(#diner == 3, "three LOBBY table blocks have the tile alias")
   local al = diner and diner[1]
   check(al and al.block == 29 and al.tile == 0x37 and al.alias == 0x5a
         and al.group == 5 and al.cells[5] and al.cells[6]
         and al.cells[9] and al.cells[10],
         "lobby table-top alias remaps block 29 cells 5/6/9/10")
+  al = diner and diner[2]
+  check(al and al.block == 45 and al.tile == 0x37 and al.alias == 0x5a
+        and al.group == 5 and al.cells[13] and al.cells[14],
+        "lobby table-top alias remaps block 45 cells 13/14")
+  al = diner and diner[3]
+  check(al and al.block == 49 and al.tile == 0x37 and al.alias == 0x5a
+        and al.group == 5 and al.cells[1] and al.cells[2],
+        "lobby table-top alias remaps block 49 cells 1/2")
 end
 -- issue #128: RED++'s gbc pack is Red-derived; Blue must keep ROM LOGO1
 -- (and the Blue-only SLOTS* rows) so the title ribbon is blue, not red

@@ -124,6 +124,7 @@ supported out of the box.
 | Key       | What it does                                         |
 | --------- | ---------------------------------------------------- |
 | `-` / `=` | Zoom out / in (overworld; also mouse wheel)          |
+| `1`       | Cycle GAME SPEED up (controller: R2 faster, L2 slower) |
 | `2`       | Cycle COLORS                                         |
 | `3`       | Cycle TILT (free-roam overworld)                     |
 | `4`       | Cycle ZOOM through every level (free-roam overworld) |
@@ -133,8 +134,8 @@ supported out of the box.
 | `F10`     | Open / close the mod manager                         |
 
 
-COLORS, TILT, ZOOM, GBC FX, and VOID FILL are also in the Options menu
-and persist in `options.lua`.
+COLORS, TILT, ZOOM, GBC FX, GAME SPEED, and VOID FILL are also in the
+Options menu and persist in `options.lua`.
 
 ### Low-end devices
 

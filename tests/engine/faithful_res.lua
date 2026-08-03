@@ -1,4 +1,4 @@
--- FAITHFUL RES: lock the window to an exact 160x144 multiple so the surface
+-- FAITHFUL RATIO: lock the window to an exact 160x144 multiple so the surface
 -- is the Game Boy screen with no letterbox at all.
 --
 -- The interesting parts are the two things a naive setMode gets wrong: the
@@ -121,11 +121,22 @@ T.eq(calls[1].flags.minwidth, FaithfulRes.MIN_W, "with conf.lua's floor restored
 T.eq(calls[1].flags.minheight, FaithfulRes.MIN_H, "on both axes")
 T.eq(FaithfulRes.locked, false, "and the module no longer claims the window")
 
--- mobile has no resizable window to lock
+-- Mobile has no resizable window to lock, so it locks the RENDER scale
+-- instead and never calls setMode.  It used to report unlocked and do
+-- nothing at all, which is why the OPTIONS row was inert on Android and iOS;
+-- tests/engine/faithful_res_mobile.lua covers the scale side.
 calls = stubWindow(1)
 love.system = { getOS = function() return "Android" end }
-T.eq(FaithfulRes.apply(4), false, "mobile reports unlocked")
-T.eq(#calls, 0, "and never touches the window")
+T.eq(FaithfulRes.apply(4), true, "mobile locks, by capping the render scale")
+-- the level asked for is irrelevant on mobile: ON is ON, and the scale is
+-- read off the display so the picture is as big as exact pixels allow
+T.eq(FaithfulRes.scaleCap(), FaithfulRes.deviceScale(),
+     "and the scale comes from the display, not from the level")
+T.eq(#calls, 0, "still without ever touching the window")
+T.eq(FaithfulRes.apply(0), false, "OFF releases it")
+T.eq(FaithfulRes.scaleCap(), nil, "and the cap goes away with it")
+T.eq(#calls, 0, "the window is left alone either way")
+FaithfulRes.mobileScale = 0
 
 love.window, love.system = savedWindow, savedSystem
 if love.graphics then

@@ -513,6 +513,24 @@ function Game:wheelmoved(_, dy)
   end
 end
 
+function Game:_cycleSpeed(dir)
+  if not (self.save and self.save.options) then return end
+  local busy
+  local ow = self.overworld
+  if ow then
+    local top = self.stack:top()
+    busy = ow.transitioning
+      or (top == ow and (
+           (ow.runner and ow.runner.isRunning and ow.runner:isRunning())
+        or (ow.scriptMoves and #ow.scriptMoves > 0)
+        or ow.engaging or ow.emote))
+  end
+  if busy then return end
+  local GameSpeed = require("src.core.GameSpeed")
+  self.save.options.speed = GameSpeed.cycle(self.save.options.speed, dir)
+  self:writeOptions()
+end
+
 function Game:keypressed(key)
   if self.stack and self.stack:top() and self.stack:top().onKeyPressed then
     self.stack:top():onKeyPressed(key)
@@ -549,6 +567,11 @@ function Game:keypressed(key)
     return
   elseif key == "=" then
     self:zoomStep(1)
+    return
+  elseif key == "1" then
+    -- cycle GAME SPEED (0.25X → 200X, logic only; audio unaffected);
+    -- R2/L2 on gamepad do the same (see gamepadpressed)
+    self:_cycleSpeed(1)
     return
   elseif key == "2" then
     -- cycle COLORS (GBC / OG / OG INV / GBC INV / CLASSIC); the pack change
@@ -630,6 +653,15 @@ function Game:gamepadpressed(joystick, button)
   -- a controller is being used: the touch overlay steps aside until the
   -- next screen touch (mobile only; a no-op elsewhere)
   TouchControls:noteGamepad()
+  -- shoulder buttons cycle GAME SPEED (R2/rightshoulder = faster,
+  -- L2/leftshoulder = slower; same as keyboard hotkey 1)
+  if button == "rightshoulder" then
+    self:_cycleSpeed(1)
+    return
+  elseif button == "leftshoulder" then
+    self:_cycleSpeed(-1)
+    return
+  end
   -- BindingsMenu's pad capture rides the same top-state routing as keys
   local top = self.stack and self.stack:top()
   if top and top.onGamepadPressed then

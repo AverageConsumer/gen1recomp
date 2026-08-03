@@ -332,6 +332,11 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     require("src.core.Sound").play(data, "Heal_HP")
     -- a revive takes the same .healHP -> .doneHealing route, animating up
     -- from the fainted mon's 0 HP (#252)
+    -- re-add to participants so the revived mon gets its share of exp
+    -- at battle end (onFaint clears the flag; revive must restore it)
+    if battle and battle.participants then
+      battle.participants[target] = true
+    end
     return "consumed", { Strings("%s\nis revitalized!", monName(data, target)) },
            { healedFrom = 0 }
   end

@@ -354,7 +354,7 @@ local function buildRows(game)
     -- Game Boy screen with no letterbox at all.  Sits next to VIDEO MODE
     -- because it overrides it: holding an exact size means dropping
     -- fullscreen.
-    { id = "faithfulRes", label = Strings("FAITHFUL RES"),
+    { id = "faithfulRes", label = Strings("FAITHFUL RATIO"),
       value = function(g)
         return FaithfulRes.label(g.save.options.faithfulRes)
       end,

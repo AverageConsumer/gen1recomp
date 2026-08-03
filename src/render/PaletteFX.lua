@@ -559,15 +559,25 @@ local TILESET_GROUP_EXCEPTIONS = {
 }
 
 -- pokered-gbc's lobby.bst repoints the Celadon LOBBY table's flat top
--- (block 29, cells 5/6/9/10) at a duplicate tile ($5a, BROWN) so the
--- tabletop and the checkerboard floor -- both raw tile $37 -- can take
--- different palettes; the vanilla-derived blockset shares the one tile
--- id, so the RED++ atlas path re-creates the duplicate: the alias slot
--- is baked as a copy of `tile` in `group`'s colors, and the listed
--- 0-based block cells draw the alias instead of the shared tile.
--- Same block appears on CELADON_MART_ROOF (#52) and CELADON_DINER (#84).
+-- at a duplicate tile ($5a, BROWN) so the tabletop and the checkerboard
+-- floor -- both raw tile $37 -- can take different palettes; the
+-- vanilla-derived blockset shares the one tile id, so the RED++ atlas
+-- path re-creates the duplicate: the alias slot is baked as a copy of
+-- `tile` in `group`'s colors, and the listed 0-based block cells draw
+-- the alias instead of the shared tile.
+--
+-- Three LOBBY blocks share tile $37 on their flat surfaces:
+--   block 29: 2x2 table top at cells 5/6/9/10
+--   block 45: 2-tile strip at cells 13/14
+--   block 49: 2-tile strip at cells 1/2
+-- CELADON_DINER uses all three (#84, #85, #86); CELADON_MART_ROOF
+-- uses only block 29 (#52/#53).
 local LOBBY_TABLE_TOP_ALIAS = {
   { block = 29, cells = { [5] = true, [6] = true, [9] = true, [10] = true },
+    tile = 0x37, alias = 0x5a, group = 5 },
+  { block = 45, cells = { [13] = true, [14] = true },
+    tile = 0x37, alias = 0x5a, group = 5 },
+  { block = 49, cells = { [1] = true, [2] = true },
     tile = 0x37, alias = 0x5a, group = 5 },
 }
 PaletteFX.TILE_ALIASES = {

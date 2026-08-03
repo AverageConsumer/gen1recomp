@@ -325,9 +325,14 @@ return {
       table.insert(rows, { "jump_if_false", base + 6 })
       table.insert(rows, { "show_text", "_OaksLabRivalIPickedTheWrongPokemonText" })
       table.insert(rows, { "show_text", "_OaksLabRivalSmellYouLaterText" })
+      -- OaksLabRivalStartsExitScript: parting shot, rival exit fanfare, then
+      -- walk out past the player.  The fanfare was dropped here (#683) -- the
+      -- parcel scene above already plays Music_MeetRival on both arrival and
+      -- departure (lines 144-146), and this exit should match (#596).
+      table.insert(rows, { "stop_music" })
+      table.insert(rows, { "play_music", "Music_MeetRival" })
       table.insert(rows, { "move_npc_to", 1, 4, 11 })
       table.insert(rows, { "hide_object", "OAKS_LAB", "OAKSLAB_RIVAL" })
-      -- restore the lab theme once he's walked out, same as the Yellow port
       table.insert(rows, { "play_music", "Music_OaksLab" })
       ow.runner:run(rows, { npc = rival })
       return true

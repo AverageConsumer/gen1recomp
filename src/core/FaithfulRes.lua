@@ -8,14 +8,31 @@
 -- letterbox entirely, so the surface is the Game Boy screen and nothing else.
 --
 -- Persisted as save.options.faithfulRes (0 = OFF).  Applied from OptionsMenu
--- and on boot via Game:applyOptions.  No-ops on mobile and in headless stubs
--- that lack love.window.
+-- and on boot via Game:applyOptions.  No-ops in headless stubs that lack
+-- love.window.
+--
+-- MOBILE takes the other route to the same place.  There is no window to
+-- resize -- the window IS the screen, and it rotates -- so the lock caps the
+-- RENDER scale instead: the renderer draws the Game Boy screen at exactly N
+-- physical pixels per GB pixel and centres it, and the rest of the display
+-- stays black.  Same promise as the desktop lock (a GB pixel is exactly N
+-- screen pixels, no more) reached by moving the picture rather than the
+-- window.  This used to return false on the first line, so the row sat in
+-- OPTIONS on Android and iOS doing nothing at all.
+--
+-- Scale, not size, is also what makes rotation free: Renderer:fitScale runs
+-- every frame off the live drawable size, so portrait and landscape both get
+-- the same locked scale with the bars falling wherever the screen is longer.
 
 local FaithfulRes = {}
 
 FaithfulRes.WIDTH, FaithfulRes.HEIGHT = 160, 144
 FaithfulRes.LEVELS = { 0, 1, 2, 3, 4 }
 FaithfulRes.DEFAULT = 0
+
+-- mobile only: the locked scale in physical pixels per GB pixel, 0 for OFF.
+-- Renderer:fitScale reads it through FaithfulRes.scaleCap.
+FaithfulRes.mobileScale = 0
 
 -- conf.lua's floor for the resizable desktop window, restored when the lock
 -- is released.  1X and 2X are BELOW it, so the lock has to lower the minimum
@@ -25,21 +42,52 @@ FaithfulRes.MIN_W, FaithfulRes.MIN_H = 480, 360
 -- whether this module currently owns the window size
 FaithfulRes.locked = false
 
+-- The highest level this display can actually show.
+--
+-- On desktop it is 4: the levels are window sizes, and 4X is the ceiling the
+-- feature shipped with.  On mobile there is no window to size, so a fixed
+-- 1..4 ladder is meaningless -- 4X is a quarter of a 1080p phone, and the
+-- levels the panel could really use are not on the list at all.  Derive it
+-- from the screen instead, so a 1080x2400 phone offers up to 6X and the top
+-- of the ladder is the biggest exact-pixel picture it can draw.
+--
+-- OFF (0) is untouched by any of this and keeps doing exactly what it always
+-- did: the renderer fits and letterboxes as usual.
+function FaithfulRes.maxLevel()
+  -- Mobile is ON or OFF.  A ladder of absolute multiples is a desktop idea --
+  -- there it names a window size you can see.  On a phone the same number
+  -- means a different fraction of every device, and every level below the top
+  -- is just a smaller picture for no reason.  ON means one thing instead:
+  -- lock the viewport to the Game Boy's 10:9 and size it to this screen.
+  if FaithfulRes.isMobile() then return 1 end
+  return 4
+end
+
+-- the selectable ladder for this display: OFF, then 1X..maxLevel
+function FaithfulRes.levels()
+  local out = { 0 }
+  for i = 1, FaithfulRes.maxLevel() do out[#out + 1] = i end
+  return out
+end
+
 function FaithfulRes.normalize(v)
   v = math.floor(tonumber(v) or FaithfulRes.DEFAULT)
   if v < 0 then return 0 end
-  if v > 4 then return 4 end
+  local max = FaithfulRes.maxLevel()
+  if v > max then return max end
   return v
 end
 
 function FaithfulRes.label(v)
   v = FaithfulRes.normalize(v)
   if v == 0 then return "OFF" end
+  -- mobile has one ON: the level is chosen from the display, not the player
+  if FaithfulRes.isMobile() then return "ON" end
   return tostring(v) .. "X"
 end
 
 function FaithfulRes.cycle(v, dir)
-  local levels = FaithfulRes.LEVELS
+  local levels = FaithfulRes.levels()
   local cur = 1
   for i, level in ipairs(levels) do
     if level == FaithfulRes.normalize(v) then cur = i break end
@@ -48,6 +96,12 @@ function FaithfulRes.cycle(v, dir)
 end
 
 function FaithfulRes.isMobile()
+  -- POKEPORT_FORCE_MOBILE=1: take the mobile branch on a desktop build, so the
+  -- scale lock can be seen and driven without a device.  The window is still
+  -- resizable, which is the point -- drag it to a phone aspect, rotate it by
+  -- dragging the other way, and the lock has to hold through both.  Only this
+  -- module reads isMobile, so the override cannot leak into anything else.
+  if os.getenv("POKEPORT_FORCE_MOBILE") == "1" then return true end
   if not love or not love.system or not love.system.getOS then return false end
   local osName = love.system.getOS()
   return osName == "Android" or osName == "iOS"
@@ -86,13 +140,50 @@ end
 
 -- Push the lock into the live window.  Returns true when the window is
 -- locked afterwards.
+-- The largest WHOLE multiple of the Game Boy screen this display can hold.
+-- Integer, never fractional: a GB pixel has to be the same number of screen
+-- pixels in both axes or it is not pixel perfect, it is resampled.
+--
+-- The leftover is black bars, and on a tall phone there is a lot of it
+-- vertically -- that is simply what a 10:9 screen looks like on a 9:20
+-- display, and it is what an emulator shows too.
+function FaithfulRes.deviceScale()
+  local g = love and love.graphics
+  if not (g and g.getPixelDimensions) then return 1 end
+  local pw, ph = g.getPixelDimensions()
+  if not pw or not ph or pw <= 0 or ph <= 0 then return 1 end
+  return math.max(1, math.floor(math.min(pw / FaithfulRes.WIDTH,
+                                         ph / FaithfulRes.HEIGHT)))
+end
+
+-- The scale the renderer must lock to, or nil for "fit the window as usual".
+-- Only ever set on mobile: on desktop the window itself is the lock, so
+-- fitScale already lands on N and this would be a second, redundant one.
+--
+-- Always the device maximum.  Anything less is a smaller picture for no gain,
+-- which is how the first cut ended up showing a postage stamp on a 1080p
+-- phone.
+function FaithfulRes.scaleCap()
+  if not FaithfulRes.locked then return nil end
+  if not FaithfulRes.isMobile() then return nil end
+  return FaithfulRes.deviceScale()
+end
+
 function FaithfulRes.apply(v)
-  if FaithfulRes.isMobile() then return false end
+  v = FaithfulRes.normalize(v)
+  -- Mobile: lock the render scale instead of the window.  The scale itself
+  -- comes from the display (deviceScale), not from v -- v only says whether
+  -- the lock is on.  Nothing to restore on release: the renderer simply goes
+  -- back to filling the display.
+  if FaithfulRes.isMobile() then
+    FaithfulRes.locked = v > 0
+    FaithfulRes.mobileScale = FaithfulRes.locked and FaithfulRes.deviceScale() or 0
+    return FaithfulRes.locked
+  end
   if not love or not love.window or not love.window.setMode
      or not love.window.getMode then
     return false
   end
-  v = FaithfulRes.normalize(v)
   local curW, curH, flags = love.window.getMode()
   flags = flags or {}
 

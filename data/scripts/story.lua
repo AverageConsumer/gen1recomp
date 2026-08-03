@@ -942,6 +942,7 @@ M.VICTORY_ROAD_3F = {
   -- fall is onStep, not a collision block.
   onStep = function(game, ow, x, y)
     if x == 23 and y == 15 then
+      require("src.core.Sound").play(game.data, "Faint_Fall")
       ow:startWarpTo("VICTORY_ROAD_2F", 22, 16, ow.player.facing)
       return true
     end

@@ -2673,8 +2673,13 @@ function OverworldState:openPC(onDone)
   -- (engine/menus/pokemon_pc.asm gates on EVENT_MET_BILL; we reach that
   -- when Bill hands over the SS Ticket)
   local metBill = flags.EVENT_MET_BILL or flags.EVENT_GOT_SS_TICKET
+  -- keepOpen so B in the sub-PC returns here instead of exiting the
+  -- PC session (#695); the sub-PC screens (BoxMenu, PlayerPC) already
+  -- use keepOpen for their own rows, matching the original ROM's flow
+  -- where the main menu stays underneath.
   table.insert(items, {
     label = metBill and "BILL'S PC" or Strings("SOMEONE'S PC"),
+    keepOpen = true,
     onSelect = function()
       require("src.core.Sound").play(Game.data, "Enter_PC")
       Screens.push(Game, "BoxMenu")
@@ -2685,6 +2690,7 @@ function OverworldState:openPC(onDone)
   -- the player's item storage is always available
   table.insert(items, {
     label = (Game.save.player.name or "RED") .. "'s PC",
+    keepOpen = true,
     onSelect = function()
       Screens.push(Game, "PlayerPC")
       done()
@@ -2695,6 +2701,7 @@ function OverworldState:openPC(onDone)
   if flags.EVENT_GOT_POKEDEX then
     table.insert(items, {
       label = Strings("PROF.OAK's PC"),
+      keepOpen = true,
       onSelect = function()
         self:openOaksPC(done)
       end,
@@ -3867,7 +3874,9 @@ function OverworldState:takeWarp(warpDef)
     self:startWarpTo(destMap, x, y, facing)
     return
   elseif pad == "hole" then
-    -- falling through a hole: no door SFX, no walk-out step
+    -- falling through a hole: Faint_Fall plays while the player drops,
+    -- matching the boulder-hole Faint_Thud at line 3618 (#694)
+    require("src.core.Sound").play(Game.data, "Faint_Fall")
     self:startWarpTo(destMap, x, y, facing)
     return
   end
