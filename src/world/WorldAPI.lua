@@ -48,6 +48,43 @@ function WorldAPI:current()
            facing = p and p.facing }
 end
 
+local function acceptsMenuInput(game, ow)
+  local runner = ow and ow.runner
+  local stack = game and game.stack
+  return ow and stack and stack.top and stack:top() == ow
+    and not ow.transitioning and not ow.flyAnim and not ow.teleportOut
+    and not ow.engaging and not ow.emote and not ow.pikaHop and not ow.healAnim
+    and not (ow.player and (ow.player.moving or ow.player.inputLocked))
+    and not (runner and runner.isRunning and runner:isRunning())
+    and #(ow.scriptMoves or {}) == 0
+end
+
+function WorldAPI:canReorderParty()
+  local ow, game = self:overworld(), self.game
+  return not not (game and game.save and #(game.save.party or {}) > 1
+    and acceptsMenuInput(game, ow))
+end
+
+-- The same field-only party reorder offered by PartyMenu's SWITCH command.
+-- Keeping the mutation behind mod.world lets companion UIs use it without
+-- reaching into the save, and makes every caller share the overworld lockout.
+function WorldAPI:reorderParty(fromSlot, toSlot)
+  local ow, game = self:overworld(), self.game
+  if not ow then return nil, NO_OVERWORLD end
+  if not acceptsMenuInput(game, ow) then return nil, "world is busy" end
+  local party = game.save and game.save.party or {}
+  fromSlot, toSlot = tonumber(fromSlot), tonumber(toSlot)
+  if not fromSlot or fromSlot ~= math.floor(fromSlot) or not party[fromSlot]
+      or not toSlot or toSlot ~= math.floor(toSlot) or not party[toSlot] then
+    return nil, "invalid party slot"
+  end
+  if fromSlot ~= toSlot then
+    party[fromSlot], party[toSlot] = party[toSlot], party[fromSlot]
+    require("src.core.Sound").play(game.data, "Swap")
+  end
+  return true
+end
+
 local function outside(game, ow)
   return Map.isOutside(ow.map.def,
     FieldDefaults.field(game.data, "outsideTilesets"))

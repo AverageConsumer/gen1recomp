@@ -3,6 +3,10 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 package.loaded["src.core.Logger"] = { warn = function() end }
 package.loaded["src.world.MapLoader"] = { invalidate = function() end }
 package.loaded["src.mods.Runtime"] = { emit = function() end }
+local lastSound
+package.loaded["src.core.Sound"] = {
+  play = function(_, sound) lastSound = sound end,
+}
 package.loaded["src.world.FieldDefaults"] = {
   field = function(data, key) return data.field[key] end,
 }
@@ -79,6 +83,13 @@ local donor = { species = "TEST", level = 20, hp = 100,
 local target = { species = "TEST", level = 10, hp = 50,
   stats = { hp = 100 }, moves = {} }
 game.save.party = { donor, target }
+check(api:canReorderParty(), "party reorder is available in the idle overworld")
+check(api:reorderParty(1, 2), "valid party reorder accepted")
+check(game.save.party[1] == target and game.save.party[2] == donor
+  and lastSound == "Swap", "reorder uses the live party and normal sound")
+check(api:reorderParty(2, 1), "party reorder can restore the original order")
+ok, err = api:reorderParty(0, 2)
+check(not ok and err == "invalid party slot", "invalid party slot rejected")
 actions = api:availableFieldActions()
 local soft
 for _, action in ipairs(actions) do if action.id == "softboiled" then soft = action end end
@@ -104,6 +115,9 @@ eq(world.cutAt[1], 4, "action uses the live facing cell")
 game.stack.states[2] = {}
 ok, err = api:useFieldAction("cut")
 check(not ok and err == "world is busy", "actions cannot fire through another screen")
+check(not api:canReorderParty(), "party reorder is hidden behind another screen")
+ok, err = api:reorderParty(1, 2)
+check(not ok and err == "world is busy", "party reorder cannot cross another screen")
 game.stack.states[2] = nil
 
 check(api:canFly(), "Fly eligibility includes move, badge and outdoor map")
