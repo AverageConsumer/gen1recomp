@@ -298,6 +298,16 @@ bool hasSecondaryDisplay()
 	return result;
 }
 
+bool is24HourClock()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "is24HourClock", "()Z");
+	jboolean result = env->CallStaticBooleanMethod(activity, method);
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
 bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
 	unsigned int backgroundColor, const char *preference)
 {

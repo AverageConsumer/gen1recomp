@@ -116,6 +116,12 @@ int w_hasSecondaryDisplay(lua_State *L)
 	return 1;
 }
 
+int w_is24HourClock(lua_State *L)
+{
+	luax_pushboolean(L, instance()->is24HourClock());
+	return 1;
+}
+
 int w_presentSecondaryDisplay(lua_State *L)
 {
 	auto frame = luax_checktype<love::image::ImageData>(L, 1);
@@ -184,6 +190,7 @@ static const luaL_Reg functions[] =
 	{ "vibrate", w_vibrate },
 	{ "pickFile", w_pickFile },
 	{ "createFile", w_createFile },
+	{ "is24HourClock", w_is24HourClock },
 	{ "hasSecondaryDisplay", w_hasSecondaryDisplay },
 	{ "presentSecondaryDisplay", w_presentSecondaryDisplay },
 	{ "pollSecondaryDisplayTouch", w_pollSecondaryDisplayTouch },

@@ -1500,6 +1500,12 @@ public class GameActivity extends SDLActivity {
     }
 
     @Keep
+    public static boolean is24HourClock() {
+        GameActivity self = (GameActivity) mSingleton;
+        return self == null || android.text.format.DateFormat.is24HourFormat(self);
+    }
+
+    @Keep
     public static boolean hasSecondaryDisplay() {
         GameActivity self = (GameActivity) mSingleton;
         return self != null && presentationIsPreferred(self);

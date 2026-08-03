@@ -221,6 +221,15 @@ bool System::hasSecondaryDisplay() const
 #endif
 }
 
+bool System::is24HourClock() const
+{
+#ifdef LOVE_ANDROID
+	return love::android::is24HourClock();
+#else
+	return true;
+#endif
+}
+
 bool System::presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
 	unsigned int backgroundColor, const char *preference) const
 {

@@ -127,6 +127,7 @@ public:
 	 **/
 	virtual bool createFile(const char *suggestedName = nullptr) const;
 
+	virtual bool is24HourClock() const;
 	virtual bool hasSecondaryDisplay() const;
 	virtual bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
 		unsigned int backgroundColor = 0xFF000000U,
