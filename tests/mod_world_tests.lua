@@ -883,6 +883,8 @@ do
   local api = WorldAPI.new({ data = Data, stack = { states = {} } }, "tester")
   local value, err = api:current()
   check(value == nil and err == "no overworld", "current() off the world")
+  value, err = api:mapOverview()
+  check(value == nil and err == "no overworld", "mapOverview() off the world")
   value, err = api:warpTo("PALLET_TOWN", 5, 6)
   check(value == nil and err == "no overworld", "warpTo() off the world")
   value, err = api:replaceBlock(0, 0, 1)
@@ -912,6 +914,16 @@ do
   local snapshot = api:current()
   check(snapshot.mapId == "PALLET_TOWN" and snapshot.x == 5 and snapshot.y == 6
     and snapshot.facing == "down", "current() snapshots the live world")
+
+  local overview = api:mapOverview()
+  check(overview.mapId == "PALLET_TOWN"
+    and overview.width == map.widthCells and overview.height == map.heightCells
+    and #overview.rows == map.heightCells
+    and #overview.rows[1] == map.widthCells,
+    "mapOverview() snapshots the active map dimensions")
+  for _, row in ipairs(overview.rows) do
+    check(not row:find("[^ %.~+]"), "mapOverview() only exposes documented cells")
+  end
 
   -- flags
   check(api:setFlag("mod:tester:hello", true), "setFlag writes")
