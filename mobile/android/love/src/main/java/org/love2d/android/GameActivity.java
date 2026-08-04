@@ -622,11 +622,6 @@ public class GameActivity extends SDLActivity {
         }
     }
 
-    @Keep
-    public static void closeCompanionDisplay() {
-        setSecondaryEnabled(false);
-    }
-
     /**
      * Relaunches the whole app for love.system.restartApp, used by
      * src/core/HostShell.lua when a mod toggle needs a cold boot (#575).

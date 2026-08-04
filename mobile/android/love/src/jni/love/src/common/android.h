@@ -99,11 +99,6 @@ bool restartApp();
 bool httpDownload(const char *url, const char *destPath, const char *userAgent, const char *accept);
 
 bool is24HourClock();
-bool hasSecondaryDisplay();
-bool presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
-	unsigned int backgroundColor = 0xFF000000U, const char *preference = "auto");
-std::string pollSecondaryDisplayTouch();
-void closeSecondaryDisplay();
 
 /*
  * Helper functions for the filesystem module

@@ -212,54 +212,12 @@ bool System::createFile(const char *suggestedName) const
 #endif
 }
 
-bool System::hasSecondaryDisplay() const
-{
-#ifdef LOVE_ANDROID
-	return love::android::hasSecondaryDisplay();
-#else
-	return false;
-#endif
-}
-
 bool System::is24HourClock() const
 {
 #ifdef LOVE_ANDROID
 	return love::android::is24HourClock();
 #else
 	return true;
-#endif
-}
-
-bool System::presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
-	unsigned int backgroundColor, const char *preference) const
-{
-#ifdef LOVE_ANDROID
-	return love::android::presentSecondaryDisplay(width, height, rgba, size,
-		backgroundColor, preference);
-#else
-	LOVE_UNUSED(width);
-	LOVE_UNUSED(height);
-	LOVE_UNUSED(rgba);
-	LOVE_UNUSED(size);
-	LOVE_UNUSED(backgroundColor);
-	LOVE_UNUSED(preference);
-	return false;
-#endif
-}
-
-std::string System::pollSecondaryDisplayTouch() const
-{
-#ifdef LOVE_ANDROID
-	return love::android::pollSecondaryDisplayTouch();
-#else
-	return std::string();
-#endif
-}
-
-void System::closeSecondaryDisplay() const
-{
-#ifdef LOVE_ANDROID
-	love::android::closeSecondaryDisplay();
 #endif
 }
 

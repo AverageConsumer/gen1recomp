@@ -21,7 +21,6 @@
 // LOVE
 #include "wrap_System.h"
 #include "sdl/System.h"
-#include "image/ImageData.h"
 
 namespace love
 {
@@ -110,43 +109,10 @@ int w_createFile(lua_State *L)
 	return 1;
 }
 
-int w_hasSecondaryDisplay(lua_State *L)
-{
-	luax_pushboolean(L, instance()->hasSecondaryDisplay());
-	return 1;
-}
-
 int w_is24HourClock(lua_State *L)
 {
 	luax_pushboolean(L, instance()->is24HourClock());
 	return 1;
-}
-
-int w_presentSecondaryDisplay(lua_State *L)
-{
-	auto frame = luax_checktype<love::image::ImageData>(L, 1);
-	unsigned int backgroundColor = 0xFF000000U
-		| ((unsigned int) luaL_optinteger(L, 2, 0) & 0x00FFFFFFU);
-	const char *preference = luaL_optstring(L, 3, "auto");
-	luax_pushboolean(L, instance()->presentSecondaryDisplay(frame->getWidth(), frame->getHeight(),
-		frame->getData(), frame->getSize(), backgroundColor, preference));
-	return 1;
-}
-
-int w_pollSecondaryDisplayTouch(lua_State *L)
-{
-	std::string touch = instance()->pollSecondaryDisplayTouch();
-	if (touch.empty())
-		lua_pushnil(L);
-	else
-		luax_pushstring(L, touch);
-	return 1;
-}
-
-int w_closeSecondaryDisplay(lua_State *L)
-{
-	instance()->closeSecondaryDisplay();
-	return 0;
 }
 
 int w_syncHealthSteps(lua_State *L)
@@ -191,10 +157,6 @@ static const luaL_Reg functions[] =
 	{ "pickFile", w_pickFile },
 	{ "createFile", w_createFile },
 	{ "is24HourClock", w_is24HourClock },
-	{ "hasSecondaryDisplay", w_hasSecondaryDisplay },
-	{ "presentSecondaryDisplay", w_presentSecondaryDisplay },
-	{ "pollSecondaryDisplayTouch", w_pollSecondaryDisplayTouch },
-	{ "closeSecondaryDisplay", w_closeSecondaryDisplay },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
 	{ "httpDownload", w_httpDownload },

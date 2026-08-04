@@ -110,9 +110,11 @@ battle.current = { text = "Waiting" }
 battle.msgPrompt = true
 local waiting = api:snapshot()
 eq(waiting.prompt, "advance", "waiting battle text is touch-controllable")
-check(api:submit({ id = 3, revision = waiting.revision,
-                   kind = "advance" }), "battle text advance accepted")
-eq(game.input.pressQueue[1], "a", "advance uses the engine input path")
+ok, err = api:submit({ id = 3, revision = waiting.revision,
+                       kind = "advance" })
+check(not ok and err == "unknown battle intent",
+  "button input stays on the upstream mod.input API")
+eq(#game.input.pressQueue, 0, "battle facade does not mutate the input queue")
 
 battle.current, battle.msgPrompt, battle.phase = nil, nil, "menu"
 battle.kindOverride, battle.safari = "safari", { balls = 17 }
