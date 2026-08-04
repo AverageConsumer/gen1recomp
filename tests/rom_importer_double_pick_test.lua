@@ -23,11 +23,14 @@ local S = require("tests.harness").suite("rom importer double pick (#553)")
 local check = S.check
 
 local RomImporter = require("src.import.RomImporter")
+local Platform = require("src.core.Platform")
 
 love.system = love.system or {}
 local saved = {
   getOS = love.system.getOS,
   pickFile = love.system.pickFile,
+  getPickedFile = love.system.getPickedFile,
+  getPickError = love.system.getPickError,
   getDirectoryItems = love.filesystem.getDirectoryItems,
   getInfo = love.filesystem.getInfo,
   read = love.filesystem.read,
@@ -51,6 +54,7 @@ love.filesystem.remove = function(name) saveDir[name] = nil; return true end
 
 local function importer(os)
   love.system.getOS = function() return os end
+  Platform._resetForTests()
   local ri = RomImporter.new(function() end, { launcher = true })
   ri.ready = { red = false, blue = false, yellow = false }
   return ri
@@ -66,6 +70,7 @@ local ios = importer("iOS")
 check(ios.pickPending, "iOS still boots armed (unchanged by this fix)")
 
 love.system.getOS = function() return "OS X" end
+Platform._resetForTests()
 local desktop = RomImporter.new(function() end, { launcher = true })
 check(not desktop.pickPending, "desktop does not poll: it has no save-dir picks")
 
@@ -161,9 +166,12 @@ check(not touch._flex,
 
 love.system.getOS = saved.getOS
 love.system.pickFile = saved.pickFile
+love.system.getPickedFile = saved.getPickedFile
+love.system.getPickError = saved.getPickError
 love.filesystem.getDirectoryItems = saved.getDirectoryItems
 love.filesystem.getInfo = saved.getInfo
 love.filesystem.read = saved.read
 love.filesystem.remove = saved.remove
+Platform._resetForTests()
 
 S.finish()

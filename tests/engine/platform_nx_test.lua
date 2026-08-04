@@ -37,6 +37,19 @@ withOS("NX", nil, function(Platform)
   eq(Platform.romImportMode(), "save-directory", "romImportMode helper")
 end)
 
+-- Xbox UWP: native picker, console constraints, no in-app updater
+withOS("UWP", function() end, function(Platform)
+  local caps = Platform.detect()
+  eq(caps.os, "UWP", "UWP detect os")
+  eq(caps.uwp, true, "UWP flag")
+  eq(caps.console, true, "UWP console")
+  eq(caps.hasNativePicker, true, "UWP has pickFile")
+  eq(caps.romImportMode, "native-picker", "UWP romImportMode")
+  eq(caps.canSpawnProcess, false, "UWP cannot spawn processes")
+  eq(caps.networkValidated, false, "UWP network not validated")
+  eq(Platform.isUWP(), true, "isUWP convenience")
+end)
+
 -- Android: mobile native picker path, not NX semantics
 withOS("Android", function() end, function(Platform)
   local caps = Platform.detect()

@@ -181,6 +181,85 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  xbox-uwp-changes:
+    name: detect Xbox UWP changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(ports/uwp/|scripts/build_xbox_uwp\.sh$|scripts/xbox-uwp/|scripts/pack_love\.sh$|\.github/workflows/(ci|release)\.yml$|src/core/Platform\.lua$|src/import/(CacheFs|RomImporter)\.lua$|src/update/Check\.lua$|tests/engine/(platform_nx|uwp_native_picker)_test\.lua$|tests/rom_importer_double_pick_test\.lua$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  xbox-uwp-selftest:
+    name: Xbox UWP offline selftest
+    needs: xbox-uwp-changes
+    if: needs.xbox-uwp-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Xbox UWP offline selftest
+        run: bash scripts/xbox-uwp/selftest_build_xbox_uwp.sh
+      - name: Build shared payload
+        run: |
+          scripts/pack_love.sh \
+            --output .bazinga/work/ci-game.love \
+            --listing .bazinga/work/ci-love-listing.txt \
+            --version 0.0.0
+      - name: Upload shared payload
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-xbox-uwp-payload
+          path: .bazinga/work/ci-game.love
+          if-no-files-found: error
+          retention-days: 1
+
+  xbox-uwp-build:
+    name: Xbox UWP build
+    needs: [xbox-uwp-changes, xbox-uwp-selftest]
+    if: |
+      always()
+      && needs.xbox-uwp-changes.outputs.changed == 'true'
+      && needs.xbox-uwp-selftest.result == 'success'
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download shared payload
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-xbox-uwp-payload
+          path: .bazinga/work
+      - name: Build Xbox UWP package
+        shell: bash
+        run: |
+          bash scripts/build_xbox_uwp.sh \
+            --release \
+            --version 0.0.0 \
+            --game-love .bazinga/work/ci-game.love
+      - name: Upload Xbox UWP package
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-xbox-uwp
+          path: |
+            dist/xbox-uwp/gen1recomp-0.0.0-xbox-uwp.zip
+            dist/xbox-uwp/gen1recomp-0.0.0-xbox-uwp.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   headless:
     name: headless suites (no ROM)
     runs-on: ubuntu-latest

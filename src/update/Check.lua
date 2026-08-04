@@ -17,6 +17,7 @@
 -- worker can reuse the exact same code path via love.filesystem.load.
 
 local Check = {}
+local Platform = require("src.core.Platform")
 
 -- Fork builds must never follow the official release feed: a payload without
 -- the companion bridge would silently remove the feature this host exists for.
@@ -101,6 +102,10 @@ local cache = { status = "idle" } -- newest snapshot from the worker
 
 local function ensureWorker()
   if workerReady ~= nil then return workerReady end
+  if not Platform.networkValidated() then
+    workerReady = false
+    return false
+  end
   if not (love and love.thread and love.thread.newThread) then
     workerReady = false
     return false

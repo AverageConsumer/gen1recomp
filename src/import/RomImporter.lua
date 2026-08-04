@@ -1035,6 +1035,7 @@ function RomImporter.new(onComplete, opts)
     mobileFileBridge = mobileFileBridge,
     android = android,
     ios = mobileOS == "iOS",
+    nativePicker = romImportMode == "native-picker",
     -- One startup poll pass on both mobiles.  iOS: files dropped through the
     -- Files app are swept into the save dir before Lua boots (GRBootstrap) with
     -- no love.focus event necessarily following.  Android: the SAF picker is a
@@ -1094,8 +1095,8 @@ function RomImporter.new(onComplete, opts)
     -- Android SAF create-document: which game's SAVE FILES card should show
     -- "Save exported." when export_done.flag appears on focus.
     androidPendingExportVersion = nil,
-    iosPendingKind = nil,
-    iosPendingVersion = nil,
+    pickerPendingKind = nil,
+    pickerPendingVersion = nil,
     -- Virtual pointer for handhelds / gamepads (Anbernic stock OS has no
     -- mouse).  D-pad + left stick move it; A clicks; shoulders cycle tabs;
     -- right stick scrolls the save-slot / mods lists.
@@ -1494,10 +1495,10 @@ function RomImporter:chooseMod()
     self:rescanModsAction()
     return
   end
-  if self.ios and love.system.getPickedFile then
-    self.iosPendingKind = "mod"
+  if self.nativePicker and love.system.getPickedFile then
+    self.pickerPendingKind = "mod"
     if not pickFile("mod") then
-      self.iosPendingKind = nil
+      self.pickerPendingKind = nil
       self.modNotice = { ok = false, text = "Could not open the file picker." }
     end
     return
@@ -1570,12 +1571,12 @@ function RomImporter:chooseSaveImport(version)
     self:rescanSavesAction(version)
     return
   end
-  if self.ios and love.system.getPickedFile then
-    self.iosPendingKind = "sav"
-    self.iosPendingVersion = version
+  if self.nativePicker and love.system.getPickedFile then
+    self.pickerPendingKind = "sav"
+    self.pickerPendingVersion = version
     if not pickFile("sav") then
-      self.iosPendingKind = nil
-      self.iosPendingVersion = nil
+      self.pickerPendingKind = nil
+      self.pickerPendingVersion = nil
       self.saveNotice[version] = { ok = false, text = "Could not open the file picker." }
     end
     return
@@ -1688,10 +1689,10 @@ function RomImporter:choose(version)
     self:rescanAction(self.chooseVersion)
     return
   end
-  if self.ios and love.system.getPickedFile then
-    self.iosPendingKind = "rom"
+  if self.nativePicker and love.system.getPickedFile then
+    self.pickerPendingKind = "rom"
     if not pickFile("rom") then
-      self.iosPendingKind = nil
+      self.pickerPendingKind = nil
       self:setError("Could not open the file picker.")
     end
     return
@@ -1890,27 +1891,35 @@ function RomImporter:update(dt)
       end)
     end
   end
-  if self.ios and love.system.getPickedFile and self.workState ~= "working" then
+  if self.nativePicker and love.system.getPickedFile and self.workState ~= "working" then
     local path = love.system.getPickedFile()
     if path then
-      local kind = self.iosPendingKind or "rom"
-      local version = self.iosPendingVersion
-      self.iosPendingKind = nil
-      self.iosPendingVersion = nil
+      local kind = self.pickerPendingKind or "rom"
+      local version = self.pickerPendingVersion
+      self.pickerPendingKind = nil
+      self.pickerPendingVersion = nil
       if kind == "mod" then
         self:_installMod(path)
+        if Platform.isUWP() and self.modNotice and self.modNotice.ok then
+          os.remove(path)
+        end
       elseif kind == "sav" then
-        self:_importSave(version or self:_savedropTarget(), path)
+        local target = version or self:_savedropTarget()
+        self:_importSave(target, path)
+        if Platform.isUWP() and self.saveNotice[target] and self.saveNotice[target].ok then
+          os.remove(path)
+        end
       else
         self:startPath(path)
+        if Platform.isUWP() then os.remove(path) end
       end
     elseif love.system.getPickError then
       local errorText = love.system.getPickError()
       if errorText then
-        local kind = self.iosPendingKind or "rom"
-        local version = self.iosPendingVersion or self:_savedropTarget()
-        self.iosPendingKind = nil
-        self.iosPendingVersion = nil
+        local kind = self.pickerPendingKind or "rom"
+        local version = self.pickerPendingVersion or self:_savedropTarget()
+        self.pickerPendingKind = nil
+        self.pickerPendingVersion = nil
         if kind == "mod" then
           self.modNotice = { ok = false, text = errorText }
         elseif kind == "sav" then

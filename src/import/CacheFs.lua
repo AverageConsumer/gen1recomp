@@ -28,6 +28,7 @@
 -- ordinary love.filesystem/save-directory behaviour.
 
 local CacheFs = {}
+local Platform = require("src.core.Platform")
 
 local SEP = package.config:sub(1, 1)
 
@@ -52,6 +53,7 @@ local mkdirFn = nil
 local function resolveMkdir()
   if mkdirFn ~= nil then return mkdirFn end
   mkdirFn = false
+  if Platform.isUWP() then return mkdirFn end
   local ok, ffi = pcall(require, "ffi")
   if not ok then return mkdirFn end
   if ffi.os == "Windows" then
@@ -83,6 +85,7 @@ local rmdirFn = nil
 local function resolveRmdir()
   if rmdirFn ~= nil then return rmdirFn end
   rmdirFn = false
+  if Platform.isUWP() then return rmdirFn end
   local ok, ffi = pcall(require, "ffi")
   if not ok then return rmdirFn end
   if ffi.os == "Windows" then

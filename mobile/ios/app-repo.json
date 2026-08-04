@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.67",
+          "date": "2026-08-04",
+          "size": 9767619,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.67/gen1recomp-0.1.67-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #373 Lines at Title Screen\n- #644 Substitute failing causes visual issues\n- #673 iOS: thin vertical seam below the START menu panel (v0.1.56, iPhone 15 Pro Max)\n- #703 Credits playing too fast (song ends after it should)\n- #726 Surfing Pikachu Minigame Broken\n- #737 Battle menu move cursor fails to reset to the first slot after switching Pokémon\n- #750 NPC (possibly player) trades still graphically broken\n- #752 Launcher exports save to AppData while in portable mode\n- #764 Trainer Fanfare doesn't play\n- #765 Text Advance broken in certain aspects\n- #768 Menu behaviour for Pokemon and HM moves\n- #773 Battle screen colours messed up when BG = World, battle in un-flashed Rock Tunnel\n- #774 bug(build): Desktop build can reject a valid game archive under pipefail\n- #775 TM42 Dream Eater dialog.\n- #777 Battle Screen is Very dark\n- #780 Do not delete save\n- #782 Giovanni battle at Silph Co plays wrong song\n\n## Contributors\n\n- @bryanthaboi\n- @luisgonzaleznf\n- @ShaneMcGovernIE"
+        },
+        {
           "version": "0.1.66",
           "date": "2026-08-04",
           "size": 9749980,
