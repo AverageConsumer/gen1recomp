@@ -234,8 +234,12 @@ What was ported from pokered's engine code and where it came from.
   pre-battle text and engages the leader battle (badge/TM via
   data/scripts/victories.lua); post-badge talk prints the leader's
   post-battle advice text (Misty's is her TM11 explanation). The
-  originals' middle branch (beaten but TM not handed over) is
-  unreachable since the TM is granted with the victory. Giovanni's
+  originals' middle branch (beaten but TM not handed over,
+  CheckEventReuseA EVENT_GOT_TM*) is ported too: the victory's GiveItem
+  goes through the bag's capacity check, a full bag shows the leader's
+  "make room" text instead of the received lines and leaves
+  EVENT_GOT_TM* unset, and talking to the leader re-runs the ReceiveTM
+  script until the TM goes in (#797). Giovanni's
   farewell (`ViridianGymGiovanniText` .afterBeat) hides him inside a
   fade-to-black/fade-in Transition matching ViridianGym.asm's
   GBFadeOutToBlack → HideObject → GBFadeInFromBlack, persisted

@@ -249,14 +249,24 @@ do
     "LauncherView exports applyNxPerfGuards")
   check(view:find("LauncherView.applyNxPerfGuards(imp)", 1, true) ~= nil,
     "ensureFlex calls applyNxPerfGuards")
-  check(view:find("FlexLove._Performance.enabled = false", 1, true) ~= nil,
-    "NX guard disables Performance.enabled")
-  check(view:find("mp.enabled = false", 1, true) ~= nil,
-    "NX guard disables memory profiling")
-  -- The guard used to be NX-only; the same perf-timer and GC hitches showed
-  -- up in desktop scrolling, so it now applies on every platform.
-  check(view:find("if not (imp and FlexLove.isReady()", 1, true) ~= nil,
-    "perf guard applies on every platform (not gated on imp.isNX)")
+  -- The perf guards these lines used to assert were FlexLove's: turning its
+  -- per-frame profiler off and softening its GC strategy, because the
+  -- immediate-mode tree rebuild allocated a full element graph every frame.
+  -- FlexLove is gone; the kit has no profiler and no GC strategy to tune
+  -- because it does not allocate per frame.  What is worth guarding now is
+  -- that the dependency does not come back -- on NX it was the single
+  -- largest frame cost in the launcher.
+  -- Test the DEPENDENCY, not the word: the file's header comment explains
+  -- what it replaced, and that history is worth keeping.
+  check(view:find("libs.flexlove", 1, true) == nil,
+    "the launcher view does not require FlexLove")
+  check(view:find("FlexLove%.%a") == nil,
+    "the launcher view makes no FlexLove calls")
+  check(view:find('require("src.ui.kit.Kit")', 1, true) ~= nil,
+    "the launcher view draws with the shared UI kit")
+  local hasLib = io.open("libs/flexlove/FlexLove.lua", "r")
+  if hasLib then hasLib:close() end
+  check(hasLib == nil, "the FlexLove library is not vendored any more")
   check(view:find("parkNxPointerForHost", 1, true) ~= nil,
     "detach parks NX pointer before tearing down")
 
@@ -284,8 +294,13 @@ do
 
   check(view:find("math.floor(x + 0.5)", 1, true) ~= nil,
     "NX pad cursor draw is pixel-snapped")
-  check(view:find('strategy = "periodic"', 1, true) ~= nil,
-    "NX softens FlexLove GC strategy")
+  -- Pagination replaced scrolling, which is what removes the per-frame cost
+  -- that the old GC tuning was compensating for: a page's row count is
+  -- bounded by the viewport, so a long list costs what a short one does.
+  check(view:find("Kit.pager(", 1, true) ~= nil,
+    "launcher lists paginate instead of scrolling")
+  check(view:find("Kit.rowsThatFit(", 1, true) ~= nil,
+    "page size is derived from the real viewport height")
 end
 
 T.finish("launcher_nx_pad_cursor")

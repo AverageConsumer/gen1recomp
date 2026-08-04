@@ -266,6 +266,36 @@ function Ops.openSpeciesPicker(S, Kit)
   return true
 end
 
+-- The item catalog minus the badges, which are toggles on their own row and
+-- would otherwise be "addable" into the bag as ordinary items.
+function Ops.itemSearch(S, query)
+  query = tostring(query or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+  local out = {}
+  for _, id in ipairs(S.cat.items) do
+    if not Ops.isBadgeId(id)
+        and (query == "" or id:lower():find(query, 1, true)) then
+      out[#out + 1] = id
+    end
+  end
+  return out
+end
+
+-- `dest` is "bag" or "pc"; the picker can flip it while open.  `opened`
+-- marks the frame it went up, so the click that opened it is not also read
+-- as a tap outside (the same rule the species picker follows).
+function Ops.openItemPicker(S, Kit, dest)
+  S.itemPicker = { query = "", offset = 0, opened = true,
+    dest = dest or "bag" }
+  -- focus the field on open so the mobile soft keyboard rises with it (#529)
+  if Kit then Kit.focus = "item-picker" end
+  return true
+end
+
+function Ops.closeItemPicker(S, Kit)
+  S.itemPicker = nil
+  if Kit and Kit.blur then Kit.blur() end
+end
+
 function Ops.closeSpeciesPicker(S, Kit)
   S.speciesPicker = nil
   if Kit and Kit.blur then Kit.blur() end

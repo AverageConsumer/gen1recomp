@@ -183,7 +183,7 @@ do
     new = function(game, text, done) return { text = text, onDone = done } end,
   }
 
-  local function driveLeader(mapId, textConst, beatFlag)
+  local function driveLeader(mapId, textConst, beatFlag, gotFlag)
     local pushed, engaged
     local game = {
       save = { flags = {} },
@@ -198,6 +198,9 @@ do
       mapId .. " leader talk (no badge) engages the leader battle")
     engaged, pushed = nil, nil
     game.save.flags[beatFlag] = true
+    -- the advice/farewell branch is pokered's .afterBeat, reached only
+    -- once EVENT_GOT_TM* is set (the TM went into the bag)
+    if gotFlag then game.save.flags[gotFlag] = true end
     local state = {}
     script(game, ow, { def = {} }, function() state.doneCalled = true end)
     check(pushed and not engaged,
@@ -206,17 +209,17 @@ do
   end
 
   local _, box = driveLeader("CERULEAN_GYM", "TEXT_CERULEANGYM_MISTY",
-                             "EVENT_BEAT_MISTY")
+                             "EVENT_BEAT_MISTY", "EVENT_GOT_TM11")
   eq(box and box.text, Data.text._CeruleanGymMistyTM11ExplanationText,
      "Misty (beaten) shows the TM11 explanation text")
 
   _, box = driveLeader("CINNABAR_GYM", "TEXT_CINNABARGYM_BLAINE",
-                       "EVENT_BEAT_BLAINE")
+                       "EVENT_BEAT_BLAINE", "EVENT_GOT_TM38")
   eq(box and box.text, Data.text._CinnabarGymBlainePostBattleAdviceText,
      "Blaine (beaten) shows his post-battle advice text")
 
   local game, gbox, state = driveLeader("VIRIDIAN_GYM", "TEXT_VIRIDIANGYM_GIOVANNI",
-                                        "EVENT_BEAT_GIOVANNI")
+                                        "EVENT_BEAT_GIOVANNI", "EVENT_GOT_TM27")
   eq(gbox and gbox.text, Data.text._ViridianGymGiovanniPostBattleAdviceText,
      "Giovanni (beaten) shows his farewell text")
 
@@ -391,6 +394,59 @@ do
   end
   check(cinnabarNpc and ow:trainerDefeated(cinnabarNpc),
         "unfought Cinnabar trainer is defeated via seeded header event")
+
+  -- #797: a full bag at the victory skips the TM hand-over (pokered's
+  -- `call GiveItem` / `jr nc, .BagFull`): badge and beat flag still land,
+  -- but EVENT_GOT_TM34 stays unset and the "make room" line replaces the
+  -- received/explanation texts.  Talking to Brock afterwards re-runs the
+  -- ReceiveTM script and grants the TM once there is room.
+  while Game.stack:top() do Game.stack:pop() end
+  Game.save = SaveData.newGame()
+  Game.save.flags = {}
+  Game.save.inventory = {}
+  Game.save.defeatedTrainers = {}
+  local Bag = require("src.inventory.Bag")
+  for i = 1, Bag.capacity(Data) do
+    Bag.add(Game.save, "FULLBAG_" .. i, 1, Data)
+  end
+  eq(Bag.slots(Game.save), Bag.capacity(Data), "bag is full before Brock")
+  Game.stack:push(OW, "PEWTER_GYM", 4, 13, "up")
+  ow = Game.stack:top()
+  ow:checkVictoryRewards("OPP_BROCK", 1)
+  local fullBagText = stackedDialogue()
+  check(Game.save.flags.EVENT_BEAT_BROCK,
+        "full bag: Brock victory still sets EVENT_BEAT_BROCK")
+  check(Game.save.inventory.BOULDERBADGE == 1,
+        "full bag: Brock victory still awards BOULDERBADGE")
+  check(not Game.save.flags.EVENT_GOT_TM34,
+        "full bag: EVENT_GOT_TM34 stays unset (bag_full branch)")
+  check(Game.save.inventory.TM_BIDE == nil,
+        "full bag: TM34 is not forced into the bag")
+  check(fullBagText:find("room", 1, true) ~= nil,
+        "full bag: victory dialogue shows Brock's make-room line")
+  check(fullBagText:find("BIDE", 1, true) == nil,
+        "full bag: received/explanation texts are skipped")
+
+  -- make room, then talk to Brock: the middle branch re-runs ReceiveTM34
+  while Game.stack:top() do Game.stack:pop() end
+  Bag.remove(Game.save, "FULLBAG_1", 1)
+  local brockTalk = init.talkScript("PEWTER_GYM", "TEXT_PEWTERGYM_BROCK")
+  check(brockTalk ~= nil, "Brock's talk script is registered")
+  brockTalk(Game, ow, { def = {} }, function() end)
+  local retryText = stackedDialogue()
+  check(retryText:find("Wait!", 1, true) ~= nil,
+        "retry: ReceiveTM34 lead-in (Wait! Take this!) shows again")
+  check(retryText:find("BIDE", 1, true) ~= nil,
+        "retry: received/explanation texts show once the TM fits")
+  eq(Game.save.inventory.TM_BIDE, 1, "retry: TM34 goes into the bag")
+  check(Game.save.flags.EVENT_GOT_TM34, "retry: EVENT_GOT_TM34 is set")
+
+  -- once the TM is handed over, Brock falls back to his advice text
+  while Game.stack:top() do Game.stack:pop() end
+  brockTalk(Game, ow, { def = {} }, function() end)
+  local adviceText = stackedDialogue()
+  check(adviceText:find("CERULEAN", 1, true) ~= nil,
+        "after the TM: Brock shows his post-battle advice text")
 
   while Game.stack:top() do Game.stack:pop() end
 end

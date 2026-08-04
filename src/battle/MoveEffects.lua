@@ -26,9 +26,14 @@ local function displayName(b)
   return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
 end
 
+-- Stat names as printed (data/battle/stat_mod_names.asm
+-- StatModTextStrings).  Strings.source, not Strings: this table is built
+-- at require time, before Strings.load has a catalog, so changeStage
+-- looks each label up at use time (#811).
 local STAT_LABEL = {
-  attack = "ATTACK", defense = "DEFENSE", speed = "SPEED",
-  special = "SPECIAL", accuracy = "ACCURACY", evasion = "EVADE",
+  attack = Strings.source("ATTACK"), defense = Strings.source("DEFENSE"),
+  speed = Strings.source("SPEED"), special = Strings.source("SPECIAL"),
+  accuracy = Strings.source("ACCURACY"), evasion = Strings.source("EVADE"),
 }
 
 -- ---------------------------------------------------------------------
@@ -54,14 +59,15 @@ local function changeStage(battle, who, stat, delta, fromEnemy)
   who.hazeStatReset = nil
   -- _MonsStatsRoseText/_MonsStatsFellText: "X's / STAT rose!"; the
   -- two-stage variants scroll "greatly" onto a third line
+  local label = Strings(STAT_LABEL[stat])  -- looked up here, not at require (#811)
   if delta >= 2 then
-    return { Strings("%s's\n%s\ngreatly rose!", displayName(who), STAT_LABEL[stat]) }
+    return { Strings("%s's\n%s\ngreatly rose!", displayName(who), label) }
   elseif delta == 1 then
-    return { Strings("%s's\n%s rose!", displayName(who), STAT_LABEL[stat]) }
+    return { Strings("%s's\n%s rose!", displayName(who), label) }
   elseif delta == -1 then
-    return { Strings("%s's\n%s fell!", displayName(who), STAT_LABEL[stat]) }
+    return { Strings("%s's\n%s fell!", displayName(who), label) }
   end
-  return { Strings("%s's\n%s\ngreatly fell!", displayName(who), STAT_LABEL[stat]) }
+  return { Strings("%s's\n%s\ngreatly fell!", displayName(who), label) }
 end
 MoveEffects.changeStage = changeStage
 
@@ -494,7 +500,9 @@ MoveEffects.full = {
     chooseDamage = function(ctx)
       -- no immunity check: SetDamageEffects skips AdjustDamageForMoveType (#616)
       local dmg = fixedDamageFor(ctx)
-      if not dmg then return nil, "But, it failed!" end
+      if not dmg then
+        return nil, romText(ctx.battle.data, "_ButItFailedText", "But, it failed!")
+      end
       return dmg, plainInfo()
     end,
   },
@@ -510,7 +518,7 @@ MoveEffects.full = {
       local blocked = immuneMsg(ctx)
       if blocked then return false, blocked end
       if TurnOrder.effectiveSpeed(ctx.user) < TurnOrder.effectiveSpeed(ctx.target) then
-        return false, "But, it failed!"
+        return false, romText(ctx.battle.data, "_ButItFailedText", "But, it failed!")
       end
       return true
     end,
@@ -535,7 +543,9 @@ MoveEffects.full = {
   DREAM_EATER_EFFECT = {
     -- only works on sleeping targets (checked before damage)
     gate = function(ctx)
-      if ctx.target.mon.status ~= "SLP" then return false, "But, it failed!" end
+      if ctx.target.mon.status ~= "SLP" then
+        return false, romText(ctx.battle.data, "_ButItFailedText", "But, it failed!")
+      end
       return true
     end,
     afterDamage = drainHalf("_DreamWasEatenText", Strings.source("%s's\ndream was eaten!")),

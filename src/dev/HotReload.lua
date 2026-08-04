@@ -31,6 +31,12 @@ function HotReload.run(game, opts)
   local Logger = require("src.core.Logger")
   local data = game.data
   if data and data.reloadGenerated then data:reloadGenerated() end
+  -- outstanding mod.input holds and mod-visible pointers belong to the
+  -- loader being torn down; retire them while its subscribers still
+  -- exist, or the fresh loader inherits phantom "mod:*" sources and
+  -- pointers nobody left alive can release (#807)
+  if game.mods and game.mods.releaseModInput then game.mods:releaseModInput() end
+  if game.cancelPointers then game:cancelPointers() end
   local loader = Loader.new(opts and { fs = opts.fs, dev = opts.dev } or nil)
   loader.game = game
   -- mod.save keeps pointing at the live slot across the reload

@@ -12,12 +12,11 @@ function FlyMenu.new(game)
   local seen = {}
   for _, mapId in ipairs(game.data.field.flyOrder or {}) do
     -- towns only (dungeon escape spots share the table), each listed once.
-    -- Indigo Plateau (tileset PLATEAU) is a valid Fly destination too, so allow
-    -- it past the OVERWORLD-only isOutdoor gate while the CAVERN/FACILITY escape
-    -- spots stay excluded (LoadTownMap_Fly cycles it like any town, #203).
+    -- Map.isFlyTown is the BuildFlyLocationsList gate: map ids 0..10, so
+    -- INDIGO_PLATEAU cycles like any town (#203) while the ROUTE_4/ROUTE_10
+    -- Pokemon Centers, fly warps but not towns, stay out (#788).
     local def = game.data.maps[mapId]
-    if visited[mapId] and def and not seen[mapId]
-       and (Map.isOutdoor(def) or def.tileset == "PLATEAU") then
+    if visited[mapId] and def and not seen[mapId] and Map.isFlyTown(def) then
       seen[mapId] = true
       table.insert(items, {
         value = mapId,

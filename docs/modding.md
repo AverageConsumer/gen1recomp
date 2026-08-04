@@ -174,6 +174,32 @@ It runs immediately before queued button edges are promoted, so input added by
 the wrapper is visible during that same fixed step. The callback receives
 `(next, game, dt)` and must call `next(game, dt)`.
 
+`input.pointer` delivers uncaptured gameplay pointer events -- touches and
+real mouse input alike. The callback receives `(next, game, ev)` where `ev`
+is `{ phase, source, id, x, y, dx, dy, pressure, button }`: `phase` is
+`"pressed"`, `"moved"`, `"released"` or `"cancelled"`; `source` is `"touch"`
+or `"mouse"`; `id` is the LÖVE touch id or `"mouse"`; and the coordinates
+are LOVE window units, the same space `render.hud`'s viewport and the touch
+overlay lay out in. The on-screen touch controls keep first refusal: a
+pointer that begins on a virtual control belongs to the pad for its whole
+lifecycle and never reaches the hook, while one that begins outside stays
+visible even if it later crosses a control. A real mouse reaches the hook
+without `POKEPORT_TOUCH` (synthesized `istouch` mouse twins are dropped, so
+a mobile touch fires once), and focus or visibility loss and input recovery
+deliver a `"cancelled"` for every pointer the hook saw pressed but not yet
+released. Return `true` without calling `next` to consume the event.
+
+`mod.input` presses GB buttons source-safely. `mod.input:tap(game, btn)`
+queues exactly one `wasPressed` edge for the next fixed step and holds
+nothing; `local token = mod.input:press(game, btn)` holds the button until
+`mod.input:release(token)`. Buttons are `up`, `down`, `left`, `right`, `a`,
+`b`, `start` and `select`. Every press is its own input source inside the
+engine's multi-source bookkeeping, so releasing a token never clears a hold
+the keyboard, a controller, the touch overlay or another mod still owns;
+`release` is idempotent and refuses tokens taken by another mod.
+Outstanding tokens are released automatically on entry-chunk rollback, hot
+reload and input recovery.
+
 `ui.title_menu.items` receives `(next, game, items)` and follows the same
 decorate-after-`next` convention as `ui.start_menu.items`. It is the safe place
 for a tool to offer a fresh-session action before gameplay begins.

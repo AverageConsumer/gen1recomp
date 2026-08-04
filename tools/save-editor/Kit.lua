@@ -309,20 +309,18 @@ end
 --   good     green tint      -- safe helpers (Full heal, max a DV)
 --   danger   red tint        -- destructive verbs, always two-click
 --   disabled steel           -- never hidden, always explained in the status bar
+-- Colour-coded solid keys, matching the launcher exactly (src/ui/kit/Kit.lua):
+-- the button IS its colour, with black ink and a two-rect emboss, and hover
+-- rings it in white.  The editor opens straight off a launcher save row, so a
+-- control that behaves the same has to look the same.
 local KINDS = {
-  primary  = { fillTop = PAL.green, fillBot = PAL.greenDark, aTop = 1, aBot = 1,
-               ink = PAL.greenInk, border = nil, glow = PAL.green },
-  ghost    = { fillTop = { 255, 255, 255 }, fillBot = { 255, 255, 255 },
-               aTop = 0.14, aBot = 0.03, ink = PAL.heading,
-               border = { 255, 255, 255 }, borderA = 0.18 },
-  accent   = { flat = PAL.blue, flatA = 0.14, ink = PAL.blueInk,
-               border = PAL.cardBorder, borderA = 0.35 },
-  good     = { flat = PAL.green, flatA = 0.1, ink = PAL.green,
-               border = PAL.green, borderA = 0.45 },
-  danger   = { flat = PAL.red, flatA = 0.12, ink = PAL.redSoft,
-               border = PAL.red, borderA = 0.45 },
-  disabled = { flat = { 120, 132, 158 }, flatA = 0.22, ink = PAL.steel,
-               border = PAL.steel, borderA = 0.3 },
+  primary  = { fill = PAL.green,  ink = PAL.inverse },
+  good     = { fill = PAL.green,  ink = PAL.inverse },
+  accent   = { fill = PAL.blue,   ink = PAL.inverse },
+  warn     = { fill = PAL.yellow, ink = PAL.inverse },
+  danger   = { fill = PAL.red,    ink = PAL.inverse },
+  ghost    = { fill = PAL.ink,    ink = PAL.inverse },
+  disabled = { fill = PAL.steel,  ink = PAL.inverse },
 }
 
 -- opts: { kind, font, enabled, align, radius, glow }
@@ -338,31 +336,30 @@ function Kit.button(x, y, w, h, label, opts)
   local hot = enabled and Kit.hover(x, y, w, h)
 
   if G then
-    if opts.glow and enabled then
-      Theme.glow(x, y, w, h, r, kind.glow or PAL.green, opts.glow)
-    end
-    if kind.flat then
-      Theme.col(kind.flat, kind.flatA * (hot and 1.6 or 1))
-      G.rectangle("fill", x, y, w, h, r, r)
-    else
-      Theme.gradRounded(x, y, w, h, r, kind.fillTop, kind.fillBot,
-        kind.aTop * (hot and 1.4 or 1), kind.aBot * (hot and 1.6 or 1))
-    end
-    if kind.border then
-      Theme.stroke(x, y, w, h, r, kind.border, kind.borderA * (hot and 1.5 or 1), 1)
+    Theme.fillRounded(x, y, w, h, kind.fill, enabled and 1 or 0.45)
+    Theme.emboss(x, y, w, h, enabled and (hot and 1.3 or 1) or 0.4)
+    if hot then
+      Theme.strokeRounded(x - 2, y - 2, w + 4, h + 4, PAL.lineStrong, 1, 2,
+        Theme.radius() + 2)
     end
     local f = font(opts.font or "button")
     if f then
       G.setFont(f)
       Theme.col(kind.ink, 1)
       local ty = y + (h - f:getHeight()) / 2
-      if opts.align == "left" then
-        G.print(label, x + 10 * Kit.scale, ty)
-      elseif canPrintf() then
-        G.printf(label, x, ty, w, "center")
-      else
-        G.print(label, x + (w - f:getWidth(label)) / 2, ty)
+      -- Faux bold, the same trick the launcher uses: one weight of face, so
+      -- an emphasised run is the same text drawn a pixel across.
+      local function put(dx)
+        if opts.align == "left" then
+          G.print(label, x + 10 * Kit.scale + dx, ty)
+        elseif canPrintf() then
+          G.printf(label, x + dx, ty, w, "center")
+        else
+          G.print(label, x + (w - f:getWidth(label)) / 2 + dx, ty)
+        end
       end
+      put(0)
+      put(Theme.BOLD_OFFSET or 1)
     end
   end
   return enabled and Kit.press(x, y, w, h) or false
@@ -383,12 +380,21 @@ function Kit.chip(x, y, w, h, label, on, onColor, offColor)
   audit("control", x, y, w, h, label)
   local c = on and (onColor or PAL.green) or (offColor or PAL.steel)
   if G then
-    local r = 6 * Kit.scale
-    Theme.col(c, on and 0.16 or 0.06)
-    G.rectangle("fill", x, y, w, h, r, r)
-    Theme.stroke(x, y, w, h, r, PAL.cardBorder, Kit.hover(x, y, w, h) and 0.5 or 0.28, 1)
-    Kit.textCenter("micro", label, x, y + (h - Kit.textHeight("micro")) / 2, w,
-      c, on and 1 or 0.75)
+    -- Same rule as the launcher's chips: an ON chip is FILLED with its colour
+    -- and prints black; an OFF chip is an outline.  The old alpha-tinted fill
+    -- read as "slightly different dark rectangle" on a black field.
+    local hot = Kit.hover(x, y, w, h)
+    if on then
+      Theme.fillRounded(x, y, w, h, c, 1)
+      Theme.emboss(x, y, w, h, 1)
+      Kit.textCenter("micro", label, x,
+        y + (h - Kit.textHeight("micro")) / 2, w, PAL.inverse)
+    else
+      Theme.fillRounded(x, y, w, h, PAL.bg, 1)
+      Theme.strokeRounded(x, y, w, h, c, hot and 1 or 0.5, 1)
+      Kit.textCenter("micro", label, x,
+        y + (h - Kit.textHeight("micro")) / 2, w, c)
+    end
   end
   return Kit.press(x, y, w, h)
 end

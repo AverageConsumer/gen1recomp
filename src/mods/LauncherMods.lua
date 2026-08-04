@@ -726,6 +726,30 @@ function LauncherMods.installFromRelease(modId, release)
   return result, err
 end
 
+-- The install half of installFromRelease, split out so the launcher can run
+-- the DOWNLOAD half asynchronously (src/net/Fetch.lua) and still land in the
+-- same place.  `localPath` is a love.filesystem-relative path to an already
+-- downloaded zip; it is consumed (removed) either way.
+-- Returns true, version | nil, errString.
+function LauncherMods.installDownloadedZip(modId, localPath, version)
+  local ok, result, err = pcall(function()
+    if type(modId) ~= "string" or modId == "" then
+      return nil, "missing mod id"
+    end
+    if type(localPath) ~= "string" or localPath == "" then
+      return nil, "missing downloaded archive"
+    end
+    local installed, res = LauncherMods.installZip(localPath, {
+      replace = true, expectId = modId,
+    })
+    pcall(love.filesystem.remove, localPath)
+    if not installed then return nil, res end
+    return true, version or res
+  end)
+  if not ok then return nil, "install failed: " .. tostring(result) end
+  return result, err
+end
+
 -- Install a mod listed in a community index (src/mods/ModIndex.lua).
 -- The index only ever tells us WHERE the zip is; resolving that URL is
 -- ModIndex's job and installing it is installFromRelease's, so this is the

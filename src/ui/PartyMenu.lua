@@ -756,8 +756,10 @@ function PartyMenu:draw()
     if i == self.index then
       Font.drawCode(Theme.cursor, 0, cursorY)
     end
-    if i == self.swapFrom or i == self.softboiledFrom then
-      Font.drawCode(Theme.cursorHollow, 0, cursorY) -- the unfilled swap arrow
+    -- the unfilled swap arrow; the filled cursor replaces it in the tilemap
+    -- when they share a row (PlaceMenuCursor, home/window.asm:184-185) (#814)
+    if (i == self.swapFrom or i == self.softboiledFrom) and i ~= self.index then
+      Font.drawCode(Theme.cursorHollow, 0, cursorY)
     end
   end
   if self.swapFrom then

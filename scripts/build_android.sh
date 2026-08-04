@@ -202,12 +202,10 @@ pack_game_love() {
   # APK, so the mod manager's Delete can't remove it and it reappears every
   # launch.  Pokewalker ships as an importable .zip instead, which gives it
   # a real install/upgrade/delete lifecycle.
-  # libs/ carries the vendored FlexLove toolkit the launcher UI is built on
-  # (src/import/LauncherView.lua requires it at the top level, and RomImporter
-  # calls into that view from both update and draw), so an archive without it
-  # dies on the first frame with nothing left to fall back to.
+  # The launcher UI kit lives at src/ui/kit (inside src/, packed wholesale);
+  # the vendored libs/flexlove tree it replaced is gone.
   (cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
-    main.lua conf.lua src libs data assets tools/save-editor \
+    main.lua conf.lua src data assets tools/save-editor \
     tools/rom_manifest.json tools/rom_manifest_blue.json \
     tools/rom_manifest_yellow.json \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
@@ -229,12 +227,14 @@ pack_game_love() {
     || fail "game.love is missing the save editor (Edit on a save row would crash)"
   grep -qx "$YELLOW_MANIFEST_RELATIVE" <<< "$archive_entries" \
     || fail "game.love is missing the Yellow ROM import manifest"
-  # This gate exists because libs/ was added to scripts/build.sh's payload and
-  # to no other packager, so Android and iOS built an APK/IPA whose launcher
-  # threw on require("libs.flexlove.FlexLove") before drawing anything.  Source
-  # runs read libs/ off the working tree, so only a build can catch it.
-  grep -qx 'libs/flexlove/FlexLove.lua' <<< "$archive_entries" \
-    || fail "game.love is missing the FlexLove UI toolkit (launcher dies on frame 1)"
+  # This gate exists because the launcher's UI toolkit once lived outside
+  # src/ (libs/flexlove) and was added to scripts/build.sh's payload and to
+  # no other packager, so Android and iOS built an APK/IPA whose launcher
+  # threw before drawing anything.  The kit now lives inside src/, but the
+  # gate stays: source runs read the working tree, so only a build can catch
+  # a packaging miss.
+  grep -qx 'src/ui/kit/Kit.lua' <<< "$archive_entries" \
+    || fail "game.love is missing the launcher UI kit (launcher dies on frame 1)"
   say "game.love: $(du -h "$LOVE_FILE" | cut -f1) -> $LOVE_FILE"
 
   # This script packs its own game.love (it does not reuse build.sh's), so it

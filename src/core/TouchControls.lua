@@ -423,11 +423,17 @@ local function setDpad(self, touch, dir)
   if dir then pressBtn(self, dir) end
 end
 
+-- Returns true when this touch was captured by a virtual control -- the
+-- pad's first refusal on the gameplay pointer seam (#807).  Capture is
+-- decided here, at press, and rides self.touches[id] for the touch's
+-- whole lifecycle; an uncaptured touch is never tracked, so wandering
+-- across a control later neither presses it nor hides the touch from mods.
 function TouchControls:touchpressed(id, x, y)
   -- preview mode is layout-edit only: never press GB buttons
   if self.preview then return end
   if not (self.active and self.enabled ~= false and self.img) then return end
   -- a controller hid the overlay; the first touch only brings it back
+  -- (uncaptured: it began on no control, so mods may still see it)
   if self.controllerHidden then
     self.controllerHidden = false
     return
@@ -437,7 +443,7 @@ function TouchControls:touchpressed(id, x, y)
     if inCircle(L[btn], x, y, SLOP[btn]) then
       self.touches[id] = { control = btn }
       pressBtn(self, btn)
-      return
+      return true
     end
   end
   -- square hit zone a bit past the cross art; one owning finger at a time
@@ -449,6 +455,7 @@ function TouchControls:touchpressed(id, x, y)
     local touch = { control = "dpad", dir = nil }
     self.touches[id] = touch
     setDpad(self, touch, dpadDir(dz, x, y))
+    return true
   end
 end
 

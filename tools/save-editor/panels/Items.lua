@@ -24,11 +24,6 @@ local M = {}
 
 local MONEY_STEPS = { -1000, -100, 100, 1000 }
 
-local function matches(id, query)
-  if query == "" then return true end
-  return id:lower():find(query:lower(), 1, true) ~= nil
-end
-
 -- One quantity row shape, shared by the bag and the PC list: id, qty, then
 -- the -/+/drop cluster.  Returns true when the row body was clicked.
 local function quantityRow(S, Kit, x, y, w, h, id, qty, selected, onMinus, onPlus, onDrop)
@@ -127,76 +122,33 @@ local function drawBadges(S, Kit, x, y, w, h)
   end
 end
 
+-- The "add an item" card.  It used to hold the whole catalog inline: a search
+-- field plus a scrolling list, sharing this tab's height with the bag and PC
+-- lists beside it, which on a phone left about three catalog rows visible.
+-- Adding a Pokemon was already a full-screen modal; adding an item now opens
+-- the same kind (panels/ItemPicker.lua), so this card is just the door.
 local function drawPicker(S, Kit, x, y, w, h)
   local s = Kit.scale
   local pad = 16 * s
   Kit.card(x, y, w, h)
   Kit.caption(x + pad, y + pad, "ADD ITEM")
-  local qy = y + pad + Kit.textHeight("caption") + 8 * s
-  local prevQuery = S.itemQuery or ""
-  S.itemQuery = Kit.textfield("item-query", x + pad, qy, w - 2 * pad, 32 * s,
-    S.itemQuery or "", "search item ids...")
-  -- a new query is a new list: keep the first hit on screen rather than
-  -- leaving the view parked wherever the old result set had scrolled to
-  if S.itemQuery ~= prevQuery then S.itemPickOffset = 0 end
+  local cy = y + pad + Kit.textHeight("caption") + 10 * s
+  local inner = w - 2 * pad
 
-  local choices = {}
-  for _, id in ipairs(S.cat.items) do
-    if not Ops.isBadgeId(id) and matches(id, S.itemQuery) then
-      choices[#choices + 1] = id
-    end
-  end
-  if not S.selectedItemId or not matches(S.selectedItemId, S.itemQuery) then
-    S.selectedItemId = choices[1]
-  end
+  Kit.text("mono", Kit.ellipsize("mono",
+    "Search the full item list and add to the bag or the PC.", inner),
+    x + pad, cy, PAL.muted)
+  cy = cy + Kit.textHeight("mono") + 12 * s
 
-  local addH = 32 * s
-  local addY = y + h - pad - addH
-  local listTop = qy + 32 * s + 10 * s
-  local listBottom = addY - 10 * s
-  local cRowH = 28 * s
-  local cGap = 5 * s
-  local visible = math.max(1, math.floor((listBottom - listTop) / (cRowH + cGap)))
-  -- #595: the wheel drives the same offset a pager would, so the whole
-  -- catalog is reachable with the mouse alone.  Kit.scroll clamps, which is
-  -- also what pulls the view back when a narrower query shortens the list.
-  S.itemPickOffset = Kit.scroll(x + pad, listTop, w - 2 * pad,
-    listBottom - listTop, S.itemPickOffset or 0, #choices, visible)
-  Kit.pushClip(x + pad, listTop, w - 2 * pad, listBottom - listTop)
-  for i = 1, math.min(visible, #choices - S.itemPickOffset) do
-    local id = choices[S.itemPickOffset + i]
-    local ry = listTop + (i - 1) * (cRowH + cGap)
-    if Kit.row(x + pad, ry, w - 2 * pad, cRowH, id == S.selectedItemId,
-        PAL.green, 8 * s) then
-      S.selectedItemId = id
-      Ops.say(S, "Picked " .. id)
-    end
-    Kit.text("mono", Kit.ellipsize("mono", id, w - 2 * pad - 20 * s),
-      x + pad + 10 * s, ry + (cRowH - Kit.textHeight("mono")) / 2, PAL.text)
+  local btnH = math.max(34 * s, 34)
+  local half = (inner - 8 * s) / 2
+  if Kit.button(x + pad, cy, half, btnH, "+ Add to bag",
+      { font = "small", kind = "primary" }) then
+    Ops.openItemPicker(S, Kit, "bag")
   end
-  Kit.popClip()
-  -- the drag/wheel offset is also made visible: on a phone the list looked
-  -- bottomless-yet-stuck without an indicator (#715)
-  Kit.scrollbar(x + pad, listTop, w - 2 * pad, listBottom - listTop,
-    S.itemPickOffset, #choices, visible)
-  -- the position counter rides the caption line, where it can never collide
-  -- with the list body or the two add buttons below it
-  if #choices > visible then
-    Kit.textRight("micro", ("%d-%d of %d"):format(S.itemPickOffset + 1,
-      math.min(S.itemPickOffset + visible, #choices), #choices),
-      x + w - pad, y + pad, PAL.faint)
-  elseif #choices == 0 then
-    Kit.text("mono", "no item matches", x + pad + 10 * s, listTop + 8 * s, PAL.faint)
-  end
-
-  local halfW = (w - 2 * pad - 8 * s) / 2
-  if Kit.button(x + pad, addY, halfW, addH, "-> Bag",
-      { font = "small", radius = 8 * s, enabled = S.selectedItemId ~= nil }) then
-    Ops.addToBag(S, S.selectedItemId)
-  end
-  if Kit.button(x + pad + halfW + 8 * s, addY, halfW, addH, "-> PC",
-      { font = "small", radius = 8 * s, enabled = S.selectedItemId ~= nil }) then
-    Ops.addToPc(S, S.selectedItemId)
+  if Kit.button(x + pad + half + 8 * s, cy, half, btnH, "+ Add to PC",
+      { font = "small", kind = "accent" }) then
+    Ops.openItemPicker(S, Kit, "pc")
   end
 end
 

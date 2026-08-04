@@ -147,13 +147,14 @@ local function buildFlyList(game, byMap)
   for _, mapId in ipairs(field.flyOrder or {}) do
     local def = game.data.maps and game.data.maps[mapId]
     -- INDIGO_PLATEAU is a normal Fly spot (engine/menus/town_map.asm
-    -- LoadTownMap_Fly cycles it like any town), but its map uses tileset
-    -- "PLATEAU" not OVERWORLD, so Map.isOutdoor() alone dropped it from the
-    -- cursor even though it is visited and has a fly warp.  Allow PLATEAU here
-    -- while the CAVERN/FACILITY dungeon escape spots that share flyOrder still
-    -- fail the gate and stay out (#203).
+    -- LoadTownMap_Fly cycles it like any town): its map id sits inside
+    -- BuildFlyLocationsList's 0..NUM_CITY_MAPS-1 walk, which is what
+    -- Map.isFlyTown checks, so it passes even though its tileset is
+    -- "PLATEAU" not OVERWORLD (#203).  The ROUTE_4/ROUTE_10 Pokemon Centers
+    -- carry fly warps but are not towns, so they stay out (#788), as do the
+    -- CAVERN/FACILITY dungeon escape spots that share flyOrder.
     if not seen[mapId] and visited[mapId] and flyWarps[mapId]
-       and def and (Map.isOutdoor(def) or def.tileset == "PLATEAU") then
+       and def and Map.isFlyTown(def) then
       seen[mapId] = true
       local loc = byMap[mapId] or { name = mapId:gsub("_", " ") }
       table.insert(flyLocs, loc)
@@ -220,8 +221,13 @@ function TownMap.new(game, opts)
   local mapId = game.overworld and game.overworld.map and game.overworld.map.id
   self.playerLoc = mapId and self.byMap[mapId] or nil
   self.sel = 1
-  for i, loc in ipairs(self.locs) do
-    if loc == self.playerLoc then self.sel = i break end
+  -- LoadTownMap_Fly always opens with hl on wFlyLocationsList[0], the FIRST
+  -- fly destination (PALLET_TOWN), never the player's current town (#795).
+  -- Only the plain viewer snaps the cursor to where the player stands.
+  if not self.fly then
+    for i, loc in ipairs(self.locs) do
+      if loc == self.playerLoc then self.sel = i break end
+    end
   end
   self.blink = 0
   return self
@@ -266,14 +272,17 @@ function TownMap:update(dt)
   if self.fly then
     -- LoadTownMap_Fly: Up/Down cycle the visited destinations, A flies there,
     -- B cancels (handled above).  moveList walks self.locs, now the fly list.
+    -- Up steps FORWARD through the towns (.pressedUp does inc hl: PALLET ->
+    -- VIRIDIAN -> PEWTER -> ...), Down steps back and wraps to the last
+    -- visited town from the top; the port had the two swapped (#795).
     if input:wasPressed("a") then
       Sound.play(self.game.data, "Press_AB")
       local mapId = self.flyMapIds[self.sel]
       self.game.stack:pop()
       if mapId and self.onFly then self.onFly(mapId) end
       return
-    elseif input:wasPressed("up") then self:moveList(-1)
-    elseif input:wasPressed("down") then self:moveList(1)
+    elseif input:wasPressed("up") then self:moveList(1)
+    elseif input:wasPressed("down") then self:moveList(-1)
     end
   elseif self.nestSpecies then
     if input:wasPressed("a") then

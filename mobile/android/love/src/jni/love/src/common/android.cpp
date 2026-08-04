@@ -259,7 +259,19 @@ bool httpDownload(const char *url, const char *destPath, const char *userAgent, 
 		return false;
 
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
-	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	// NOT FindClass: this is the one bridge called off the main thread
+	// (love.thread workers in src/net/fetch_worker.lua and
+	// src/update/check_worker.lua).  A worker is a raw pthread whose JNI
+	// class loader is the system one, which cannot see app classes, so
+	// FindClass("org/love2d/android/GameActivity") left a pending
+	// ClassNotFoundException and the next JNI call aborted the process --
+	// opening FIND MODS killed the app on the first stats fetch.  Resolving
+	// through the live activity instance works from any attached thread.
+	jobject activityObj = (jobject) SDL_AndroidGetActivity();
+	if (activityObj == nullptr)
+		return false;
+	jclass activity = env->GetObjectClass(activityObj);
+	env->DeleteLocalRef(activityObj);
 
 	// Old APK / new liblove skew: report "no transport" the same way a
 	// missing curl does, instead of aborting on a missing method (#597).

@@ -238,8 +238,11 @@ function ListMenu:draw()
     if i == self.index then
       -- hollowIndex: a chosen row keeps the hollow '▷' left behind by
       -- pokered's PlaceUnfilledArrowMenuCursor (the old man demo's
-      -- auto A-press, home/list_menu.asm:89-91)
-      Font.drawCode((self.swapIndex == i or self.hollowIndex == i)
+      -- auto A-press, home/list_menu.asm:89-91).  A swap-marked row does
+      -- NOT stay hollow under the cursor: PlaceMenuCursor writes '▶'
+      -- into the tilemap over the '▷' whenever the cursor sits there
+      -- (home/window.asm:184-185) and restores it on the way out (#814)
+      Font.drawCode(self.hollowIndex == i
                     and Theme.cursorHollow or Theme.cursor, 8, y)
     end
     if self.swapIndex == i and i ~= self.index then

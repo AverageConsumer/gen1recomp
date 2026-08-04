@@ -36,6 +36,7 @@ local MapBrowser = require("MapBrowser")
 local Dex = require("Dex")
 -- chrome, not a tab panel, so deliberately kept out of PANELS below (#541)
 local SpeciesPicker = require("SpeciesPicker")
+local ItemPicker = require("ItemPicker")
 
 local App = {}
 local S
@@ -340,6 +341,37 @@ function App.update(dt)
   local notches = PadInput.takeWheel()
   if notches ~= 0 then
     App.wheelmoved(0, notches)
+  end
+
+  -- Dev harness, the launcher's POKEPORT_LAUNCHER_SHOT for this window:
+  -- POKEPORT_EDITOR_SHOT=/path.png with POKEPORT_WIN=WxH resizes, lets the
+  -- view settle, captures one frame and quits, so a scripted run can see the
+  -- real editor at any window shape.  POKEPORT_EDITOR_TAB picks the tab and
+  -- POKEPORT_EDITOR_ITEMPICK=1 opens the add-item modal.
+  local shot = os.getenv("POKEPORT_EDITOR_SHOT")
+  if shot and not App._shotDone then
+    if not App._shotSized then
+      App._shotSized = true
+      local w, h = (os.getenv("POKEPORT_WIN") or ""):match("^(%d+)x(%d+)$")
+      if w and love.window and love.window.setMode then
+        pcall(love.window.setMode, tonumber(w), tonumber(h), { resizable = true })
+      end
+      local tab = os.getenv("POKEPORT_EDITOR_TAB")
+      if tab and tab ~= "" and S then S.tab = tab end
+      if os.getenv("POKEPORT_EDITOR_ITEMPICK") == "1" and S then
+        Ops.openItemPicker(S, Kit, "bag")
+      end
+    end
+    App._shotTimer = (App._shotTimer or 0) + dt
+    if App._shotTimer > 1.0 then
+      App._shotDone = true
+      love.graphics.captureScreenshot(function(imagedata)
+        local fd = imagedata:encode("png")
+        local f = io.open(shot, "wb")
+        if f then f:write(fd:getString()) f:close() end
+        love.event.quit()
+      end)
+    end
   end
 end
 
@@ -750,7 +782,7 @@ function App.draw()
   -- last: the chrome and the panel underneath would take the same tap.  The
   -- shield goes up before anything dispatches and comes down only for the
   -- picker's own layer at the bottom of this function (#541).
-  Kit.blockClicks = (S.speciesPicker ~= nil)
+  Kit.blockClicks = (S.speciesPicker ~= nil) or (S.itemPicker ~= nil)
 
   Theme.field(width, height)
 
@@ -779,6 +811,7 @@ function App.draw()
   drawStatusBar(0, height - statusH, width, statusH)
   Kit.blockClicks = false
   SpeciesPicker.draw(S, Kit, width, height)
+  ItemPicker.draw(S, Kit, width, height)
   Kit.endFrame()
   PadInput.draw()
 
@@ -791,6 +824,15 @@ function App.keypressed(key)
   -- The picker takes Enter and Escape before the focused field does: Kit maps
   -- both to the same "\r" edit (a blur), which cannot tell "commit the top
   -- match" apart from "give up" (#541).
+  if S.itemPicker then
+    if key == "return" or key == "kpenter" then
+      ItemPicker.commitFirst(S, Kit)
+      return
+    elseif key == "escape" then
+      Ops.closeItemPicker(S, Kit)
+      return
+    end
+  end
   if S.speciesPicker then
     if key == "return" or key == "kpenter" then
       SpeciesPicker.commitFirst(S, Kit)

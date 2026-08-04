@@ -19,4 +19,8 @@ return {
   -- Gen 1 Hyper Beam: no recharge when the target faints (or its
   -- substitute breaks).  Set false to always recharge like Gen 2+.
   hyperBeamSkipRechargeOnKO = true,
+  -- Gen 1 runs HandlePoisonBurnLeechSeed right after each side's move
+  -- (core.asm:426-464): poison/burn/leech seed tick before the slower
+  -- mon acts, not in an end-of-round sweep like Gen 3+.
+  residualAfterMove = true,
 }

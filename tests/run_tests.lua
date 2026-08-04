@@ -1050,7 +1050,7 @@ do
     kb.player.mon.status = "PSN"
     kb.enemy.mon.hp = 0 -- the opponent was already knocked out this turn
     local hpBefore = kb.player.mon.hp
-    kb:endOfTurn()
+    kb:residualFor(kb.player, kb.enemy)
     eq(kb.player.mon.hp, hpBefore,
        "no residual poison on the turn the poisoned mon lands the KO")
 
@@ -1058,7 +1058,7 @@ do
     local lb = BattleState.newWild(Game, "RATTATA", 5)
     lb.player.mon.status = "PSN"
     local live = lb.player.mon.hp
-    lb:endOfTurn()
+    lb:residualFor(lb.player, lb.enemy)
     check(lb.player.mon.hp < live, "poison still ticks while the opponent lives")
   end
 

@@ -797,12 +797,15 @@ function Game:joystickhat(joystick, hat, direction)
 end
 
 -- Window focus/visibility flips: a release due while unfocused/hidden can
--- be swallowed by the OS. Reset on both edges -- gaining focus with a
--- physically held key won't re-fire keypressed, so trusting leftover
--- state is worse than asking the player to re-press.
+-- be swallowed by the OS. Reset on both edges; on the regain, reconcile
+-- re-arms only what is still physically held -- a held key won't re-fire
+-- keypressed by itself, and without the rebuild a spurious lifecycle event
+-- parked the player until every direction was re-pressed (#799).
 function Game:focus(f)
   Input:reset()
+  if f then Input:reconcile() end
   TouchControls:reset()
+  self:cancelPointers()
 end
 
 function Game:visible(v)
@@ -811,12 +814,15 @@ function Game:visible(v)
   else
     Input:reset()
     TouchControls:reset()
+    self:cancelPointers()
   end
 end
 
 function Game:onResume()
   Input:reset()
+  Input:reconcile()
   TouchControls:reset()
+  self:cancelPointers()
   -- Chip music may survive NX suspend as a duplicate stream; stop it and let
   -- the active screen re-cue on the next frame (hardware audio check: T19).
   -- Desktop/mobile window-visible flips must not kill overworld music.
@@ -831,7 +837,16 @@ end
 
 function Game:recoverInput(event, joystick)
   Input:reset()
+  -- A hotplug can arrive with no hotplug (macOS Bluetooth re-enumeration),
+  -- and the blanket reset above also drops unrelated keyboard holds; put
+  -- back whatever is still physically down (#799).
+  Input:reconcile()
   TouchControls:reset()
+  -- reset just dropped every source, mod holds included: retire the mods'
+  -- outstanding press tokens so nothing stale can be released later, and
+  -- tell subscribers their live pointers died (#807)
+  if self.mods and self.mods.releaseModInput then self.mods:releaseModInput() end
+  self:cancelPointers()
   local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
   if SwitchDiagnostics.isEnabled() then
     if joystick then
@@ -854,16 +869,118 @@ function Game:joystickremoved(joystick)
   TouchControls:joystickremoved()
 end
 
-function Game:touchpressed(id, x, y)
-  TouchControls:touchpressed(id, x, y)
+-- Gameplay pointer seam (#807).  TouchControls keeps first refusal: a
+-- pointer that begins on a virtual control belongs to the pad for its
+-- whole lifecycle and never reaches mods, while one that begins outside
+-- stays mod-visible even if it later wanders across a control
+-- (TouchControls only tracks ids it captured at press).  Everything a
+-- subscriber costs -- the per-pointer records in self.modPointers, the
+-- payload tables -- sits behind wantsHook, so a mod-free boot allocates
+-- nothing here.
+
+-- vanilla for input.pointer: nobody consumed the event
+local function pointerUnclaimed() return false end
+
+-- coordinates are LOVE window units, the same space render.hud's viewport
+-- and the touch overlay lay out in
+function Game:pointerEvent(phase, source, id, x, y, dx, dy, pressure, button)
+  return ModRuntime.call("input.pointer", pointerUnclaimed, self, {
+    phase = phase, source = source, id = id, x = x, y = y,
+    dx = dx or 0, dy = dy or 0, pressure = pressure, button = button,
+  })
 end
 
-function Game:touchmoved(id, x, y)
+function Game:touchpressed(id, x, y, dx, dy, pressure)
+  if TouchControls:touchpressed(id, x, y) then return end
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  -- POKEPORT_TOUCH routes the mouse through here as a stand-in finger
+  -- under the id "mouse" (see main.lua); mods still see its true source
+  local source = id == "mouse" and "mouse" or "touch"
+  self.modPointers = self.modPointers or {}
+  self.modPointers[id] = { source = source, x = x, y = y,
+                           pressure = pressure }
+  self:pointerEvent("pressed", source, id, x, y, dx, dy, pressure)
+end
+
+function Game:touchmoved(id, x, y, dx, dy, pressure)
   TouchControls:touchmoved(id, x, y)
+  local p = self.modPointers and self.modPointers[id]
+  if not p then return end
+  -- the POKEPORT_TOUCH mouse path carries no deltas; derive them from the
+  -- pointer's last seen position so drags read the same either way
+  if dx == nil then dx, dy = x - p.x, y - p.y end
+  p.x, p.y = x, y
+  if pressure ~= nil then p.pressure = pressure end
+  if ModRuntime.wantsHook("input.pointer") then
+    self:pointerEvent("moved", p.source, id, x, y, dx, dy, pressure)
+  end
 end
 
-function Game:touchreleased(id, x, y)
+function Game:touchreleased(id, x, y, dx, dy, pressure)
   TouchControls:touchreleased(id, x, y)
+  local p = self.modPointers and self.modPointers[id]
+  if not p then return end
+  self.modPointers[id] = nil
+  if ModRuntime.wantsHook("input.pointer") then
+    self:pointerEvent("released", p.source, id, x, y, dx, dy, pressure)
+  end
+end
+
+-- A real mouse without POKEPORT_TOUCH (#807).  Gameplay itself has no
+-- mouse verbs, so the pointer hook is the only consumer and everything is
+-- behind the wantsHook gate.  A synthesized istouch twin is dropped
+-- unconditionally: the same contact already arrived through
+-- Game:touchpressed, and forwarding both would fire a mobile touch twice.
+function Game:mousepressed(x, y, button, istouch)
+  if istouch then return end
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  self.modPointers = self.modPointers or {}
+  local p = self.modPointers.mouse
+  if p then
+    p.held, p.x, p.y = (p.held or 1) + 1, x, y
+  else
+    self.modPointers.mouse = { source = "mouse", x = x, y = y,
+                               held = 1, button = button }
+  end
+  self:pointerEvent("pressed", "mouse", "mouse", x, y, 0, 0, nil, button)
+end
+
+-- hover moves are delivered too (button = nil); only pressed pointers are
+-- tracked, because only they owe a released/cancelled later
+function Game:mousemoved(x, y, dx, dy, istouch)
+  if istouch then return end
+  local p = self.modPointers and self.modPointers.mouse
+  if p then p.x, p.y = x, y end
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  self:pointerEvent("moved", "mouse", "mouse", x, y, dx, dy, nil, nil)
+end
+
+function Game:mousereleased(x, y, button, istouch)
+  if istouch then return end
+  local p = self.modPointers and self.modPointers.mouse
+  if not p then return end
+  p.held = (p.held or 1) - 1
+  if p.held <= 0 then self.modPointers.mouse = nil end
+  if ModRuntime.wantsHook("input.pointer") then
+    self:pointerEvent("released", "mouse", "mouse", x, y, 0, 0, nil, button)
+  end
+end
+
+-- Focus/visibility loss and input recovery swallow pointer releases the
+-- same way they swallow key-ups (the hazard Input:reset exists for):
+-- every mod-visible pointer gets a "cancelled" instead of leaving
+-- subscribers waiting on a "released" that can never arrive (#807).
+-- Cleared even when the subscriber is already gone, so no stale record
+-- outlives its mod.
+function Game:cancelPointers()
+  local pointers = self.modPointers
+  if not pointers then return end
+  self.modPointers = nil
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  for id, p in pairs(pointers) do
+    self:pointerEvent("cancelled", p.source, id, p.x, p.y, 0, 0,
+                      p.pressure, p.button)
+  end
 end
 
 -- Point the loader's mod.save backing at this save's modData so per-mod

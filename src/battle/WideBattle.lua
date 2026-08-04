@@ -251,7 +251,10 @@ end
 
 local function drawMoveMenu(battle)
   drawMoveGrid(battle, battle.player.curMoves, battle.moveIndex)
-  if battle.moveSwapIndex then
+  -- The filled cursor replaces the hollow swap marker when they share a row
+  -- (PlaceMenuCursor's tilemap write, home/window.asm:184-185); drawCode blits
+  -- black-on-transparent, so skip the 0xEC instead of stacking glyphs (#814).
+  if battle.moveSwapIndex and battle.moveSwapIndex ~= battle.moveIndex then
     local col = (battle.moveSwapIndex - 1) % 2
     local row = math.floor((battle.moveSwapIndex - 1) / 2)
     Font.drawCode(0xEC, col == 0 and 8 or 112, 112 + row * 16)

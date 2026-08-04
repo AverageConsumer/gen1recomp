@@ -13,4 +13,7 @@ return {
   enemyUnlimitedPP = false,
   -- Gen 2+: Hyper Beam always forces a recharge turn, even on a KO.
   hyperBeamSkipRechargeOnKO = false,
+  -- Gen 3+ style: poison/burn/leech seed tick in an end-of-round sweep
+  -- after both sides have moved.
+  residualAfterMove = false,
 }

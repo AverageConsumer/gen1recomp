@@ -592,6 +592,101 @@ function ModIndex.fetch(source, opts)
   return index, nil, { fromCache = false, checkedAt = os.time() }
 end
 
+-- ------- async fetch (the launcher's path; ModIndex.fetch above stays as the
+-- synchronous one for tests and non-UI callers)
+--
+-- ModIndex.fetch blocks on curl, which on the render thread froze the Find
+-- Mods tab for as long as the server took.  These three functions are the
+-- same state machine driven a frame at a time over src/net/Fetch.lua:
+--     local h = ModIndex.beginFetch(source, { force = true })
+--     -- every frame:
+--     local done, index, err, meta = ModIndex.pumpFetch(h)
+-- pumpFetch returns done=false while the request is in flight.  The cache
+-- rules are identical to the sync path: a fresh cache short-circuits the
+-- network entirely (so the handle completes on its first pump), a failed
+-- live fetch falls back to stale cache, and the fallback mirror gets one try
+-- before the feed counts as an outage.
+function ModIndex.beginFetch(source, opts)
+  opts = opts or {}
+  local h = { source = source, opts = opts, stage = "start" }
+  if type(source) ~= "table" or type(source.feed) ~= "string" then
+    h.stage, h.err = "done", "missing index source"
+    return h
+  end
+  return h
+end
+
+-- Shared with the sync path's `cached` closure: read whatever is in the
+-- options cache and shape it like a parsed index.
+local function cachedIndex(feed, stale)
+  local entry = ModIndex.readCache(feed)
+  if not entry then return nil end
+  return {
+    schemaVersion = ModIndex.SCHEMA_VERSION,
+    generatedAt = entry.generatedAt,
+    categories = entry.categories or {},
+    mods = entry.mods or {},
+  }, nil, { fromCache = true, stale = stale, checkedAt = entry.checkedAt }
+end
+
+-- Returns done, index, err, meta.
+function ModIndex.pumpFetch(h)
+  if not h then return true, nil, "no handle" end
+  local Fetch = require("src.net.Fetch")
+  local feed = h.source and h.source.feed
+
+  if h.stage == "done" then
+    return true, h.index, h.err, h.meta
+  end
+
+  if h.stage == "start" then
+    if not h.opts.force then
+      local entry = ModIndex.readCache(feed)
+      if ModIndex.cacheFresh(entry) then
+        h.index, h.err, h.meta = cachedIndex(feed, false)
+        h.stage = "done"
+        return true, h.index, h.err, h.meta
+      end
+    end
+    h.job = Fetch.get(feed, { userAgent = "gen1recomp-mod-index" })
+    h.stage = "feed"
+    return false
+  end
+
+  local st = Fetch.poll(h.job)
+  if st.status == "pending" then return false end
+  Fetch.release(h.job)
+
+  if st.status == "ok" and st.body then
+    local index, parseErr = ModIndex.parse(st.body)
+    if index then
+      ModIndex.writeCache(feed, index)
+      h.index, h.meta = index, { fromCache = false, checkedAt = os.time() }
+      h.stage = "done"
+      return true, h.index, nil, h.meta
+    end
+    -- A feed that parses badly is an outage as far as the UI is concerned.
+    h.parseErr = parseErr
+  end
+
+  -- Pages deploys trail a push; the raw mirror is the same file, so a feed
+  -- that fails right after a release is worth one retry elsewhere.
+  if h.stage == "feed" and h.source.fallback then
+    h.job = Fetch.get(h.source.fallback, { userAgent = "gen1recomp-mod-index" })
+    h.stage = "fallback"
+    return false
+  end
+
+  local index, _, meta = cachedIndex(feed, true)
+  h.stage = "done"
+  if index then
+    h.index, h.meta = index, meta
+    return true, index, nil, meta
+  end
+  h.err = h.parseErr or st.err or "index fetch failed"
+  return true, nil, h.err
+end
+
 -- Fetch a description_url / any index-relative text file.  Returns the raw
 -- markdown; callers run it through ModUpdate.cleanBody for display.
 function ModIndex.fetchText(url)

@@ -29,8 +29,8 @@ return function(game)
   }
 
   -- Exercise the real visited-marking path (OverworldController marks any
-  -- flyWarps map visited on entry) by standing on the Plateau exterior first,
-  -- then hop back to Pallet for a clean starting point.
+  -- flyWarps TOWN visited on entry, Map.isFlyTown) by standing on the Plateau
+  -- exterior first, then hop back to Pallet for a clean starting point.
   U.teleport(game, "INDIGO_PLATEAU", 9, 6, "down")
   U.wait(5)
   assert(game.save.visited.INDIGO_PLATEAU,

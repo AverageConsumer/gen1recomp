@@ -166,12 +166,19 @@ end
 -- Download url to an absolute host path.  Returns true, or nil plus an error.
 -- The curl branch deliberately ignores curl's exit code, as the download paths
 -- always did: callers judge the result by the file they got.
-function HostShell.httpDownload(url, absPath, userAgent, accept)
+-- `maxTime` bounds curl's total transfer seconds.  It matters at QUIT, not
+-- during the transfer: LOVE waits for every live love.thread before the
+-- process exits (#339), and a worker sitting inside a blocking curl cannot
+-- notice a quit command until curl returns.  With the launcher's default 300s
+-- ceiling, closing the window during a mod download hung the process for
+-- minutes.  Callers on the interactive fetch pool pass something short.
+function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime)
   if type(url) ~= "string" or url == "" then return nil, "missing url" end
   if type(absPath) ~= "string" or absPath == "" then return nil, "missing path" end
   userAgent = userAgent or "gen1recomp"
   if HostShell.haveCurl() then
-    local cmd = "curl -fsSL --connect-timeout 15 --max-time 300 "
+    local cmd = ("curl -fsSL --connect-timeout 15 --max-time %d ")
+      :format(tonumber(maxTime) or 300)
       .. "-H " .. HostShell.quote("User-Agent: " .. userAgent) .. " "
     if accept then
       cmd = cmd .. "-H " .. HostShell.quote("Accept: " .. accept) .. " "
@@ -194,11 +201,12 @@ end
 -- GET returning the body.  curl streams it through a pipe; the Android bridge
 -- can only write a file, so there we fetch into the save directory (the only
 -- writable root on Android) and read it back.
-function HostShell.httpGet(url, userAgent, accept)
+function HostShell.httpGet(url, userAgent, accept, maxTime)
   if type(url) ~= "string" or url == "" then return nil, "missing url" end
   userAgent = userAgent or "gen1recomp"
   if HostShell.haveCurl() then
-    local cmd = "curl -fsSL --connect-timeout 10 --max-time 40 "
+    local cmd = ("curl -fsSL --connect-timeout 10 --max-time %d ")
+      :format(tonumber(maxTime) or 40)
       .. "-H " .. HostShell.quote("User-Agent: " .. userAgent) .. " "
     if accept then
       cmd = cmd .. "-H " .. HostShell.quote("Accept: " .. accept) .. " "

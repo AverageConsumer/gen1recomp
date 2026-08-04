@@ -315,13 +315,11 @@ pack_game_love() {
   # it reappears every launch.  Mods install as .zips at runtime instead
   # (launcher -> MODS -> Import mod .zip), the same lifecycle as every
   # other platform.
-  # libs/ carries the vendored FlexLove toolkit the launcher UI is built on
-  # (src/import/LauncherView.lua requires it at the top level, and RomImporter
-  # calls into that view from both update and draw), so an archive without it
-  # dies on the first frame with nothing left to fall back to.
+  # The launcher UI kit lives at src/ui/kit (inside src/, packed wholesale);
+  # the vendored libs/flexlove tree it replaced is gone.
   # shellcheck disable=SC2086  # MANIFESTS is a deliberate word list
   (cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
-    main.lua conf.lua src libs data assets tools/save-editor \
+    main.lua conf.lua src data assets tools/save-editor \
     $MANIFESTS \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
     -x 'data/generated/*' -x 'assets/generated/*')
@@ -337,14 +335,15 @@ pack_game_love() {
   # in 0.1.45 through 0.1.47: decodeManifest (src/import/RomImporter.lua) errors
   # outright when a version's manifest is absent, so Import ROM on Yellow died
   # in the built app while dev, which reads the source tree, stayed green.
-  # libs/flexlove/FlexLove.lua is on the list for the same reason: it was added
-  # to build.sh's payload and to no other packager, so the mobile builds shipped
-  # a launcher that threw before drawing its first frame.
+  # src/ui/kit/Kit.lua is on the list for the same reason: the launcher's UI
+  # toolkit once lived outside src/ (libs/flexlove) and shipped missing from
+  # the mobile packagers, so the launcher threw before drawing its first
+  # frame.  The kit is inside src/ now; the gate stays to catch a repeat.
   archive_entries="$(unzip -Z1 "$LOVE_FILE")"
   # shellcheck disable=SC2086  # MANIFESTS is a deliberate word list
   for required in src/update/Boot.lua tools/save-editor/App.lua \
                   tools/save-editor/Kit.lua tools/save-editor/panels/Party.lua \
-                  libs/flexlove/FlexLove.lua \
+                  src/ui/kit/Kit.lua \
                   $MANIFESTS; do
     printf '%s\n' "$archive_entries" | grep -qx "$required" \
       || fail "game.love is missing $required"
