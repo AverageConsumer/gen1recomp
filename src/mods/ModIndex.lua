@@ -174,6 +174,13 @@ local function parseEntry(raw)
     conflicts = raw.conflicts,
     thumbnail = str(raw.thumbnail),
     description_url = str(raw.description_url),
+    -- Optional release stats a feed author can publish: total downloads
+    -- across all releases plus first/last release dates.  Additive-only,
+    -- so a feed that carries them stays readable by every build that
+    -- predates them (and one that does not still renders fine here).
+    downloads = tonumber(raw.downloads),
+    first_release = str(raw.first_release),
+    last_release = str(raw.last_release),
     latest = parseLatest(raw.latest),
     update_check = str(raw.update_check) or "pending",
   }

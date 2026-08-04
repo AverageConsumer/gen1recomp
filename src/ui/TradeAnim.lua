@@ -10,8 +10,16 @@ local TradeAnim = {}
 TradeAnim.__index = TradeAnim
 TradeAnim.isOpaque = true
 
+-- Trade_LoadMonSprite runs SET_PAL_POKEMON_WHOLE_SCREEN for the mon it puts
+-- on screen; every other step of the sequence runs SET_PAL_GENERIC, which is
+-- PAL_MEWMON (data/sgb/sgb_packets.asm PalPacket_Generic).  #750
 function TradeAnim:sgbPalettes(game)
-  return require("src.render.PaletteFX").wholeNamed(game.data, "MEWMON")
+  local P = require("src.render.PaletteFX")
+  local mon = (self.phase == "show_player" and self.sent)
+    or (self.phase == "show_enemy" and self.received)
+  local colors = mon and P.monPal(game.data, mon.species)
+  if colors then return { P.whole(colors) } end
+  return P.wholeNamed(game.data, "MEWMON")
 end
 
 local DEFAULT_ART = {
@@ -350,17 +358,17 @@ function TradeAnim:drawMonInfo(mon, ot, otId, boxTy)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
-function TradeAnim:drawIconInBubble(sprite, x, y)
-  local spr = sprite
-  if spr then
-    local sw, sh = spr:getDimensions()
-    local s = 16 / math.max(sw, sh)
-    love.graphics.draw(spr, x, y, 0, s, s)
-  else
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.rectangle("fill", x + 4, y + 4, 8, 8)
-    love.graphics.setColor(1, 1, 1, 1)
-  end
+-- Trade_WriteCircledMonOAM: the mon crosses the cable as its party-menu
+-- sprite (wMonPartySpriteSpecies -> WriteMonPartySpriteOAMBySpecies), not as
+-- its battle pic, and Trade_AnimCircledMon flips both it and the ring to
+-- their second frame every step.  The ring is four OAM blocks --
+-- Trade_CircleOAMBlocks .OAMBlock0-3 at (8,8) (24,8) (8,24) (24,24) with the
+-- X/Y flips -- so the 16x32 bubble sheet holds one quadrant per frame and the
+-- circle it makes is 32x32 around the 16x16 icon.  The icon rides OAM
+-- block 0 and the circle blocks 1-4 (Trade_WriteCircleOAMBlock counts a up
+-- from 1), and the lower OAM index wins overlap on DMG, so the icon draws
+-- on top of the circle's filled interior.  #750
+function TradeAnim:drawIconInBubble(mon, x, y)
   if self.img.bubble then
     if not self.bubbleQuad then
       local iw, ih = self.img.bubble:getDimensions()
@@ -370,7 +378,19 @@ function TradeAnim:drawIconInBubble(sprite, x, y)
         or self.bubbleQuad
     end
     local q = self.cableFlash and self.bubbleQuadAlt or self.bubbleQuad
-    love.graphics.draw(self.img.bubble, q, x - 8, y - 8)
+    local left, top = x - 8, y - 8
+    local right, bottom = left + 32, top + 32
+    love.graphics.draw(self.img.bubble, q, left, top)
+    love.graphics.draw(self.img.bubble, q, right, top, 0, -1, 1)
+    love.graphics.draw(self.img.bubble, q, left, bottom, 0, 1, -1)
+    love.graphics.draw(self.img.bubble, q, right, bottom, 0, -1, -1)
+  end
+  local drawn = mon and require("src.ui.PartyMenu").drawIcon(
+    self.game, mon, x, y, false, 0, self.cableFlash)
+  if not drawn then
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", x + 4, y + 4, 8, 8)
+    love.graphics.setColor(1, 1, 1, 1)
   end
 end
 
@@ -471,13 +491,8 @@ function TradeAnim:draw()
     love.graphics.translate(160, 0)
     self:drawRightGB()
     love.graphics.pop()
-    local sprite
-    if p == "transfer_lr" then
-      sprite = self.sentSprite
-    else
-      sprite = self.recvSprite
-    end
-    self:drawIconInBubble(sprite, self.monX, self.monY)
+    local mon = p == "transfer_lr" and self.sent or self.received
+    self:drawIconInBubble(mon, self.monX, self.monY)
     if self.cableFlash then
       love.graphics.setColor(1, 1, 1, 0.15)
       love.graphics.rectangle("fill", 0, 32, 160, 8)

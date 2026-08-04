@@ -175,7 +175,11 @@ local function obpIcon(path)
   return love.graphics.newImage(id)
 end
 
-local function drawIcon(game, mon, x, y, selected, counter)
+-- `forceAlt` picks the second animation frame outright, for callers with no
+-- selection cursor of their own: Trade_AnimCircledMon
+-- (engine/movie/trade.asm) cycles the party sprite's two frames the whole
+-- time the mon rides the link cable (#750).
+function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt)
   local icons = game.data.icons
   if not icons then return end
   local def = game.data.pokemon[mon.species]
@@ -222,7 +226,7 @@ local function drawIcon(game, mon, x, y, selected, counter)
   end
   local img = iconImages[key]
   if not img then return end
-  local alt = false
+  local alt = forceAlt or false
   if selected then
     local px = math.floor(mon.hp * 48 / math.max(1, mon.stats.hp))
     local speed = px >= 27 and 5 or px >= 10 and 16 or 32
@@ -257,13 +261,24 @@ local function drawIcon(game, mon, x, y, selected, counter)
     -- whatever size the file is (unchanged path)
     love.graphics.draw(img, x, y)
   end
+  return true
 end
 
 function PartyMenu.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, PartyMenu)
   self.game = game
-  self.index = 1
+  -- PartyMenuInit (home/pokemon.asm) seeds the cursor from
+  -- wPartyAndBillsPCSavedMenuItem rather than from zero, and
+  -- HandlePartyMenuInput writes wCurrentMenuItem back into it on every
+  -- input, so the party cursor survives closing and reopening the menu.
+  -- Only a battle clears it -- InitBattleVariables and end_of_battle.asm
+  -- both zero the byte, which BattleState mirrors.  The clamp covers a
+  -- party that shrank (deposit / release) while the saved index was
+  -- pointing past the end. #768
+  local count = #(opts.party or (game.save and game.save.party) or {})
+  self.index = math.min(math.max(1, game.partyMenuSavedIndex or 1),
+                        math.max(1, count))
   self.onSwitch = opts.onSwitch
   self.onCancel = opts.onCancel
   self.pickOnly = opts.pickOnly
@@ -512,8 +527,10 @@ function PartyMenu:update(dt)
     self.index = grid
   elseif input:wasPressed("up") then
     self.index = self.index > 1 and self.index - 1 or math.max(1, #party)
+    self.game.partyMenuSavedIndex = self.index -- HandlePartyMenuInput #768
   elseif input:wasPressed("down") then
     self.index = self.index < #party and self.index + 1 or 1
+    self.game.partyMenuSavedIndex = self.index -- HandlePartyMenuInput #768
   elseif input:wasPressed("b") then
     self.game.stack:pop()
     if self.onCancel then self.onCancel() end
@@ -547,10 +564,17 @@ function PartyMenu:update(dt)
                   { label = Strings("STATS"), action = "stats" },
                   { label = Strings("CANCEL"), action = "cancel" } }
       else
-        -- STATS/SWITCH plus this mon's field moves (start_sub_menus.asm
-        -- builds the same dynamic list)
-        items = { { label = Strings("STATS"), action = "stats" },
-                  { label = Strings("SWITCH"), action = "switch" } }
+        -- This mon's field moves FIRST, then STATS/SWITCH
+        -- (start_sub_menus.asm builds the same dynamic list).  The order is
+        -- load bearing: DisplayFieldMoveMonMenu (engine/menus/text_box.asm)
+        -- grows the box upward one row per field move and prints the field
+        -- move names ABOVE PokemonMenuEntries ("STATS/SWITCH/CANCEL"), and
+        -- StartMenu_Pokemon .choseOutOfBattleMove indexes wFieldMoves with
+        -- menu items 0..n-1 while STATS/SWITCH sit at the bottom of the
+        -- list.  GetMonFieldMoves walks wPartyMon1Moves in slot order, so
+        -- the field moves keep the mon's move-list order -- which the loop
+        -- below already does. #768
+        items = {}
         -- Field moves (HMs/TMs) are usable out of battle even when the mon
         -- is fainted -- Gen 1 does not require HP for Cut/Fly/Surf/etc.
         -- Battle still excludes this list via `not self.battle`. Softboiled
@@ -595,6 +619,10 @@ function PartyMenu:update(dt)
             end
           end
         end
+        -- PokemonMenuEntries always closes the list, under the field moves
+        -- (text_box.asm .donePrintingNames). #768
+        items[#items + 1] = { label = Strings("STATS"), action = "stats" }
+        items[#items + 1] = { label = Strings("SWITCH"), action = "switch" }
       end
       local ctx = { battle = self.battle, overworld = ow }
       local hooked = Runtime.call("ui.party.submenu", sameItems,
@@ -665,7 +693,7 @@ function PartyMenu:draw()
     local def = self.game.data.pokemon[mon.species]
     local y = PartyMenu.entryY(i)
     love.graphics.setColor(1, 1, 1, 1)
-    drawIcon(self.game, mon, 8, y, i == self.index, self.blink or 0)
+    PartyMenu.drawIcon(self.game, mon, 8, y, i == self.index, self.blink or 0)
     love.graphics.setColor(0, 0, 0, 1)
     Font.draw(mon.nickname or def.name, 24, y)
     -- level at column 13 (<LV> tile + digits, PrintLevel) AND the

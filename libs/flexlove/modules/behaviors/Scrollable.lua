@@ -214,10 +214,13 @@ local function onDraw(element, _ctx)
   if not (scrollbarDims.vertical.visible or scrollbarDims.horizontal.visible) then
     return
   end
-  -- Clear any parent scissor clipping before drawing scrollbars so they render
-  -- fully visible (scrollbars must not be clipped by ancestor overflow).
+  -- Lift the parent scissor while drawing scrollbars so they render fully
+  -- visible, then RESTORE it: clearing it outright let every later sibling
+  -- draw unclipped (scrolled page content over the pinned header).
+  local sx, sy, sw, sh = love.graphics.getScissor()
   love.graphics.setScissor()
   element._renderer:drawScrollbars(element, element.x, element.y, element.width, element.height, scrollbarDims)
+  if sx then love.graphics.setScissor(sx, sy, sw, sh) end
 end
 
 -- --------------------------------------------------------------------------

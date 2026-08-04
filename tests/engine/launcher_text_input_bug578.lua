@@ -133,6 +133,13 @@ check(ri._findSearchFocus == false, "a tab change drops the caret")
 eq(lastArm(), false, "and disarms setTextInput")
 ri.tab = "find"
 
+ri:_toggleFindSearchFocus()
+check(ri._findSearchFocus == true, "tapping the search field focuses it")
+eq(lastArm(), true, "refocusing the search field arms setTextInput")
+ri:_toggleFindSearchFocus()
+check(ri._findSearchFocus == false, "tapping the focused search field blurs it")
+eq(lastArm(), false, "blurring the search field disarms setTextInput")
+
 -- ---- desktop contract (#529): disarm never lowers off Android -------------
 
 ri.android = false

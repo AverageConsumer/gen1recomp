@@ -59,7 +59,13 @@ local function styleOf(game, id)
   return record or Transition.STYLES[id]
 end
 
-function Transition.new(game, onMidpoint, onDone)
+-- `warp` marks the map-change fade: PlayMapChangeSound's GBFadeOutToBlack
+-- has no matching fade in (LoadGBPal restores the palettes in one write), so
+-- warps land with framesIn 0.  Script fades that bracket a HideObject
+-- (ViridianGym.asm .afterBeat, RocketHideoutB4F BeatGiovanniScript) call
+-- GBFadeOutToBlack -> GBFadeInFromBlack instead, so the default keeps the
+-- symmetric 32-frame fade back in (home/fade.asm:21, b = 4).
+function Transition.new(game, onMidpoint, onDone, warp)
   local self = setmetatable({}, Transition)
   self.game = game
   self.onMidpoint = onMidpoint
@@ -68,9 +74,13 @@ function Transition.new(game, onMidpoint, onDone)
   self.phase = "out"
   local style = styleOf(game, "warp_fade")
   self.frames = style.frames or FRAMES
-  -- a style may still ask for a fade in (mods, and the record is data-driven);
-  -- the built-in warp is 0, matching hardware
-  self.framesIn = style.framesIn or FRAMES_IN
+  if warp then
+    -- a style may still ask for a fade in (mods, and the record is
+    -- data-driven); the built-in warp is 0, matching hardware
+    self.framesIn = style.framesIn or FRAMES_IN
+  else
+    self.framesIn = Timing.FADE_IN_FROM_BLACK
+  end
   return self
 end
 

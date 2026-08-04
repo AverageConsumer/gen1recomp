@@ -89,11 +89,14 @@ local importer = setmetatable({
   _padCursor = { x = 0, y = 0 }, _padCursorActive = false,
   _padAxis = { leftx = 0, lefty = 0, righty = 0 },
   _padDir = {}, _rawHatDirs = {}, _padInited = true,
+  -- FlexLove view marker: without it the pad A path is a no-op (headless).
+  _flex = true,
 }, RomImporter)
 local clicked = false
-function importer:mousepressed(_, _, button)
-  clicked = button == 1
-end
+local prevView = package.loaded["src.import.LauncherView"]
+package.loaded["src.import.LauncherView"] = {
+  clickAt = function() clicked = true end,
+}
 importer:joystickaxis(nil, 1, -0.8)
 check(importer._padAxis.leftx == -0.8,
   "raw joystick left axis reaches the launcher cursor")
@@ -108,6 +111,7 @@ check(clicked, "raw joystick primary button clicks the launcher cursor")
 clicked = false
 importer:joystickpressed(mapped, 1)
 check(not clicked, "mapped pad does not double-click the launcher cursor")
+package.loaded["src.import.LauncherView"] = prevView
 
 -- Drivers that only inject pressQueue still get a one-step hold.
 Input:reset()

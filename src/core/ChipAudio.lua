@@ -100,12 +100,25 @@ end
 -- play so a hot-reloaded dataset (or a mod's audio) always reaches the worker
 local function slimAudio(data)
   local audio = data.audio or {}
+  -- NX-only: resolve the versioned cache prefix on the main thread and hand
+  -- it to the worker, which runs in a fresh Lua state without GameVersion.
+  local programPrefix
+  if require("src.core.Platform").isNX() then
+    local prefix = require("src.core.GameVersion").cachePrefix()
+    if prefix ~= "" then programPrefix = prefix end
+  end
   return {
     programFile = audio.programFile,
+    programPrefix = programPrefix,
     bankOrder = audio.bankOrder,
     waveBanks = audio.waveBanks,
     noiseHeaders = audio.noiseHeaders,
   }
+end
+
+-- test-only: expose slimAudio so the NX prefix hand-off is verifiable
+function ChipAudio._slimAudioForTest(data)
+  return slimAudio(data)
 end
 
 -- If the worker died (a malformed def that errors mid-synth), fall back to the

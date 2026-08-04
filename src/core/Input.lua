@@ -1,6 +1,8 @@
 -- Input abstraction: maps keyboard to Game Boy buttons.
 -- `down` = held this frame; `pressed` = edge, consumed per fixed step.
 
+local GamepadMap = require("src.core.GamepadMap")
+
 local Input = {}
 
 local DEFAULT_BINDINGS = {
@@ -22,37 +24,14 @@ local DEFAULT_BINDINGS = {
 -- keys that map to "start" but also to "a" would conflict; keep Enter = a,
 -- Escape = start for desktop friendliness.
 
--- LÖVE's standard gamepad mapping (SDL game controller DB), consistent
--- across Xbox/PlayStation/generic controllers on desktop and mobile. Some
--- third-party pads report their own SDL mapping for a given physical
--- button (e.g. Select/Back/View on off-brand XInput pads), which is what
--- src/ui/BindingsMenu.lua's rebinding is for -- see applyBindings below.
-local DEFAULT_GAMEPAD_BINDINGS = {
-  dpup = "up", dpdown = "down", dpleft = "left", dpright = "right",
-  a = "a", b = "b",
-  start = "start", back = "select",
-}
-
 -- left-stick deadzones: press past STICK_ON, release once back under
 -- STICK_OFF. The gap (hysteresis) stops the direction from flickering
 -- while the stick sits near the threshold.
 local STICK_ON = 0.5
 local STICK_OFF = 0.3
 
--- Generic SDL joysticks expose the left stick as the first two numbered
--- axes and the D-pad as a hat.  This is common on Linux handhelds whose
--- controller has no game-controller database entry.  The indices below are
--- the desktop XInput order and are only meaningful for such pads: raw
--- numbering is per-driver, and SDL's iOS/MFi driver packs only the buttons
--- a pad actually reports, which slides the D-pad down onto 7..10 (#620).
--- These are the raw DEFAULTS only: applyBindings layers the player's
--- "joyN" pad bindings over them (#632), and only a stick SDL does NOT
--- recognize as a gamepad is ever served out of this table -- see
--- joystickpressed below.
-local RAW_BUTTON_BINDINGS = {
-  [1] = "a", [2] = "b",
-  [7] = "select", [8] = "start", [9] = "select", [10] = "start",
-}
+-- Raw joystick defaults + NX overrides live in src/core/GamepadMap.lua
+-- (see RAW_BUTTON_BINDINGS / NX_RAW_BUTTON_BINDINGS and #620 / #632).
 
 local HAT_DIRECTIONS = {
   u = { "up" }, d = { "down" }, l = { "left" }, r = { "right" },
@@ -75,8 +54,15 @@ end
 function Input:applyBindings(overlay)
   local keys, pads, joys = {}, {}, {}
   for key, action in pairs(DEFAULT_BINDINGS) do keys[key] = action end
-  for button, action in pairs(DEFAULT_GAMEPAD_BINDINGS) do pads[button] = action end
-  for index, action in pairs(RAW_BUTTON_BINDINGS) do joys[index] = action end
+  for button, action in pairs(GamepadMap.gamepadBindings()) do
+    pads[button] = action
+  end
+  -- Seed raw defaults from GamepadMap (desktop XInput order or NX OLED
+  -- indices) so joyN rebinds (#632) and dual-path guards (#620) share one
+  -- table with the Switch face-label remap.
+  for index, action in pairs(GamepadMap.rawBindings()) do
+    joys[index] = action
+  end
   for actionId, binding in pairs(overlay or {}) do
     if type(binding) == "table" then
       if binding.key then keys[binding.key] = actionId end
@@ -225,18 +211,16 @@ end
 -- alone; the raw path exists for sticks with no game-controller-database
 -- entry.  A nil joystick is a raw stick: that is how
 -- tests/input_hold_test.lua and the drivers drive this path.
-local function isRawStick(joystick)
-  return not (joystick and joystick.isGamepad and joystick:isGamepad())
-end
+-- Gate: GamepadMap.ignoreRawForJoystick (pcall-safe isGamepad check).
 
 function Input:joystickpressed(joystick, button)
-  if not isRawStick(joystick) then return end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
   local btn = self.joyBindings[button]
   if btn then press(self, btn, "joy:" .. button) end
 end
 
 function Input:joystickreleased(joystick, button)
-  if not isRawStick(joystick) then return end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
   local btn = self.joyBindings[button]
   if btn then release(self, btn, "joy:" .. button) end
 end
@@ -277,7 +261,7 @@ function Input:gamepadaxis(joystick, axis, value)
 end
 
 function Input:joystickaxis(joystick, axis, value)
-  if not isRawStick(joystick) then return end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
   if axis == 1 then
     self:gamepadaxis(joystick, "leftx", value)
   elseif axis == 2 then
@@ -290,7 +274,7 @@ end
 -- gamepad map, so letting the hat answer too would re-assert the factory
 -- directions on top of a direction rebind.
 function Input:joystickhat(joystick, hat, direction)
-  if not isRawStick(joystick) then return end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
   local source = "hat:" .. hat
   for _, btn in ipairs(self.hatDirs[hat] or {}) do
     release(self, btn, source)

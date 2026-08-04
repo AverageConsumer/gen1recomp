@@ -123,7 +123,18 @@ local function loadBanks(data)
   if cachedProgramFile == audio.programFile and cachedBanks then
     return cachedBanks
   end
-  local raw, readError = love.filesystem.read(audio.programFile)
+  local raw, readError
+  -- The chip worker runs in a separate Lua state without the NX overlay;
+  -- ChipAudio hands it the versioned cache prefix explicitly.  On the main
+  -- thread the NX overlay (or desktop mountVersion) makes the plain read
+  -- resolve, so no platform branching belongs here.
+  local prefix = audio.programPrefix
+  if prefix and prefix ~= "" then
+    raw, readError = love.filesystem.read(prefix .. audio.programFile)
+  end
+  if not raw then
+    raw, readError = love.filesystem.read(audio.programFile)
+  end
   if not raw then error("could not read sound programs: " .. tostring(readError)) end
   local banks = {}
   for index, bank in ipairs(audio.bankOrder) do
@@ -138,6 +149,11 @@ end
 -- module's state, so ChipAudio.invalidate must reach it via a worker message
 function ChipSynth.invalidateBanks()
   cachedProgramFile, cachedBanks = nil, nil
+end
+
+-- test-only: exercise loadBanks without building a full engine
+function ChipSynth._loadBanksForTest(data)
+  return loadBanks(data)
 end
 
 -- A def-local program (ChipAsm output) is mounted as pseudo-bank 0 next to

@@ -2709,6 +2709,7 @@ function Element:_drawChildren(backdropCanvas)
 
     -- Set up clipping: rounded-corners (stencil) > overflow (scissor) > none
     local clipMode = "none"
+    local prevSx, prevSy, prevSw, prevSh
     if hasRoundedCorners then
       local roundedBoxWidth = self._borderBoxWidth or (self.width + self.padding.left + self.padding.right)
       local roundedBoxHeight = self._borderBoxHeight or (self.height + self.padding.top + self.padding.bottom)
@@ -2721,7 +2722,18 @@ function Element:_drawChildren(backdropCanvas)
       love.graphics.setStencilTest("greater", 0)
       clipMode = "stencil"
     elseif needsOverflowClipping then
-      love.graphics.setScissor(self.x + self.padding.left, self.y + self.padding.top, self.width, self.height)
+      -- Intersect with (and later restore) any ancestor scissor: replacing
+      -- it let a nested scroller widen its parent's clip, and the bare
+      -- setScissor() restore then cleared it entirely - scrolled page
+      -- content drew straight over the pinned header.
+      -- transformPoint: scissor rects live in window coordinates and ignore
+      -- the scroll translate an ancestor scroller has pushed, so a nested
+      -- scroller's clip sat at its untranslated layout position and cut its
+      -- own rows away once the page scrolled.
+      prevSx, prevSy, prevSw, prevSh = love.graphics.getScissor()
+      local scx, scy = love.graphics.transformPoint(
+        self.x + self.padding.left, self.y + self.padding.top)
+      love.graphics.intersectScissor(scx, scy, self.width, self.height)
       clipMode = "scissor"
     end
 
@@ -2745,7 +2757,11 @@ function Element:_drawChildren(backdropCanvas)
     if clipMode == "stencil" then
       love.graphics.setStencilTest()
     elseif clipMode == "scissor" then
-      love.graphics.setScissor()
+      if prevSx then
+        love.graphics.setScissor(prevSx, prevSy, prevSw, prevSh)
+      else
+        love.graphics.setScissor()
+      end
     end
   end
 

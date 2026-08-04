@@ -1,10 +1,10 @@
 # New features (deliberate additions beyond the original)
 
-Intentional enhancements this port adds on top of faithful Pokémon Red
-behavior. They have no Game Boy equivalent and are kept by design.
+Intentional enhancements this port adds on top of faithful Pokémon Red, Blue,
+and Yellow behavior. They have no Game Boy equivalent and are kept by design.
 Genuine divergences from the original (things still missing, wrong, or
-approximated) live in docs/known-differences.md; faithfully-ported
-behavior is in docs/behavior-porting-notes.md.
+approximated) live in docs/known-differences.md; faithfully-ported behavior is
+in docs/behavior-porting-notes.md.
 
 ## Survey zoom
 
@@ -332,6 +332,17 @@ one used sideways. An `options.lua` from before this split keeps its single
 layout in both orientations until one of them is edited. In-game, Options →
 **TOUCH PAD** toggles the same on/off flag without leaving a play session.
 
+## Screen orientation lock (Android)
+
+Options → **ORIENTATION** (also in the launcher's gear menu) locks the
+screen to **PORTRAIT**, **LANDSCAPE** (either landscape, following the
+device), or **REVERSE LANDSCAPE**, or leaves it on **AUTO** (#592). AUTO
+allows every orientation but defers to the system: with auto-rotate turned
+off in Android's quick settings, the game stays put instead of following
+the sensor (#716). Changes apply immediately -- the screen rotates as the
+row is stepped -- and persist in `options.lua`. Android only: iOS follows
+the app's fixed orientation list, and desktop windows rotate nothing.
+
 ## Translation support
 
 Every string the player can read is now reachable from a mod, so a
@@ -364,6 +375,28 @@ plus a glyph-page and charmap stub, a naming-grid stub, and a
 (deliberately outside the mod: extracted text is ROM content and must not
 be packed). `--refresh` re-harvests after an engine update, keeping
 existing translations and parking orphaned keys rather than dropping them.
+
+A translation can also skip glyph pages entirely: scaffolding with
+`--pixel-font` (or registering `mod.content.font:register("ttf", {})` in
+an existing mod) renders text through a bundled TTF covering Latin with
+diacritics, Cyrillic, kana and CJK, while box borders and `<PK>`-style
+macro glyphs keep their tiles. The font is "Plain Pixel Font" by Douglas
+Vautour (Burpy Fresh), licensed under CC-BY 4.0 (5x11 base characters,
+11x11 double-width; see `assets/fonts/plainpixel/README.md`). Options on
+the registry entry: `file` for a mod-shipped TTF, `size` (the font's
+design em; Plain Pixel rasterizes cleanly only at multiples of 15),
+`spacing` added to every advance, `yOffset` for vertical alignment
+against the 8px cell grid, `bold`, which double-prints at a 1px
+offset for fonts whose strokes read too light, and `tiles`, the
+characters that keep their ROM tile instead of coming from the TTF.
+
+`tiles` matters for a CJK translation. Sizing the font so a kana fills
+the 8px cell leaves Latin narrower than the tile font it replaces, which
+pulls the numeric columns out of line: the party menu's `:L12` stops
+sitting over `34/ 34`. Naming `"0123456789/:"` keeps those on the
+vanilla tiles, so numbers render exactly as they do in English while
+kana still come from the font. It takes a string of characters, or a
+list when a multi-character charmap sequence is meant.
 
 See the wiki's Translations guide.
 
@@ -446,6 +479,16 @@ own repositories. No index ships with the launcher and none is ever added
 automatically, so the tab opens on an "Add an index" prompt until you name
 one; paste an index URL or its `owner/repo` and it is remembered in
 `options.lua`. More than one index can be added, and the listings merge.
+
+A feed author can publish per-mod release stats by adding three optional
+fields to an entry -- `downloads` (total across every release), and
+`first_release` / `last_release` (ISO days) -- which the listing shows in
+the same gold line the MODS tab uses. When a feed does not carry them,
+the row fetches the mod's own GitHub releases instead -- the same cached
+`ModUpdate` fetch the MODS tab uses, one entry per frame -- so the stats
+appear for any mod with a `github` field regardless of feed maintenance.
+The fields are additive: feeds that carry them stay readable by every
+build that predates them, and feeds that do not render exactly as before.
 
 ## Soft reset (all versions)
 

@@ -695,7 +695,11 @@ run_xcodebuild() {
   fi
 
   # Fuse even if the pbxproj wire-up failed,  LÖVE runs any bundled *.love.
-  if [ ! -f "$app/game.love" ]; then
+  # Byte-compare, never just existence: xcodebuild's incremental Copy Bundle
+  # Resources can leave a previous build's game.love in a surviving .app, and
+  # an existence check shipped that stale payload in the .ipa (today's Lua
+  # fixes present in ios/resources/ but absent from the installed app).
+  if ! cmp -s "$LOVE_FILE" "$app/game.love"; then
     say "fusing game.love into $(basename "$app")"
     cp "$LOVE_FILE" "$app/game.love"
   fi

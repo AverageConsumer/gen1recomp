@@ -212,14 +212,19 @@ pack_game_love() {
     tools/rom_manifest_yellow.json \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
     -x 'data/generated/*' -x 'assets/generated/*')
-  if unzip -Z1 "$LOVE_FILE" \
-      | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then
-    fail "game.love unexpectedly contains generated ROM data"
-  fi
-  # Do not pipe unzip straight into grep here: on a large archive grep can
-  # finish early and make unzip report SIGPIPE under `set -o pipefail`.
+  # List once and match against the captured text: piping unzip straight into
+  # grep under `set -o pipefail` SIGPIPEs unzip as soon as grep exits early,
+  # and the pipeline's 141 outranks grep's own status.  For the generated-data
+  # guard that inverted the test -- an archive that really did carry generated
+  # ROM data made grep match, killed unzip, and the `if` read the 141 as "no
+  # match" and let the build through (#774).  Same listing feeds the
+  # required-file gates below, as in scripts/build.sh and scripts/pack_love.sh.
   local archive_entries
   archive_entries="$(unzip -Z1 "$LOVE_FILE")"
+  if grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/' \
+      <<< "$archive_entries"; then
+    fail "game.love unexpectedly contains generated ROM data"
+  fi
   grep -qx 'tools/save-editor/App.lua' <<< "$archive_entries" \
     || fail "game.love is missing the save editor (Edit on a save row would crash)"
   grep -qx "$YELLOW_MANIFEST_RELATIVE" <<< "$archive_entries" \

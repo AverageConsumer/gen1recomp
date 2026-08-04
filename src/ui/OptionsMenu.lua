@@ -19,6 +19,7 @@ local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
 local GameVersion = require("src.core.GameVersion")
 local VideoMode = require("src.core.VideoMode")
+local Orientation = require("src.core.Orientation")
 local FaithfulRes = require("src.core.FaithfulRes")
 local FrameCap = require("src.core.FrameCap")
 local Performance = require("src.core.Performance")
@@ -350,6 +351,19 @@ local function buildRows(game)
         VideoMode.apply(o.videoMode)
         return true
       end },
+    -- Android orientation lock (#592): AUTO / PORTRAIT / LANDSCAPE /
+    -- REVERSE LANDSCAPE, live-applied through SDL's orientation hint.
+    -- Filtered out below on everything that is not Android.
+    { id = "orientation", label = Strings("ORIENTATION"),
+      value = function(g)
+        return Strings(Orientation.modeLabel(g.save.options.orientation))
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.orientation = Orientation.cycle(o.orientation, dir)
+        Orientation.apply(o.orientation)
+        return true
+      end },
     -- Lock the window to an exact 160x144 multiple, so the surface IS the
     -- Game Boy screen with no letterbox at all.  Sits next to VIDEO MODE
     -- because it overrides it: holding an exact size means dropping
@@ -429,6 +443,14 @@ local function buildRows(game)
     local filtered = {}
     for _, row in ipairs(rows) do
       if row.id ~= "gbcfx" then filtered[#filtered + 1] = row end
+    end
+    rows = filtered
+  end
+  -- ORIENTATION only on Android, the one platform Orientation.apply reaches.
+  if not Orientation.isAndroid() then
+    local filtered = {}
+    for _, row in ipairs(rows) do
+      if row.id ~= "orientation" then filtered[#filtered + 1] = row end
     end
     rows = filtered
   end

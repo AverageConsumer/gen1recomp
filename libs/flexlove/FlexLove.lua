@@ -230,7 +230,9 @@ function flexlove.init(config)
   -- Initialize Performance if available
   if Performance then
     flexlove._Performance = Performance.init({
-      enabled = config.performanceMonitoring or true,
+      -- ~= false (not `or true`): `performanceMonitoring = false` must
+      -- actually disable the per-frame timers + memory sampling.
+      enabled = config.performanceMonitoring ~= false,
       hudEnabled = false, -- Start with HUD disabled
       hudToggleKey = config.performanceHudKey or "f3",
       hudPosition = config.performanceHudPosition or { x = 10, y = 10 },

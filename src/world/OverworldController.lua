@@ -37,6 +37,32 @@ local mapScripts -- registry of hand-ported map scripts
 local COMPASS = { up = "north", down = "south", left = "west", right = "east" }
 local DIRVEC = { up = { 0, -1 }, down = { 0, 1 }, left = { -1, 0 }, right = { 1, 0 } }
 
+-- Fly animation coord paths (engine/overworld/player_animations.asm):
+-- y/x pairs in GB screen pixels, one pair every 3 frames (DoFlyAnimation's
+-- Delay3).  The port anchors a path on the player's own position instead
+-- of the GB screen center: FLY_ANCHOR is the pair where the original has
+-- the player's sprite, so path1 starts exactly on the player.
+local FLY_ANCHOR = { 0x3C, 0x48 }
+local FLY_PATH1 = { -- FlyAnimationScreenCoords1: up and off to the right
+  { 0x3C, 0x48 }, { 0x3C, 0x50 }, { 0x3B, 0x58 }, { 0x3A, 0x60 },
+  { 0x39, 0x68 }, { 0x37, 0x70 }, { 0x37, 0x78 }, { 0x33, 0x80 },
+  { 0x30, 0x88 }, { 0x2D, 0x90 }, { 0x2A, 0x98 }, { 0x27, 0xA0 },
+}
+local FLY_PATH2 = { -- FlyAnimationScreenCoords2: out over the top-left;
+  -- the 11th step reads the ($F0,$00) terminator, fully off screen
+  { 0x1A, 0x90 }, { 0x19, 0x80 }, { 0x17, 0x70 }, { 0x15, 0x60 },
+  { 0x12, 0x50 }, { 0x0F, 0x40 }, { 0x0C, 0x30 }, { 0x09, 0x20 },
+  { 0x05, 0x10 }, { 0x00, 0x00 }, { -16, 0x00 },
+}
+-- FlyAnimationEnterScreenCoords: in from off the top-right.  Its own last
+-- pair is ($3C,$40), so the arrival anchors there and lands on the player.
+local FLY_ARRIVE_ANCHOR = { 0x3C, 0x40 }
+local FLY_PATH_IN = {
+  { 0x05, 0x98 }, { 0x0F, 0x90 }, { 0x18, 0x88 }, { 0x20, 0x80 },
+  { 0x27, 0x78 }, { 0x2D, 0x70 }, { 0x32, 0x68 }, { 0x36, 0x60 },
+  { 0x39, 0x58 }, { 0x3B, 0x50 }, { 0x3C, 0x48 }, { 0x3C, 0x40 },
+}
+
 -- healing machine ball screen positions (PokeCenterOAMData dbsprite
 -- rows are raw shadow-OAM bytes, so the hardware's -8/-16 OAM origin
 -- applies: screen = tile*8 + pixel offset - 8/16); [3] = OAM_XFLIP
@@ -989,10 +1015,20 @@ function OverworldState:update(dt)
     return
   end
   if self.flyAnim then
-    self.flyAnim.frames = self.flyAnim.frames - 1
-    if self.flyAnim.frames <= 0 then
+    -- DoFlyAnimation runs one coord pair every Delay3 (3 frames); the
+    -- in-place flap is 8 pairs, then the two paths with a 40-frame beat
+    -- while the bird is parked off screen between them
+    local anim = self.flyAnim
+    anim.t = anim.t + 1
+    if anim.phase == "flap" and anim.t >= 8 * 3 then
+      anim.phase, anim.t = "path1", 0
+      require("src.core.Sound").play(Game.data, "Fly")
+    elseif anim.phase == "path1" and anim.t >= #FLY_PATH1 * 3 then
+      anim.phase, anim.t = "hold", 0
+    elseif anim.phase == "hold" and anim.t >= 40 then
+      anim.phase, anim.t = "path2", 0
+    elseif anim.phase == "path2" and anim.t >= #FLY_PATH2 * 3 then
       self.flyAnim = nil
-      self.player.inputLocked = false
       local d = self.flyDest
       self.flyDest = nil
       if d then
@@ -1000,8 +1036,19 @@ function OverworldState:update(dt)
         -- SFX_FLY (EnterMapAnim .flyAnimation)
         self.arriveWarp = "fly"
         self:startWarpTo(d.map, d.x, d.y, "down", nil, { via = "fly" })
+      else
+        self.player.inputLocked = false
       end
       return
+    end
+  end
+  if self.flyArrive then
+    -- EnterMapAnim .flyAnimation: one swoop in from the top-right, then
+    -- LoadPlayerSpriteGraphics -- the player reappears where it lands
+    self.flyArrive.t = self.flyArrive.t + 1
+    if self.flyArrive.t >= #FLY_PATH_IN * 3 then
+      self.flyArrive = nil
+      self.player.inputLocked = false
     end
   end
 
@@ -1298,12 +1345,16 @@ function OverworldState:checkBoulderPush(dir)
   end
   local bx, by = Collision.target(fx, fy, dir)
   if not self.map:inBounds(bx, by) then self.boulderTried = nil return false end
+  -- CheckForCollisionWhenPushingBoulder uses the same walkable check as
+  -- player movement (CheckTilePassable walks the same wTilesetCollisionPtr
+  -- list) -- there is no hole/warp escape hatch in the original, so a
+  -- boulder can never be pushed onto a cell the player cannot walk onto.
+  -- The known push targets (CAVERN $22 holes, Victory Road switches) are
+  -- walkable tiles in their tileset's coll list already, so removing the
+  -- port's isWarpTileCell exception only stops wall pushes (#754).
   if not self.map:isWalkableCell(bx, by) then
-    -- boulders may be pushed into holes/switch spots that aren't walkable
-    if not self.map:isWarpTileCell(bx, by) then
-      self.boulderTried = nil
-      return false
-    end
+    self.boulderTried = nil
+    return false
   end
   if Collision.occupied(self.entities, bx, by, npc) then
     self.boulderTried = nil
@@ -1682,14 +1733,15 @@ end
 function OverworldState:flyTo(mapId)
   local spot = Game.data.field.flyWarps[mapId]
   if not spot then return end
-  require("src.core.Sound").play(Game.data, "Fly")
   Game.save.onBike = false
   Game.save.forcedBike = nil -- HandleFlyWarpOrDungeonWarp res BIT_ALWAYS_ON_BIKE
   self.player.surfing = false
   self:syncSurfingPikachu()
-  -- the bird carries the player off westward before the warp
-  -- (engine/overworld/player_animations.asm LoadBirdSpriteGraphics)
-  self.flyAnim = { frames = 48 }
+  -- _LeaveMapAnim .flyAnimation: the bird flaps in place (8 x Delay3),
+  -- then SFX_FLY and the up-right path, a 40-frame beat off screen, and
+  -- the exit over the top-left -- the warp fades only once the bird is
+  -- gone (#702).  fxBird draws it; the player hides for the whole flight.
+  self.flyAnim = { phase = "flap", t = 0 }
   self.player.inputLocked = true
   self.flyDest = { map = mapId, x = spot.x, y = spot.y }
 end
@@ -2956,6 +3008,34 @@ function OverworldState:trainerDefeated(npc)
   return false
 end
 
+-- data/trainers/encounter_types.asm
+local FEMALE_TRAINERS = {
+  OPP_LASS = true, OPP_JR_TRAINER_F = true, OPP_BEAUTY = true,
+  OPP_COOLTRAINER_F = true,
+}
+local EVIL_TRAINERS = {
+  OPP_UNUSED_JUGGLER = true, OPP_GAMBLER = true, OPP_ROCKER = true,
+  OPP_JUGGLER = true, OPP_CHIEF = true, OPP_SCIENTIST = true,
+  OPP_GIOVANNI = true, OPP_ROCKET = true,
+}
+
+-- PlayTrainerMusic (home/trainers.asm:399) picks the encounter sting from
+-- the engaged class: evil list, then female list, then male by default.
+-- The rivals `ret z` out of it and keep the MUSIC_MEET_RIVAL their own
+-- scripts start (data/scripts/oaks_lab.lua, story5.lua).  Its other gate,
+-- wGymLeaderNo, is not a leader test: that byte aliases wLoneAttackNo
+-- (ram/wram.asm:1264), is cleared on every map entry
+-- (engine/overworld/clear_variables.asm:8), and each gym script writes it
+-- only AFTER its own `call EngageMapTrainer` (scripts/PewterGym.asm:122),
+-- so leaders do get the sting and nothing on a map can be suppressed by it
+-- before the leader is beaten.  Returns nil when the class gets no sting.
+local function meetTrainerTheme(cls)
+  if not cls or cls:find("RIVAL") then return nil end
+  return EVIL_TRAINERS[cls] and "Music_MeetEvilTrainer"
+         or FEMALE_TRAINERS[cls] and "Music_MeetFemaleTrainer"
+         or "Music_MeetMaleTrainer"
+end
+
 -- Run the pre-battle text -> battle -> won text -> flags sequence.
 function OverworldState:engageTrainer(npc, onDone)
   local d = npc.def
@@ -2971,6 +3051,20 @@ function OverworldState:engageTrainer(npc, onDone)
 
   local BattleState = require("src.battle.BattleState")
   Game.stack:push(TextBox.new(Game, battleText, function()
+    -- TalkToTrainer (home/trainers.asm:88) prints the before-battle text
+    -- FIRST and only then runs `call EngageMapTrainer` / `jp
+    -- StartTrainerBattle`, so a trainer challenged on foot gets the sting
+    -- over the battle transition rather than under the dialogue.  Its
+    -- `bit BIT_SEEN_BY_TRAINER, [hl] / ret nz` guard is self.engaging
+    -- here: TrainerEngage (engine/overworld/trainer_sight.asm:224) already
+    -- started the sting before the "!" bubble on the sight path, so it
+    -- must not restart.  Script-driven challenges (gyms.lua leaders,
+    -- scripts/SilphCo11F.asm:269 Giovanni, scripts/FightingDojo.asm:122)
+    -- all `call EngageMapTrainer` too, and reach this same path (#764).
+    if not self.engaging then
+      local theme = meetTrainerTheme(d.trainerClass)
+      if theme then require("src.core.Music").play(Game.data, theme) end
+    end
     local battle = BattleState.newTrainer(Game, d.trainerClass, d.trainerParty)
     -- PrintEndBattleText (home/trainers.asm:341) is called from
     -- TrainerBattleVictory (engine/battle/core.asm:942), i.e. ON the battle
@@ -3142,29 +3236,15 @@ function OverworldState:checkTrainerSight()
   end
 end
 
--- data/trainers/encounter_types.asm
-local FEMALE_TRAINERS = {
-  OPP_LASS = true, OPP_JR_TRAINER_F = true, OPP_BEAUTY = true,
-  OPP_COOLTRAINER_F = true,
-}
-local EVIL_TRAINERS = {
-  OPP_UNUSED_JUGGLER = true, OPP_GAMBLER = true, OPP_ROCKER = true,
-  OPP_JUGGLER = true, OPP_CHIEF = true, OPP_SCIENTIST = true,
-  OPP_GIOVANNI = true, OPP_ROCKET = true,
-}
-
 function OverworldState:startTrainerApproach(npc, dist)
   self.engaging = true
   npc.frozen = true
-  -- the encounter sting (PlayTrainerMusic): evil / female / male by
-  -- class; rivals and gym leaders keep their own music
-  local cls = npc.def.trainerClass
-  if cls and not cls:find("RIVAL") then
-    local theme = EVIL_TRAINERS[cls] and "Music_MeetEvilTrainer"
-                  or FEMALE_TRAINERS[cls] and "Music_MeetFemaleTrainer"
-                  or "Music_MeetMaleTrainer"
-    require("src.core.Music").play(Game.data, theme)
-  end
+  -- TrainerEngage (engine/overworld/trainer_sight.asm:224) sets
+  -- BIT_SEEN_BY_TRAINER and calls EngageMapTrainer before the "!" bubble,
+  -- so the sighting sting starts ahead of the walk-up; engageTrainer sees
+  -- self.engaging and does not restart it (#764)
+  local theme = meetTrainerTheme(npc.def.trainerClass)
+  if theme then require("src.core.Music").play(Game.data, theme) end
   local function fight()
     self:engageTrainer(npc, function()
       npc.frozen = false
@@ -3980,6 +4060,10 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
     -- door warps never take this branch.
     if arriveWarp == "fly" then
       require("src.core.Sound").play(Game.data, "Fly")
+      -- EnterMapAnim .flyAnimation: the bird swoops in off the top-right
+      -- edge and the player reappears where it lands (#702); the input
+      -- lock from flyTo releases when the swoop finishes
+      self.flyArrive = { t = 0 }
     elseif arriveWarp == "teleport" then
       require("src.core.Sound").play(Game.data, "Teleport_Enter1")
       -- ENTER_2 caps the spin-down a moment later
@@ -4018,7 +4102,7 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
   end, function()
     self.transitioning = false
     if onDone then onDone() end
-  end))
+  end, true))  -- warp shape: no fade back in (LoadGBPal restores in one write)
 end
 
 -- Re-read a map record after its data changed (WorldAPI:invalidateMap,
@@ -4265,7 +4349,19 @@ function OverworldState:drawWorld()
   -- Renderer:beginFrame cleared it, so a battle or a full-screen menu -- which
   -- draws with no map beneath it -- stays lit exactly like
   -- init_battle_variables.asm's `ld [wMapPalOffset], a` leaves the original.
-  PaletteFX.setShadeMap(self.dark and PaletteFX.DARK_BGP or nil)
+  --
+  -- BATTLE BG "world" is the one case where a map DOES draw in a battle's
+  -- frame (Game.drawBaseInStack), and the shift armed here reached the
+  -- battle's own colorize pass, so an un-flashed Rock Tunnel battle came out
+  -- with FadePal2 over its pics, HUD and text (#773).  The battle zeroes
+  -- wMapPalOffset for its whole run and restores it on the way out
+  -- (engine/battle/core.asm InitBattleCommon push/pop), so the map behind it
+  -- goes lit too for as long as the battle is up -- which is what the
+  -- original's saved offset means.
+  local battleOverWorld = Game and Game.stack
+                          and Game.worldBgBattleInStack(Game.stack)
+  PaletteFX.setShadeMap((self.dark and not battleOverWorld)
+                        and PaletteFX.DARK_BGP or nil)
   -- advance the water/flower tile animation (runs under dialogs too).
   -- TileRenderer.tick uses wall-clock 60Hz steps so display refresh rate
   -- does not speed or slow the cycle (issue #4).
@@ -4487,20 +4583,40 @@ function OverworldState:drawWorld()
 
   -- the FLY bird sweeping off with the player
   local function fxBird()
-    if not self.flyAnim then return end
+    local anim = self.flyAnim or self.flyArrive
+    if not anim then return end
     local birdId = FieldDefaults.fieldValue(Game.data, "playerSprites", "fly")
     if not self.birdSprite and birdId and Game.data.sprites[birdId] then
       local SR = require("src.render.SpriteRenderer")
       self.birdSprite = SR.new(Game.data.sprites[birdId])
     end
-    if self.birdSprite then
-      local t = 48 - self.flyAnim.frames
-      local bx = self.player.px - t * 4
-      local by = self.player.py - math.floor(t * 1.5)
-      love.graphics.setColor(1, 1, 1, 1)
-      self.birdSprite:draw(bx, by, cam.x, cam.y, "left",
-                           math.floor(t / 4) % 2, false)
+    if not self.birdSprite then return end
+    -- DoFlyAnimation: the bird flaps its wings every Delay3; each path is
+    -- anchored on the player's cell (FLY_ANCHOR / FLY_ARRIVE_ANCHOR) so
+    -- the flight rides any screen position, and it faces its travel
+    -- direction (rightward travel flips the left-drawn sheet)
+    local phase = anim.phase or "arrive"
+    if phase == "hold" then return end -- parked off screen between paths
+    local path, anchor, facing
+    if phase == "path1" then
+      path, anchor, facing = FLY_PATH1, FLY_ANCHOR, "right"
+    elseif phase == "path2" then
+      path, anchor, facing = FLY_PATH2, FLY_ANCHOR, "left"
+    elseif phase == "arrive" then
+      path, anchor, facing = FLY_PATH_IN, FLY_ARRIVE_ANCHOR, "left"
     end
+    local step = math.floor(anim.t / 3)
+    local sx, sy
+    if path then
+      local pair = path[math.min(#path, step + 1)]
+      sx, sy = pair[2] - anchor[2], pair[1] - anchor[1]
+    else
+      sx, sy = 0, 0 -- the in-place flap sits on the player
+      facing = "right"
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    self.birdSprite:draw(self.player.px + sx, self.player.py + sy,
+                         cam.x, cam.y, facing, step % 2, false)
   end
 
   -- fishing pose: the rod tile over the faced water (gfx/fishing.asm)
@@ -4650,7 +4766,7 @@ function OverworldState:drawWorld()
       g.npc:draw(cam.x - g.ox, cam.y - g.oy)
     end
     for _, e in ipairs(self.entities) do
-      if not (self.flyAnim and e == self.player) then
+      if not ((self.flyAnim or self.flyArrive) and e == self.player) then
         e:draw(cam.x, cam.y)
         -- tall grass overdraws the sprite's feet (GB sprite priority);
         -- the overdraw is BG tiles, so it rides the shake offset too
@@ -4701,7 +4817,7 @@ function OverworldState:drawWorld()
       items[#items + 1] = { y = g.npc.py + g.oy + 16, kind = "ghost", g = g }
     end
     for _, e in ipairs(self.entities) do
-      if not (self.flyAnim and e == self.player) then
+      if not ((self.flyAnim or self.flyArrive) and e == self.player) then
         items[#items + 1] = { y = e.py + 16, kind = "entity", e = e }
       end
     end
@@ -4752,7 +4868,7 @@ function OverworldState:drawWorld()
       local fy = self.emote.npc.py - cam.y + 16
       self:billboard(fx, fy, vw, vh, zoneColorsAt(zones, fx, fy), false, fxEmote)
     end
-    if self.flyAnim then
+    if self.flyAnim or self.flyArrive then
       local fx = self.player.px - cam.x + 8
       local fy = self.player.py - cam.y + 16
       self:billboard(fx, fy, vw, vh, zoneColorsAt(zones, fx, fy), false, fxBird)

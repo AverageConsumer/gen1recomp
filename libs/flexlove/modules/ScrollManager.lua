@@ -112,7 +112,8 @@ function ScrollManager.new(config, deps)
   self.touchScrollEnabled = config.touchScrollEnabled ~= false -- Default true
   self.momentumScrollEnabled = config.momentumScrollEnabled ~= false -- Default true
   self.bounceEnabled = config.bounceEnabled ~= false -- Default true
-  self.scrollFriction = config.scrollFriction or 0.95 -- Exponential decay per frame
+  self.scrollFriction = config.scrollFriction or 0.95 -- legacy per-frame decay; superseded by _momentumDecel
+  self._momentumDecel = config.momentumDecel or 2.0 -- fling decay rate (1/s), dt-based; ~iOS "normal"
   self.bounceStiffness = config.bounceStiffness or 0.2 -- Spring constant
   self.maxOverscroll = config.maxOverscroll or 100 -- pixels
 
@@ -127,7 +128,8 @@ function ScrollManager.new(config, deps)
   self._scrollY = config._scrollY or 0
   self._targetScrollX = nil
   self._targetScrollY = nil
-  self._smoothScrollSpeed = 0.25 -- Interpolation speed (0-1, higher = faster)
+  self._smoothScrollSpeed = 0.25 -- Interpolation speed (0-1, higher = faster); legacy, superseded by _smoothScrollRate
+  self._smoothScrollRate = config.smoothScrollRate or 30 -- dt-based decay constant (1/s); ~90% converged in 2.3/rate s
   self.smoothScrollEnabled = config.smoothScrollEnabled or false -- Enable smooth wheel scrolling
   self._maxScrollX = 0
   self._maxScrollY = 0
@@ -729,6 +731,15 @@ function ScrollManager:getState()
     _overflowY = self._overflowY,
     _contentWidth = self._contentWidth,
     _contentHeight = self._contentHeight,
+    -- Touch fling state: without these, immediate-mode recreation zeroes the
+    -- release velocity on the next frame and momentum scrolling never runs.
+    _touchScrolling = self._touchScrolling or false,
+    _momentumScrolling = self._momentumScrolling or false,
+    _scrollVelocityX = self._scrollVelocityX or 0,
+    _scrollVelocityY = self._scrollVelocityY or 0,
+    _lastTouchTime = self._lastTouchTime or 0,
+    _lastTouchX = self._lastTouchX or 0,
+    _lastTouchY = self._lastTouchY or 0,
   }
 end
 
@@ -834,6 +845,30 @@ function ScrollManager:setState(state)
   if state._targetScrollY ~= nil then
     self._targetScrollY = state._targetScrollY
   end
+
+  -- Touch fling state (see getState): restore so momentum survives
+  -- immediate-mode element recreation between frames.
+  if state._touchScrolling ~= nil then
+    self._touchScrolling = state._touchScrolling
+  end
+  if state._momentumScrolling ~= nil then
+    self._momentumScrolling = state._momentumScrolling
+  end
+  if state._scrollVelocityX ~= nil then
+    self._scrollVelocityX = state._scrollVelocityX
+  end
+  if state._scrollVelocityY ~= nil then
+    self._scrollVelocityY = state._scrollVelocityY
+  end
+  if state._lastTouchTime ~= nil then
+    self._lastTouchTime = state._lastTouchTime
+  end
+  if state._lastTouchX ~= nil then
+    self._lastTouchX = state._lastTouchX
+  end
+  if state._lastTouchY ~= nil then
+    self._lastTouchY = state._lastTouchY
+  end
 end
 
 --- Handle touch press for scrolling
@@ -892,9 +927,15 @@ function ScrollManager:handleTouchMove(touchX, touchY)
   dx = -dx
   dy = -dy
 
-  -- Calculate velocity (pixels per second)
-  self._scrollVelocityX = dx / dt
-  self._scrollVelocityY = dy / dt
+  -- Velocity tracking (pixels per second).  Not the raw last-sample d/dt:
+  -- touch samples jitter, and the final pre-release sample often reads near
+  -- zero, which is why single-sample flings feel dead compared to a native
+  -- list.  Blend toward the instantaneous velocity with a ~50 ms time
+  -- constant instead, like OS velocity trackers that average recent samples.
+  local instX, instY = dx / dt, dy / dt
+  local blend = math.min(1, dt / 0.05)
+  self._scrollVelocityX = self._scrollVelocityX + (instX - self._scrollVelocityX) * blend
+  self._scrollVelocityY = self._scrollVelocityY + (instY - self._scrollVelocityY) * blend
 
   -- Apply scroll with bounce if enabled
   if self.bounceEnabled then
@@ -935,6 +976,15 @@ function ScrollManager:handleTouchRelease()
 
   self._touchScrolling = false
 
+  -- A finger that pauses and then lifts is a stop, not a fling: without
+  -- this, the smoothed velocity from the earlier drag still launches the
+  -- list after a deliberate hold (native lists kill the tracker the same
+  -- way).
+  if love.timer.getTime() - (self._lastTouchTime or 0) > 0.1 then
+    self._scrollVelocityX = 0
+    self._scrollVelocityY = 0
+  end
+
   -- Start momentum scrolling if enabled and velocity is significant
   if self.momentumScrollEnabled then
     local velocityThreshold = 50 -- pixels per second
@@ -957,12 +1007,23 @@ end
 --- Update momentum scrolling (call every frame with dt)
 ---@param dt number Delta time in seconds
 function ScrollManager:update(dt)
-  -- Smooth scroll interpolation
+  -- Smooth scroll interpolation.  The blend factor is derived from dt
+  -- (exponential approach) rather than a fixed per-frame fraction, so the
+  -- animation converges in the same wall-clock time regardless of frame
+  -- rate; a fixed fraction made scrolling visibly slower whenever frame
+  -- time rose.  _smoothScrollRate is the decay constant in 1/seconds:
+  -- ~90% of the remaining distance is covered in 2.3/rate seconds.
+  -- dt can legitimately be 0 here: in immediate mode beginFrame resets the
+  -- accumulated dt BEFORE endFrame updates the elements, so the launcher's
+  -- update order always hands this 0. Treat that (and nil) as one nominal
+  -- 60 Hz step so the interpolation still advances one frame's worth.
+  local step = (dt and dt > 0) and dt or (1 / 60)
   if self._targetScrollX or self._targetScrollY then
+    local alpha = 1 - math.exp(-(self._smoothScrollRate or 30) * step)
     if self._targetScrollY then
       local diff = self._targetScrollY - self._scrollY
       if math.abs(diff) > 0.5 then
-        self._scrollY = self._scrollY + diff * self._smoothScrollSpeed
+        self._scrollY = self._scrollY + diff * alpha
       else
         self._scrollY = self._targetScrollY
         self._targetScrollY = nil
@@ -972,7 +1033,7 @@ function ScrollManager:update(dt)
     if self._targetScrollX then
       local diff = self._targetScrollX - self._scrollX
       if math.abs(diff) > 0.5 then
-        self._scrollX = self._scrollX + diff * self._smoothScrollSpeed
+        self._scrollX = self._scrollX + diff * alpha
       else
         self._scrollX = self._targetScrollX
         self._targetScrollX = nil
@@ -988,25 +1049,43 @@ function ScrollManager:update(dt)
     return
   end
 
-  -- Apply velocity to scroll position
-  local dx = self._scrollVelocityX * dt
-  local dy = self._scrollVelocityY * dt
+  -- Apply velocity to scroll position (step, not dt: dt is 0 in the
+  -- immediate-mode endFrame path, which left touch flings completely dead)
+  local dx = self._scrollVelocityX * step
+  local dy = self._scrollVelocityY * step
 
   if self.bounceEnabled then
-    -- Allow overscroll during momentum
-    self._scrollX = self._scrollX + dx
-    self._scrollY = self._scrollY + dy
+    -- Allow overscroll during momentum, but never past maxOverscroll: an
+    -- unclamped fling carried a list hundreds of pixels past its edge
+    -- (rows vanished into a blank card until the spring crawled back).
+    self._scrollX = self._utils.clamp(self._scrollX + dx,
+      -self.maxOverscroll, self._maxScrollX + self.maxOverscroll)
+    self._scrollY = self._utils.clamp(self._scrollY + dy,
+      -self.maxOverscroll, self._maxScrollY + self.maxOverscroll)
   else
     self:scrollBy(dx, dy)
   end
 
-  -- Apply friction (exponential decay)
-  self._scrollVelocityX = self._scrollVelocityX * self.scrollFriction
-  self._scrollVelocityY = self._scrollVelocityY * self.scrollFriction
+  -- Frame-rate-independent exponential decay tuned to native list feel:
+  -- iOS "normal" deceleration is ~0.998 per millisecond, i.e. exp(-2.0 t).
+  -- The old per-frame 0.95 factor killed a fling in a fraction of a second
+  -- (and faster the higher the frame rate).  Total fling travel is
+  -- velocity / rate.
+  local decay = math.exp(-(self._momentumDecel or 2.0) * step)
+  -- Past the content edge, kill the fling an order of magnitude faster so
+  -- the rubber band absorbs it instead of stretching to the clamp and
+  -- sitting there (native lists do the same).
+  local overX = self._scrollX < 0 or self._scrollX > self._maxScrollX
+  local overY = self._scrollY < 0 or self._scrollY > self._maxScrollY
+  if overX or overY then
+    decay = decay * math.exp(-20 * step)
+  end
+  self._scrollVelocityX = self._scrollVelocityX * decay
+  self._scrollVelocityY = self._scrollVelocityY * decay
 
   -- Stop momentum when velocity is very low
   local totalVelocity = math.sqrt(self._scrollVelocityX ^ 2 + self._scrollVelocityY ^ 2)
-  if totalVelocity < 1 then
+  if totalVelocity < 5 then
     self._momentumScrolling = false
     self._scrollVelocityX = 0
     self._scrollVelocityY = 0

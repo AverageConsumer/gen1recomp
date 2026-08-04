@@ -387,8 +387,12 @@ function TextBox:draw()
   local ys = { self.line1Y, self.line2Y }
   for i, line in ipairs(self.shown) do
     local y = (ys[i] or self.line2Y) + (i == 1 and off or 0)
-    for j, code in ipairs(line) do
-      Font.drawCode(code, self.textX + (j - 1) * 8, y)
+    -- the pen advances per glyph, matching the pixel budget paginate
+    -- measured with; every fixed-width page still lands on the 8px grid
+    local pen = self.textX
+    for _, code in ipairs(line) do
+      Font.drawCode(code, pen, y)
+      pen = pen + Font.advanceOf(code)
     end
   end
   if (self.waiting or (self.done and not self.choice and not self.auto

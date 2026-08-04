@@ -52,7 +52,8 @@ local function makeGame(party)
   function stack:pop() return table.remove(self.states) end
   function stack:top() return self.states[#self.states] end
   return { data = Data, save = save, stack = stack,
-           input = { wasPressed = function() return true end } }
+           input = { wasPressed = function() return true end,
+                     isDown = function() return true end } }
 end
 
 local function pump(battle, limit)

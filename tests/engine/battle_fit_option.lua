@@ -75,6 +75,19 @@ T.eq(Game.worldBgBattleDim(stack(overworld, battleBg("world"), partyMenu)),
 T.eq(Game.worldBgBattleDim(stack(overworld)), nil, "no battle, no dim")
 T.eq(Game.worldBgBattleDim(nil), nil, "and no stack is safe")
 
+-- #773: the same walk decides whether the dark-cave shade shift may be armed
+-- for this frame.  A battle zeroes wMapPalOffset (init_battle_variables.asm),
+-- so a world-bg battle over an un-flashed Rock Tunnel must suppress it.
+T.check(Game.worldBgBattleInStack(stack(overworld, battleBg("world"))),
+  "a world-bg battle claims the frame, so the dark shift stays off it")
+T.check(not Game.worldBgBattleInStack(stack(overworld, battleBg("white"))),
+  "a white-bg battle draws with no map under it and claims nothing")
+T.check(Game.worldBgBattleInStack(stack(overworld, battleBg("world"), partyMenu)),
+  "a menu opened over the world-bg battle does not hand the shift back")
+T.check(not Game.worldBgBattleInStack(stack(overworld)),
+  "a plain dark map still arms it")
+T.check(not Game.worldBgBattleInStack(nil), "and no stack is safe")
+
 T.check(BattleState.BG_WORLD_DIM > 0 and BattleState.BG_WORLD_DIM < 1,
   "the dim is a fraction, not a full blackout")
 

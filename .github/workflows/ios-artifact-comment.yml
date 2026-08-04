@@ -29,13 +29,7 @@ jobs:
           [ -n "$pr_number" ] || exit 0
           echo "artifact_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts/$artifact_id" >> "$GITHUB_OUTPUT"
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-      - name: Delete existing comment
-        if: steps.artifact.outputs.pr_number != ''
-        uses: izhangzhihao/delete-comment@master
-        with:
-          github_token: ${{ github.token }}
-          delete_user_name: github-actions[bot]
-          issue_number: ${{ steps.artifact.outputs.pr_number }}
+      # Upsert via comment-tag only — do not delete-all bot comments (clobbers Switch).
       - name: Get build info
         id: build-info
         env:

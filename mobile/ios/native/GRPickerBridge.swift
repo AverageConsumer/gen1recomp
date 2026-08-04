@@ -30,6 +30,45 @@ public final class GRPickerBridge: NSObject {
     // (<sandbox>/Library/Application Support/<identity>).
     private static let loveIdentity = "pokemon-love2d"
 
+    @objc(httpDownloadWithUrl:destination:userAgent:accept:)
+    public static func httpDownload(url: UnsafePointer<CChar>?,
+                                    destination: UnsafePointer<CChar>?,
+                                    userAgent: UnsafePointer<CChar>?,
+                                    accept: UnsafePointer<CChar>?) -> Bool {
+        guard let url, let destination,
+              let requestURL = URL(string: String(cString: url)) else { return false }
+        var request = URLRequest(url: requestURL)
+        request.timeoutInterval = 300
+        if let userAgent, userAgent.pointee != 0 {
+            request.setValue(String(cString: userAgent), forHTTPHeaderField: "User-Agent")
+        }
+        if let accept, accept.pointee != 0 {
+            request.setValue(String(cString: accept), forHTTPHeaderField: "Accept")
+        }
+        let target = URL(fileURLWithPath: String(cString: destination))
+        let semaphore = DispatchSemaphore(value: 0)
+        var succeeded = false
+        let task = URLSession.shared.downloadTask(with: request) { temporary, response, error in
+            defer { semaphore.signal() }
+            guard error == nil, let temporary,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return }
+            try? FileManager.default.removeItem(at: target)
+            do {
+                try FileManager.default.moveItem(at: temporary, to: target)
+                succeeded = true
+            } catch {
+                succeeded = false
+            }
+        }
+        task.resume()
+        guard semaphore.wait(timeout: .now() + 305) == .success else {
+            task.cancel()
+            return false
+        }
+        return succeeded
+    }
+
     // MARK: - Entry points called from liblove (C strings on purpose)
 
     @objc(presentPickerWithKind:saveDir:)

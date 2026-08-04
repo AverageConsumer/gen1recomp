@@ -98,9 +98,13 @@ for _, modname in ipairs({ "data.scripts.story", "data.scripts.story2",
               check(WIRED[idx] == flag,
                     ("%s/%s: trade %s pairs with %s"):format(
                       mapId, const, tostring(idx), tostring(flag)))
-              check(not seen[idx],
-                    ("trade index %s wired by only one NPC"):format(tostring(idx)))
-              seen[idx] = true
+              -- one NPC per index PER VERSION: Route 18 gate wires slot 6
+              -- twice on purpose (Red's YOUNGSTER/MARC, Yellow's COOK/SPIKE;
+              -- pokeyellow/scripts/Route18Gate2F.asm, #651) -- each version's
+              -- map only spawns its own NPC, so a same-map twin is fine
+              check(not seen[idx] or seen[idx] == mapId,
+                    ("trade index %s wired by only one NPC per version"):format(tostring(idx)))
+              seen[idx] = mapId
             end
           end
         end
@@ -116,9 +120,12 @@ check(not seen[3], "unused CHIKUCHIKU trade (index 3) stays unwired")
 -- === harness: run a talk script headless, recording show_text ids ===
 local shown = {}
 local origShow = Commands.show_text
-Commands.show_text = function(ctx, textId, subs)
+-- forward extraOpts too: Commands.ask rides show_text's 4th argument
+-- (opts.choice, so the YES/NO box pops over the still-visible question);
+-- dropping it here would strand every prompt on the NO branch
+Commands.show_text = function(ctx, textId, subs, ...)
   table.insert(shown, textId)
-  return origShow(ctx, textId, subs)
+  return origShow(ctx, textId, subs, ...)
 end
 
 -- pressFn returns the Input.pressed table for this frame (default: A)

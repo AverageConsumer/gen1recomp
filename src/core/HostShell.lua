@@ -148,15 +148,14 @@ function HostShell.haveCurl()
   return readOk and out ~= nil and out:find("curl", 1, true) ~= nil
 end
 
--- The bridge only exists in our Android liblove.  An older APK reports nil
--- here and falls back to the "no transport" error the callers already show;
--- the iOS build compiles the same wrapper but always returns false, so gate
--- on the OS as well and keep its error message honest.
+-- An older mobile build reports nil here and falls back to the "no transport"
+-- error the callers already show.
 local function haveBridge()
   if not (love and love.system and type(love.system.httpDownload) == "function") then
     return false
   end
-  return love.system.getOS and love.system.getOS() == "Android"
+  local osName = love.system.getOS and love.system.getOS()
+  return osName == "Android" or osName == "iOS"
 end
 
 -- Is any transport available at all?  Callers gate on this, never on curl.

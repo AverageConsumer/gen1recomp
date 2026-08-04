@@ -15,21 +15,41 @@ local check, eq, same = T.check, T.eq, T.same
 -- endFrame's blit closure, which needs canvases and a compiled shader.  The
 -- source is loaded directly so the rect arithmetic can be exercised with no
 -- GPU, the same way parity_picker_pointer_grab reads RomImporter (#254).
-local scissorClamped, captured
-do
+local captured
+local function loadScissor(loveMajor)
   local f = io.open("src/render/Renderer.lua", "rb")
   check(f ~= nil, "Renderer source is readable")
   local src = f and f:read("*a") or ""
   if f then f:close() end
+  local bias = src:match("\nlocal SCISSOR_PIXEL_BIAS = 0%.5.-\nend\n")
+  check(bias ~= nil, "scissor bias is still version-gated")
   local body = src:match("\nlocal function scissorClamped.-\nend\n")
   check(body ~= nil, "scissorClamped is still a single local function")
-  local fakeLove = { graphics = { setScissor = function(x, y, w, h)
-    captured = { x = x, y = y, w = w, h = h }
-  end } }
-  local chunk = assert(loadstring("local love = ...\n" .. (body or "")
+  local fakeLove = {
+    getVersion = function() return loveMajor, 0, 0 end,
+    graphics = { setScissor = function(x, y, w, h)
+      captured = { x = x, y = y, w = w, h = h }
+    end },
+  }
+  local chunk = assert(loadstring("local love = ...\n" .. (bias or "")
+    .. (body or "")
     .. "\nreturn scissorClamped"))
-  scissorClamped = chunk(fakeLove)
-  check(type(scissorClamped) == "function", "scissorClamped loads standalone")
+  local scissor = chunk(fakeLove)
+  check(type(scissor) == "function", "scissorClamped loads standalone")
+  return scissor
+end
+local scissorClamped = loadScissor(11)
+
+-- LÖVE 12 changed setScissor from truncating Lua integers to accepting floats
+-- and rounding in the backend.  Its arguments must therefore describe the
+-- already-snapped rectangle exactly, without LÖVE 11's half-pixel nudge.
+do
+  local scissor12 = loadScissor(12)
+  captured = nil
+  check(scissor12(50, 60, 10, 20, 0, 0, 100, 100, 2, 2),
+    "LÖVE 12 integer test rect draws")
+  same(captured, { x = 50, y = 60, w = 10, h = 20 },
+    "LÖVE 12 receives an unbiased snapped scissor")
 end
 
 -- The title's three SGB zones in canvas pixels (PaletteFX.zone turns the

@@ -49,7 +49,7 @@ local function gift(opts)
         end
       end)
     end
-    if opts.pre then say(opts.pre, "", give) else give() end
+    if opts.pre then say(opts.pre, opts.preFallback or "", give) else give() end
   end
 end
 
@@ -118,11 +118,21 @@ M.CINNABAR_LAB_METRONOME_ROOM = {
   },
 }
 
--- TM42 Dream Eater (scripts/ViridianCity.asm, the fisher; no pre text)
+-- TM42 Dream Eater (scripts/ViridianCity.asm, the fisher).  The fisher's
+-- YouCanHaveThisText prints before GiveItem, so this gift needs a pre
+-- text (#775).  Like the SilphCo2F worker (#393) that label carries no
+-- leading underscore, and on Red it sits outside the extractor's symbol
+-- set, so the literal from text/ViridianCity.asm rides along as the
+-- fallback; Yellow resolves the ROM string instead.
 M.VIRIDIAN_CITY = {
   talk = {
     TEXT_VIRIDIANCITY_FISHER = gift({
       flag = "EVENT_GOT_TM42", item = "TM_DREAM_EATER",
+      pre = "ViridianCityFisherYouCanHaveThisText",
+      preFallback = "Yawn!\nI must have dozed\voff in the sun."
+        .. "\fI had this dream\nabout a DROWZEE\veating my dream."
+        .. "\vWhat's this?\vWhere did this TM\vcome from?"
+        .. "\fThis is spooky!\nHere, you can\vhave this TM.",
       received = "_ViridianCityFisherReceivedTM42Text",
       explain = "_ViridianCityFisherTM42ExplanationText",
       noRoom = "_ViridianCityFisherTM42NoRoomText",

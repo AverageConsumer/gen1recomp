@@ -411,18 +411,21 @@ local CHARGE_TEXT = {
 -- pokered's <USER>/<TARGET> text macros (home/text.asm
 -- PlaceMoveUsersName): battle texts naming the enemy mon print
 -- "Enemy " before the nickname; player-side mons never get it.
+-- Translatable as one "Enemy %s" template (#779) so languages that
+-- qualify after the name, or decline, can (e.g. "%s ennemi").
 local function displayName(b)
-  return b.isPlayer and b.name or ("Enemy " .. b.name)
+  return b.isPlayer and b.name or Strings("Enemy %s", b.name)
 end
 
--- Apply the "Enemy " prefix to a pre-built message from a module that
--- only knows the raw nickname (Status.beforeMove/residual,
--- TrainerAI.useItem): splice it in before the first name occurrence.
+-- Apply the enemy qualifier to a pre-built message from a module that
+-- only knows the raw nickname (Status.beforeMove/residual): replace the
+-- first name occurrence with the qualified form.
 local function prefixEnemy(msg, battler)
   if battler.isPlayer then return msg end
   local s = msg:find(battler.name, 1, true)
   if not s then return msg end
-  return msg:sub(1, s - 1) .. "Enemy " .. msg:sub(s)
+  return msg:sub(1, s - 1) .. Strings("Enemy %s", battler.name)
+      .. msg:sub(s + #battler.name)
 end
 
 -- Level-up stats window (PrintStatsBox .LevelUpStatsBox: box (9,2)
@@ -556,6 +559,10 @@ BattleState.StatBox = StatBox -- the level-up stat window (PrintStatsBox)
 local function newBattle(game)
   local self = setmetatable({}, BattleState)
   self.game = game
+  -- InitBattleVariables (engine/battle/init_battle_variables.asm) zeroes
+  -- wPartyAndBillsPCSavedMenuItem, so entering a battle drops the party
+  -- cursor the field menu has been carrying (src/ui/PartyMenu.lua). #768
+  game.partyMenuSavedIndex = nil
   self.data = game.data
   -- ruleset from the merged registry (the requires above are the same
   -- records on a mod-free boot); an unknown save value falls back to the
@@ -672,6 +679,9 @@ function BattleState.newTrainer(game, oppClass, partyIndex)
   local self = newBattle(game)
   self.kind = "trainer"
   self.oppClass = oppClass
+  -- the object_event trainer arg (roster index).  computeMusicKind keys
+  -- data/scripts/victories.lua on class#party, so keep it on the battle (#782).
+  self.partyIndex = partyIndex or 1
   self.trainer = game.data.trainers[oppClass]
   assert(self.trainer, "unknown trainer class " .. tostring(oppClass))
   -- pret GetTrainerName_: RIVAL1/2/3 copy wRivalName into wTrainerName
@@ -852,6 +862,16 @@ function BattleState:say(text)
   table.insert(self.queue, { text = text })
 end
 
+-- A message whose ROM tail is `text_end` / `done` rather than `prompt`:
+-- NextTextCommand returns straight out of PrintText on TX_END
+-- (home/text.asm:328-334) and only TX_PROMPT_BUTTON blinks the arrow and
+-- runs ManualTextScroll (home/text.asm:434-446), so these pages never wait
+-- on the player.  autoDelay is the frame hold before the queue moves on
+-- (0 = the next row starts immediately, as PrintText returning does) (#765).
+function BattleState:sayAuto(text, delay)
+  table.insert(self.queue, { text = text, auto = true, autoDelay = delay or 0 })
+end
+
 -- Message that opens YES/NO once typed out, keeping the text visible
 -- underneath (pokered `done` + TWO_OPTION_MENU / TextBox opts.choice).
 function BattleState:sayChoice(text, onChoose)
@@ -890,6 +910,13 @@ end
 function BattleState:sayNext(text)
   self.nextInsert = (self.nextInsert or 0) + 1
   table.insert(self.queue, self.nextInsert, { text = text })
+end
+
+-- sayNext for a page that ends in `text_end` (see sayAuto) (#765)
+function BattleState:sayNextAuto(text, delay)
+  self.nextInsert = (self.nextInsert or 0) + 1
+  table.insert(self.queue, self.nextInsert,
+               { text = text, auto = true, autoDelay = delay or 0 })
 end
 
 -- insert a UI push right after the current queue item (dex page, the
@@ -1042,6 +1069,8 @@ function BattleState:startMessage(item)
   self.charIndex = 0
   self.msgWaiting = nil
   self.msgPrompt = nil
+  self.msgAutoWait = nil
+  self.msgHold = nil
   self.scrollPx = nil
   self:beginMsgLine()
 end
@@ -1308,7 +1337,25 @@ function BattleState:updateQueue()
       end))
       return true
     end
-    if not (item and item.choice) then
+    if item and item.auto then
+      -- No prompt: this page's ROM tail is `text_end`, so PrintText is
+      -- already back with the box still on screen -- pokered's used-move
+      -- line (engine/battle/used_move_text.asm EndUsedMove1Text..
+      -- EndUsedMove5Text) and the item-use line (ItemUseText00,
+      -- engine/items/item_effects.asm) are both of that kind.  Only
+      -- TX_PROMPT_BUTTON waits on A/B (home/text.asm:434-446) (#765).
+      self.msgAutoWait = self.msgAutoWait or item.autoDelay or 0
+      if self.msgAutoWait > 0 then
+        self.msgAutoWait = self.msgAutoWait - 1
+      else
+        self.msgAutoWait = nil
+        -- the typed page stays drawn behind whatever runs next (the move
+        -- animation, the ball toss): PrintText leaves the textbox tilemap
+        -- alone and animations only touch sprites (#296)
+        self.msgHold = true
+        self.current = nil
+      end
+    elseif not (item and item.choice) then
       -- The page is typed out and waiting on the player: PromptText
       -- (home/text.asm:209-217) writes '▼' at (18,16) and ManualTextScroll
       -- blinks it until A/B, so the arrow belongs on a finished page and not
@@ -1360,14 +1407,17 @@ end
 -- gets the final-battle theme
 function BattleState:computeMusicKind()
   local isBoss = false
-  if self.kind == "trainer" and self.trainer then
+  if self.kind == "trainer" and self.oppClass then
+    -- wGymLeaderNo is written only by the eight gym scripts
+    -- (scripts/PewterGym.asm .. ViridianGym.asm), so the badge rosters in
+    -- victories.lua are exactly the fights that set it.  The lookup must
+    -- include the party index: a class-wide prefix match also caught
+    -- Giovanni's Rocket Hideout (#1) and Silph Co (#2) battles, which never
+    -- touch wGymLeaderNo and take MUSIC_TRAINER_BATTLE like any other
+    -- trainer (#782).
     local victories = require("data.scripts.victories")
-    for key, reward in pairs(victories) do
-      if reward.badge and key:find(self.trainer.id .. "#", 1, true) == 1 then
-        isBoss = true
-        break
-      end
-    end
+    local reward = victories[self.oppClass .. "#" .. tostring(self.partyIndex or 1)]
+    isBoss = reward ~= nil and reward.badge ~= nil
   end
   -- init_battle.asm: challenging a gym leader (wGymLeaderNo, the badge
   -- fights only -- not Lance or the Champion) bumps the companion's
@@ -1615,6 +1665,9 @@ end
 -- (end_of_battle.asm clears wLowHealthAlarm when a battle ends)
 function BattleState:exit()
   require("src.core.Sound").stopLoop("Low_Health_Alarm")
+  -- end_of_battle.asm clears wPartyAndBillsPCSavedMenuItem as well, so the
+  -- field party menu comes back on slot 1 after a battle. #768
+  self.game.partyMenuSavedIndex = nil
   -- Free this battle's own GPU objects now rather than waiting on a GC
   -- finalizer: the two full-screen wavy-effect canvases (colorMode) and
   -- the AnimPlayer's per-instance tilesheet images/quads.  The shared
@@ -1639,6 +1692,19 @@ local function clearTrapping(battler)
   battler.trappingTurns = nil
   battler.trapMove = nil
   battler.trapDamage = nil
+end
+
+-- SendOutMon (core.asm:1733-1735) clears both battle cursors, though the
+-- disassembly only names one of them: `ld hl, wBattleAndStartSavedMenuItem /
+-- ld [hli], a / ld [hl], a` writes zero to that byte AND to the byte behind
+-- it, which is wPlayerMoveListIndex (wram.asm:242-244).  So every player
+-- send-out puts the main menu back on FIGHT and the move list back on the
+-- first slot; the cursors are only remembered across sub-menus of the mon
+-- that is already out (#737).  Enemy send-outs run EnemySendOutFirstMon,
+-- not SendOutMon, and leave both alone.
+local function sendOutMonCursors(self)
+  self.menuIndex = 1
+  self.moveIndex = 1
 end
 
 -- core.asm:297-300: both sides' FLINCHED bits are cleared as a turn's move
@@ -2155,7 +2221,7 @@ function BattleState:oldManThrow()
   self.phase = "messages"
   self.afterQueue = "finish"
   self.result = "run" -- nothing is kept; wBattleResult only ends the demo
-  self:say(Strings("%s used\nPOKé BALL!", self.demoName or "OLD MAN"))
+  self:sayAuto(Strings("%s used\nPOKé BALL!", self.demoName or "OLD MAN"))
   self:act(function()
     require("src.core.Sound").play(self.data, "Ball_Toss")
     -- ItemUseBall's beat before the toss chain (like throwBall)
@@ -2356,6 +2422,7 @@ function BattleState:resolveSwitch(newMon)
       previous = previous,
     })
     self:markParticipant()
+    sendOutMonCursors(self)
     self.sendingOut = true
     self:sayNext(self:sendOutText(self.player.name))
     self:animNext("POOF_ANIM", false)
@@ -3125,8 +3192,11 @@ function BattleState:executeAction(user, target, action)
     -- trainer class AI actions (engine/battle/trainer_ai.asm)
     if action.special == "aiItem" then
       self.aiUses = (self.aiUses or 1) - 1
+      -- useItem's messages arrive final: its item line prints the raw
+      -- nickname on purpose (no "Enemy " in AIPrintItemUseText), so the
+      -- prefix splice must not touch them.
       for _, m in ipairs(TrainerAI.useItem(self, action.item)) do
-        self:sayNext(prefixEnemy(m, self.enemy))
+        self:sayNext(m)
       end
       self:drainNext()
       require("src.core.Sound").play(self.data, "Heal_Ailment")
@@ -3327,10 +3397,16 @@ end
 -- damaging pipeline (EffectRegistry.runDamaging).
 
 -- Gen 1 status/stat primary effects call PlayCurrentMoveAnimation only
--- after they land; these failure texts print with no animation.
+-- after they land; these failure texts print with no animation.  Failures
+-- whose text is an ordinary sentence rather than one of the shared fail
+-- lines set msgs.failed instead of relying on this sniffer -- Substitute's
+-- two failure lines name the move, not the failure (#644).
 local function primaryEffectFailed(msgs)
   if not msgs or #msgs == 0 then return true end
-  local m = msgs[1]
+  if msgs.failed then return true end
+  -- the extracted lines keep the ROM's own trailing blank ("But, it
+  -- failed! "), so match with it trimmed or a refused status animates
+  local m = msgs[1]:gsub("%s+$", "")
   if m == "But, it failed!" or m == "Nothing happened!" then return true end
   if m:find("didn't affect", 1, true) then return true end
   if m:find("is unaffected", 1, true) then return true end
@@ -3375,7 +3451,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
 
   self.moveAnimRow = nil
   if not (user.thrashTurns and moveInst == user.thrashMove and user.thrashAnnounced) then
-    self:sayNext(self:romText("_ItemUseText001", "%s\nused %s!", displayName(user), move.name))
+    self:sayNextAuto(self:romText("_ItemUseText001", "%s\nused %s!", displayName(user), move.name))
     -- the move's animation plays right after the announcement; the
     -- damage path attaches the target's hit blink to this row so the
     -- blink follows the animation (pokered's order).  Mimic is the
@@ -3871,6 +3947,7 @@ function BattleState:enemyMonFainted()
         self.participants = {}
         self:markParticipant()
         self.nextInsert = 0
+        sendOutMonCursors(self)
         self.sendingOut = true
         self:sayNext(self:sendOutText(self.player.name))
         self:animNext("POOF_ANIM", false)
@@ -4063,6 +4140,7 @@ function BattleState:openReplacementMenu()
         })
         self:markParticipant()
         self.nextInsert = 0
+        sendOutMonCursors(self)
         self.sendingOut = true
         self:sayNext(self:sendOutText(self.player.name))
         self:animNext("POOF_ANIM", false)
@@ -4101,7 +4179,7 @@ function BattleState:safariAction(choice)
 
   if choice == "ball" then
     st.balls = st.balls - 1
-    self:say(Strings("%s used\nSAFARI BALL!", playerName))
+    self:sayAuto(Strings("%s used\nSAFARI BALL!", playerName))
     self:act(function()
       require("src.core.Sound").play(self.data, "Ball_Toss")
       self.lastBall = "SAFARI_BALL"
@@ -4423,7 +4501,7 @@ function BattleState:throwBall(ball)
   -- "<PLAYER> used <ITEM>!" line (#291).  Safari and the old man demo are
   -- still wIsInBattle == 1, and this port models both as kind == "wild".
   if self.kind == "wild" then
-    self:say(self:romText("_ItemUseText001", "%s used\n%s!", self.game.save.player.name,
+    self:sayAuto(self:romText("_ItemUseText001", "%s used\n%s!", self.game.save.player.name,
                                      self.data.items[ball].name))
   end
   self:act(function()
@@ -5443,7 +5521,8 @@ function BattleState:drawTextArea()
   if not self:bottomUIVisible() then return end
   Font.drawBox(0, 12, 20, 6)
   love.graphics.setColor(0, 0, 0, 1)
-  if self.phase == "messages" and (self.current or self.animPlaying) then
+  if self.phase == "messages"
+     and (self.current or self.animPlaying or self.msgHold) then
     -- during the move animation self.current is nil but shown still holds
     -- the "used X!" lines; keep drawing them like pokered, whose move
     -- animations only touch sprites and never the textbox tilemap (#296)

@@ -66,8 +66,7 @@ eq(ow.dark, true, "ROCK_TUNNEL_1F loads dark before FLASH")
 local pm = PartyMenu.new(Game)
 Game.stack:push(pm)
 frame({ "a" })                 -- open the field-move submenu on PIKACHU
-for _ = 2, 3 do frame({ "down" }) end
-frame({ "a" })                 -- FLASH
+frame({ "a" })                 -- FLASH is the top row now (#768)
 drainOne()                     -- dismiss _FlashLightsAreaText
 
 local blink = Game.stack:top()

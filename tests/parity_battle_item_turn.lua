@@ -181,7 +181,11 @@ do
     local box = game.stack:top()
     check(isBox(box), "the restored-HP message opened (#379)")
     if isBox(box) then
-      check(box.text:find("was restored", 1, true) ~= nil,
+      -- the line is _PotionText itself when the cache carries it ("<mon>
+      -- recovered by <n>!") and the engine's "was restored" wording on a
+      -- dataset without the label (src/core/RomText.lua)
+      check((box.text:find("recovered by", 1, true)
+             or box.text:find("was restored", 1, true)) ~= nil,
             "and it is the restored-HP line: " .. tostring(box.text))
       dismiss(game.stack, box)
     end

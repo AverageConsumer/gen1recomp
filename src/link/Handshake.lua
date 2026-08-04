@@ -169,6 +169,8 @@ end
 
 -- full        identical link surfaces: nothing to negotiate, lockstep is safe
 -- vanilla_peer  an old build, and we are unmodified, so it is right about us
+-- engine_skew both v2 on the same major, but different releases: trade
+--             still negotiates, battle is refused (see below)
 -- subset      both v2 but the surfaces differ: negotiated trade, no battle
 -- refused     an old build we would silently corrupt, or a different engine
 function Handshake.checkCompat(localHello, remoteHello)
@@ -182,6 +184,16 @@ function Handshake.checkCompat(localHello, remoteHello)
   if major(remoteHello.engineVersion) ~= major(localHello.engineVersion) then
     return "refused", "engine_mismatch"
   end
+  -- A lockstep battle needs the same engine RELEASE, not just the same
+  -- major: the fingerprint only covers the data/mod link surface, and
+  -- battle logic changes between minor releases (parity fixes, move
+  -- effect rework...), so two honest vanilla installs a release apart
+  -- pair as "full" and then diverge a few turns in -- the mid-battle
+  -- "same mods?" desync draw of #758.  Trade doesn't lockstep a
+  -- simulation, so it stays negotiable across releases.
+  if tostring(remoteHello.engineVersion) ~= tostring(localHello.engineVersion) then
+    return "engine_skew", "engine_release_mismatch"
+  end
   if remoteHello.fingerprint == localHello.fingerprint then
     return "full", nil
   end
@@ -191,7 +203,7 @@ end
 -- only two v2 peers that agreed on a verdict may reject a mon outright; a v1
 -- peer keeps the old substitute-a-move behaviour it was built against
 function Handshake.strict(verdict)
-  return verdict == "full" or verdict == "subset"
+  return verdict == "full" or verdict == "subset" or verdict == "engine_skew"
 end
 
 function Handshake.battleAllowed(verdict)
@@ -275,6 +287,24 @@ function Handshake.describe(localHello, remoteHello, verdict, mode)
       wrap(lines, "The two games are")
       wrap(lines, "different engine")
       wrap(lines, "versions.")
+    end
+    return lines
+  end
+  if verdict == "engine_skew" then
+    -- name both releases so two friends can tell WHO updates: this used
+    -- to surface three turns in as a desync draw blaming mods (#758)
+    wrap(lines, "Your game versions")
+    wrap(lines, "differ:")
+    wrap(lines, (" you: v%s"):format(tostring(localHello.engineVersion)))
+    wrap(lines, (" %s: v%s"):format(peer:sub(1, 8),
+                                    tostring(remoteHello.engineVersion)))
+    if mode == "battle" then
+      wrap(lines, "Battle needs the")
+      wrap(lines, "same version on")
+      wrap(lines, "both games.")
+    else
+      wrap(lines, "Trading is limited")
+      wrap(lines, "to shared POKéMON.")
     end
     return lines
   end

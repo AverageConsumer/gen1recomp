@@ -66,14 +66,24 @@ function StartMenu.new(game)
       panel .. Strings("\fWould you like to\nSAVE the game?"), nil, {
       choice = function(yes)
         if not yes then return end
-        -- "Now saving..." beat before the write (save.asm
-        -- NowSavingString), then GameSavedText + SFX_SAVE
+        -- SaveMenu .save (engine/menus/save.asm:164-181): "Now saving..."
+        -- is a bare PlaceString held by DelayFrames 120, then GameSavedText,
+        -- which ends in `done` and so never reaches TX_PROMPT_BUTTON.
+        -- Neither page takes a button press (#765); the second waits on
+        -- SFX_SAVE (PlaySoundWaitForCurrent + WaitForSoundToFinish) and then
+        -- DelayFrames 30.  The write itself is invisible either side of the
+        -- "Now saving..." hold, so it stays on that box's onDone.
         game.stack:push(TextBox.new(game, Strings("Now saving..."), function()
           game:writeSave()
-          require("src.core.Sound").play(game.data, "Save")
           game.stack:push(TextBox.new(game,
-            Strings("%s saved\nthe game!", game.save.player.name or "RED")))
-        end))
+            Strings("%s saved\nthe game!", game.save.player.name or "RED"),
+            nil, { auto = {
+              sound = function()
+                return require("src.core.Sound").play(game.data, "Save")
+              end,
+              delay = 30,
+            } }))
+        end, { auto = { delay = 120 } }))
       end,
     }))
   end })

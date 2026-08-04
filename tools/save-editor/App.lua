@@ -25,6 +25,7 @@ local State = require("State")
 local Kit = require("Kit")
 local Theme = require("Theme")
 local Ops = require("Ops")
+local PadInput = require("PadInput")
 local PAL = Theme.PAL
 
 local Party = require("Party")
@@ -42,6 +43,10 @@ local S
 -- vanilla records over an already-merged Data
 local mods
 local mouseClicked = false
+-- Click position from the press event.  Kit samples the pointer in draw, so a
+-- touch / mouse / pad-A click must use the event coords -- not love.mouse
+-- (often stale on NX) and not the virtual cursor when a finger taps elsewhere.
+local clickX, clickY
 -- Wheel notches queued by App.wheelmoved since the last draw, handed to Kit
 -- there like mouseClicked is: LOVE delivers events before love.draw, so a
 -- notch is always spent by the frame that follows it (#595).
@@ -234,6 +239,34 @@ function App.unload()
   -- deaf to every click (#541).
   Kit.blur()
   Kit.blockClicks = false
+  PadInput.reset()
+end
+
+local function cycleTab(delta)
+  if not S then return end
+  local idx = 1
+  for i, t in ipairs(TABS) do
+    if t.id == S.tab then idx = i; break end
+  end
+  idx = ((idx - 1 + delta) % #TABS) + 1
+  S.tab = TABS[idx].id
+  Ops.say(S, "Tab: " .. TABS[idx].label)
+end
+
+-- Pad / Joy-Con actions from PadInput.gamepadpressed (A/B via GamepadMap so
+-- NX physical A confirms and B closes).
+local function handlePadAction(action)
+  if not action or not S then return end
+  if action == "a" then
+    local mx, my = PadInput.pointer()
+    App.mousepressed(mx, my, 1)
+  elseif action == "b" then
+    App.close()
+  elseif action == "tab_prev" then
+    cycleTab(-1)
+  elseif action == "tab_next" then
+    cycleTab(1)
+  end
 end
 
 function App.save()
@@ -278,6 +311,7 @@ end
 -- host's onClose runs App.unload, which drops S -- doing that inline left the
 -- rest of the frame drawing against a nil state.
 function App.close()
+  if not S then return false end
   if S.dirty and not S._quitArmed then
     S._quitArmed = true
     S.status = "Unsaved changes,  Save first or click Close again to discard"
@@ -302,14 +336,53 @@ function App.update(dt)
   -- directly in App.draw() via Kit.beginFrame. Tile animation (water,
   -- flowers) still needs ticking so the Map tab isn't static.
   TileRenderer.tick()
+  PadInput.update(dt)
+  local notches = PadInput.takeWheel()
+  if notches ~= 0 then
+    App.wheelmoved(0, notches)
+  end
 end
 
 function App.mousepressed(x, y, button)
-  if button == 1 then mouseClicked = true end
+  if button == 1 then
+    mouseClicked = true
+    clickX, clickY = x, y
+    -- A finger / mouse tap yields the virtual cursor so the click lands where
+    -- the event said, not under the Joy-Con pointer (NX touch soft-miss).
+    PadInput.yieldToPointer()
+  end
 end
 
 function App.textinput(text)
   Kit.textinput(text)
+end
+
+function App.gamepadpressed(joystick, button)
+  handlePadAction(PadInput.gamepadpressed(joystick, button))
+end
+
+function App.gamepadreleased(joystick, button)
+  PadInput.gamepadreleased(joystick, button)
+end
+
+function App.gamepadaxis(joystick, axis, value)
+  PadInput.gamepadaxis(joystick, axis, value)
+end
+
+function App.joystickpressed(joystick, button)
+  handlePadAction(PadInput.joystickpressed(joystick, button))
+end
+
+function App.joystickreleased(joystick, button)
+  PadInput.joystickreleased(joystick, button)
+end
+
+function App.joystickaxis(joystick, axis, value)
+  PadInput.joystickaxis(joystick, axis, value)
+end
+
+function App.joystickhat(joystick, hat, direction)
+  PadInput.joystickhat(joystick, hat, direction)
 end
 
 -- ------------------------------------------------------------------ chrome
@@ -663,8 +736,15 @@ function App.draw()
   local s = Kit.scale
 
   local mx, my = love.mouse.getPosition()
+  local padX, padY, padOn = PadInput.pointer()
+  if mouseClicked and clickX ~= nil then
+    mx, my = clickX, clickY
+  elseif padOn then
+    mx, my = padX, padY
+  end
   Kit.beginFrame(mx, my, mouseClicked, wheelY)
   mouseClicked = false
+  clickX, clickY = nil, nil
   wheelY = 0
   -- Modal shield.  Kit has no z-order, so the picker cannot simply be drawn
   -- last: the chrome and the panel underneath would take the same tap.  The
@@ -700,6 +780,7 @@ function App.draw()
   Kit.blockClicks = false
   SpeciesPicker.draw(S, Kit, width, height)
   Kit.endFrame()
+  PadInput.draw()
 
   -- Only now, with the whole frame painted, is it safe to drop the editor.
   if S._closeRequested then finishClose() end

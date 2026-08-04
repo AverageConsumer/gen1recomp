@@ -564,16 +564,24 @@ function Renderer:drawTiltedWorld(zoneList, sx, sy, wox, woy, target)
   return true
 end
 
+-- LÖVE 11 truncates scissor arguments to framebuffer pixels; the half-pixel
+-- bias keeps values divided back through a fractional DPI scale from landing
+-- one short.  LÖVE 12 passes fractional arguments through and rounds in the
+-- graphics backend instead, where that bias shifts each origin by one pixel
+-- and extends its far edge by two (#673).
+local SCISSOR_PIXEL_BIAS = 0.5
+if love and love.getVersion and select(1, love.getVersion()) >= 12 then
+  SCISSOR_PIXEL_BIAS = 0
+end
+
 -- Clamp a scissor rect to the viewport box, then round it outward to whole
--- framebuffer pixels.  love.graphics.setScissor truncates x, y, w and h to
--- pixels independently, so a rect with fractional unit edges (Android's
--- non-integer DPI puts fitScale/dpi in Sx/Sy) loses up to a pixel per side
--- and two adjacent SGB zones stop sharing an edge: the letterbox clear shows
--- through as a horizontal seam at every zone boundary (#373).  Rounding
--- outward makes neighbours overlap by at most one row instead -- the overlap
--- redraws the same canvas pixels one palette later, and past the canvas edge
--- there is nothing to draw.  The half pixel keeps LOVE's truncation on the
--- snapped edge rather than one short of it.
+-- framebuffer pixels.  On LÖVE 11, x, y, w and h are truncated independently,
+-- so a rect with fractional unit edges (Android's non-integer DPI puts
+-- fitScale/dpi in Sx/Sy) loses up to a pixel per side and two adjacent SGB
+-- zones stop sharing an edge: the letterbox clear shows through as a seam at
+-- every zone boundary (#373).  Rounding outward makes neighbours overlap by
+-- at most one row instead; SCISSOR_PIXEL_BIAS preserves that result across the
+-- LÖVE 11 and 12 conversion rules.
 local function scissorClamped(x, y, w, h, ox, oy, vpw, vph, dpiX, dpiY)
   local x2, y2 = math.min(x + w, ox + vpw), math.min(y + h, oy + vph)
   x, y = math.max(x, ox), math.max(y, oy)
@@ -581,9 +589,10 @@ local function scissorClamped(x, y, w, h, ox, oy, vpw, vph, dpiX, dpiY)
   dpiX, dpiY = dpiX or 1, dpiY or 1
   local px1, py1 = math.floor(x * dpiX), math.floor(y * dpiY)
   local px2, py2 = math.ceil(x2 * dpiX), math.ceil(y2 * dpiY)
-  love.graphics.setScissor((px1 + 0.5) / dpiX, (py1 + 0.5) / dpiY,
-                           (px2 - px1 + 0.5) / dpiX,
-                           (py2 - py1 + 0.5) / dpiY)
+  local b = SCISSOR_PIXEL_BIAS
+  love.graphics.setScissor((px1 + b) / dpiX, (py1 + b) / dpiY,
+                           (px2 - px1 + b) / dpiX,
+                           (py2 - py1 + b) / dpiY)
   return true
 end
 
@@ -941,9 +950,22 @@ function Renderer:endFrame(zones, worldZones)
   -- reads as the foreground instead of competing with a fully lit map.  Goes
   -- here rather than in the letterbox clear because with the world pass
   -- active there is no clear -- the world already covers the surface.
+  --
+  -- The veil covers the voids ONLY, never the battle's own letterbox: "world"
+  -- changes what surrounds the battle and leaves the battle screen alone
+  -- (BattleState:bgMode).  On hardware there is no "behind the battle" to dim
+  -- at all -- _InitBattleCommon calls ClearScreen (pokered home/copy2.asm),
+  -- which blanks the whole tilemap before the battle draws.  A whole-surface
+  -- fill was invisible only because the classic battle paints an opaque paper
+  -- field over it a few lines below; a render pipeline that stages the fight
+  -- on the map and keys that field out got the veil straight onto its
+  -- sprites, HP bars and HUD, which is the 55% whole-window dim of #777
+  -- (and its duplicate #772).
   if self.battleDim and self.battleDim > 0 then
     love.graphics.setColor(0, 0, 0, self.battleDim)
-    love.graphics.rectangle("fill", 0, 0, ww, wh)
+    for _, r in ipairs(subtractRect({ { 0, 0, ww, wh } }, uox, uoy, uvpw, uvph)) do
+      love.graphics.rectangle("fill", r[1], r[2], r[3], r[4])
+    end
     love.graphics.setColor(1, 1, 1, 1)
   end
 

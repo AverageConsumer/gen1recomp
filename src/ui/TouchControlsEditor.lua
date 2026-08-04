@@ -11,9 +11,15 @@
 --
 -- Draws in full window LOVE units -- the same space TouchControls uses
 -- after Renderer:endFrame -- so what you drag here is what you get in play.
+--
+-- Switch / gamepad: PadCursor draws the virtual pointer the launcher just
+-- dropped (same soft-lock class as the save editor).  A clicks / drags, B
+-- closes (Done), shoulders nudge button size.
 
 local SaveData = require("src.core.SaveData")
 local TouchControls = require("src.core.TouchControls")
+local PadCursor = require("src.ui.PadCursor")
+local GamepadMap = require("src.core.GamepadMap")
 
 local Editor = {}
 
@@ -56,11 +62,13 @@ function Editor.load(opts)
   TouchControls:applyOptions(optsTbl)
   TouchControls:setPreview(true)
   Editor.enabled = TouchControls.enabled ~= false
+  PadCursor.reset()
 end
 
 function Editor.unload()
   TouchControls:setPreview(false)
   TouchControls:reset()
+  PadCursor.reset()
   Editor.drag = nil
   Editor.onClose = nil
 end
@@ -94,13 +102,16 @@ local function toggleEnabled()
   if not Editor.enabled then TouchControls:reset() end
 end
 
-function Editor.update(_dt)
-  -- drag follows the live pointer when love.touch / mouse is available;
+function Editor.update(dt)
+  PadCursor.update(dt or 0)
+  -- drag follows the live pointer when love.touch / mouse / pad is available;
   -- touchmoved / mousemoved also update, so this is a belt-and-suspenders
   -- path for Android where move events can be thin
   if not Editor.drag then return end
   local x, y
-  if love.touch and love.touch.getPosition and Editor.drag.touchId then
+  if Editor.drag.touchId == "pad" then
+    x, y = PadCursor.pointer()
+  elseif love.touch and love.touch.getPosition and Editor.drag.touchId then
     local ok, tx, ty = pcall(love.touch.getPosition, Editor.drag.touchId)
     if ok and tx then x, y = tx, ty end
   end
@@ -244,6 +255,9 @@ function Editor.draw()
       love.graphics.circle("line", zone.cx, zone.cy, zone.w * 0.62)
     end
   end
+
+  -- pad / Joy-Con virtual cursor (after chrome so it sits on top)
+  PadCursor.draw()
 end
 
 local function beginDrag(id, x, y)
@@ -285,6 +299,9 @@ end
 
 function Editor.mousepressed(x, y, button)
   if button ~= 1 then return end
+  -- Finger / mouse tap yields the Joy-Con pointer so the click lands where
+  -- the event said (same NX soft-miss fix as the save editor).
+  PadCursor.yieldToPointer()
   beginDrag("mouse", x, y)
 end
 
@@ -298,6 +315,7 @@ function Editor.mousereleased(x, y, button)
 end
 
 function Editor.touchpressed(id, x, y)
+  PadCursor.yieldToPointer()
   beginDrag(id, x, y)
 end
 
@@ -307,6 +325,57 @@ end
 
 function Editor.touchreleased(id, x, y)
   endDrag(id)
+end
+
+local function handlePadAction(action)
+  if not action then return end
+  if action == "a" then
+    local mx, my = PadCursor.pointer()
+    beginDrag("pad", mx, my)
+  elseif action == "b" then
+    close()
+  elseif action == "tab_prev" then
+    TouchControls:nudgeScale(-TouchControls.SCALE_STEP)
+  elseif action == "tab_next" then
+    TouchControls:nudgeScale(TouchControls.SCALE_STEP)
+  end
+end
+
+function Editor.gamepadpressed(joystick, button)
+  handlePadAction(PadCursor.gamepadpressed(joystick, button))
+end
+
+function Editor.gamepadreleased(joystick, button)
+  PadCursor.gamepadreleased(joystick, button)
+  -- A release ends a pad drag (hold A + stick to reposition a control).
+  local action = GamepadMap.mapGamepadButton(button)
+  if action == "a" then endDrag("pad") end
+end
+
+function Editor.gamepadaxis(joystick, axis, value)
+  PadCursor.gamepadaxis(joystick, axis, value)
+end
+
+function Editor.joystickpressed(joystick, button)
+  handlePadAction(PadCursor.joystickpressed(joystick, button))
+end
+
+function Editor.joystickreleased(joystick, button)
+  PadCursor.joystickreleased(joystick, button)
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  local padButton = GamepadMap.mapRawToGamepadButton(button)
+  if padButton then
+    local action = GamepadMap.mapGamepadButton(padButton)
+    if action == "a" then endDrag("pad") end
+  end
+end
+
+function Editor.joystickaxis(joystick, axis, value)
+  PadCursor.joystickaxis(joystick, axis, value)
+end
+
+function Editor.joystickhat(joystick, hat, direction)
+  PadCursor.joystickhat(joystick, hat, direction)
 end
 
 function Editor.keypressed(key)

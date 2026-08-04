@@ -254,6 +254,80 @@ function LauncherMods.list()
   return result or {}
 end
 
+-- ------- pre-boot translation strings
+--
+-- The launcher draws before Game:load, so the loader has not run and Strings
+-- has no catalog.  #767/#791 routed the launcher's text through Strings, but
+-- nothing filled the catalog this early, so a translation mod still could not
+-- reach the launcher however complete it was -- and no restart helped, because
+-- the ordering is the same on every launch.
+--
+-- This fills it, and deliberately does the smallest thing that can: one
+-- declarative file per enabled mod, lang/strings.lua, and never the entry
+-- chunk.  That keeps the promise the rest of this module is built on -- no mod
+-- behaviour runs before the game boots -- because a catalog is data.
+--
+-- It is still a mod-authored chunk, so it runs with an empty environment: a
+-- plain `return { ... }` evaluates fine, while anything reaching for love, io
+-- or os raises and is skipped rather than being trusted this early.
+--
+-- Game:load calls Strings.load(Data) again after the real merge, which
+-- replaces whatever this installed, so the two never disagree for long.
+local STRINGS_CATALOG = "lang/strings.lua"
+
+local function readStringsCatalog(path)
+  local fs = love and love.filesystem
+  if not (fs and fs.read) then return nil end
+  local rel = path .. "/" .. STRINGS_CATALOG
+  local raw = fs.read(rel)
+  if type(raw) ~= "string" or raw == "" then return nil end
+  local chunk = loadstring(raw, "@" .. rel)
+  if not chunk then return nil end
+  -- Lua 5.1/LuaJIT: no _ENV, so setfenv is the sandbox.
+  if setfenv then setfenv(chunk, {}) end
+  local ok, result = pcall(chunk)
+  if not ok or type(result) ~= "table" then return nil end
+  return result
+end
+
+-- deriveStrings(rows, byId, read) -> the merged catalog, pure.
+-- rows is deriveList's output, byId the id -> manifest map, and read(path) a
+-- reader returning that mod's catalog table (or nil).  Split out so the engine
+-- tier can table-drive the enable/precedence rules with no filesystem.
+function LauncherMods.deriveStrings(rows, byId, read)
+  local out, any = {}, false
+  for _, row in ipairs(rows or {}) do
+    local manifest = row.enabled and byId and byId[row.id] or nil
+    local catalog = manifest and manifest.path and read(manifest.path)
+    for source, value in pairs(catalog or {}) do
+      -- an empty value means "not translated yet", never "translate to
+      -- blank" -- the same rule the mod's own loader applies
+      if type(source) == "string" and type(value) == "string"
+          and value ~= "" then
+        out[source] = value
+        any = true
+      end
+    end
+  end
+  return any and out or nil
+end
+
+-- translationStrings() -> a source -> translation map for the launcher, or nil
+-- when no enabled mod ships one.  Enable-state and ordering are deriveList's,
+-- so a mod that wins a key here wins it at boot too.
+function LauncherMods.translationStrings()
+  local ok, merged = pcall(function()
+    local manifests = discover()
+    if #manifests == 0 then return nil end
+    local rows = LauncherMods.deriveList(manifests, SaveData.loadOptions())
+    local byId = {}
+    for _, m in ipairs(manifests) do byId[m.id] = m end
+    return LauncherMods.deriveStrings(rows, byId, readStringsCatalog)
+  end)
+  if not ok then return nil end
+  return merged
+end
+
 -- setEnabled(id, enabled): persist options.mods[id] in the exact shape
 -- Loader:_saveState writes (a plain boolean), so the running game and the
 -- in-game ManagerState pick it up unchanged.
@@ -282,10 +356,18 @@ end
 
 -- ------- install (love.filesystem)
 
--- Read a .zip source into bytes.  A string is an external absolute path (like
--- a chosen ROM) read with io.*, falling back to a save-dir-relative
--- love.filesystem read; a love DroppedFile is opened the way RomImporter
--- ingests dropped ROMs.
+-- Read a .zip source into bytes.  Save-dir-relative paths (inbox /
+-- picked_mod.zip) prefer love.filesystem so NX/Android never hit a cwd-relative
+-- io.open that can see a different file than PhysFS.  Absolute host paths
+-- (desktop picker) still use io.*.  DroppedFile matches RomImporter ROM drops.
+local function isHostAbsolutePath(path)
+  return type(path) == "string" and (
+      path:match("^/")
+      or path:match("^%a:[/\\]")
+      or path:match("^[Ss][Dd][Mm][Cc]:")
+    )
+end
+
 local function readArchive(source)
   local t = type(source)
   if (t == "userdata" or t == "table") and type(source.open) == "function" then
@@ -297,6 +379,10 @@ local function readArchive(source)
     return data
   end
   if t == "string" then
+    if not isHostAbsolutePath(source) and love and love.filesystem then
+      local data = love.filesystem.read(source)
+      if data then return data end
+    end
     local f = io.open(source, "rb")
     if f then
       local data = f:read("*a")
@@ -311,6 +397,12 @@ local function readArchive(source)
     return nil, "could not open " .. source
   end
   return nil, "unsupported archive source"
+end
+
+-- Local PK\3\4 / empty-file check before mount (corrupt MTP / AppleDouble).
+local function zipLooksValid(data)
+  if type(data) ~= "string" or #data < 4 then return false end
+  return data:sub(1, 2) == "PK"
 end
 
 -- Shallow listing of a mounted archive shaped for locateRoot: files by name,
@@ -510,21 +602,44 @@ function LauncherMods._installZipInner(source, opts)
   local fs = love.filesystem
   local data, readErr = readArchive(source)
   if not data then return nil, readErr end
-
-  -- stage into a save-dir temp so mount can reach it
-  local tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
-  local ok, writeErr = fs.write(tmp, data)
-  if not ok then
-    return nil, "could not stage the .zip: " .. tostring(writeErr)
+  if not zipLooksValid(data) then
+    local label = type(source) == "string" and (source:match("[^/\\]+$") or source)
+      or "archive"
+    return nil, "not a zip file: " .. tostring(label)
+      .. " (need a real .zip; skip Mac ._ files from MTP)"
   end
+
+  -- Prefer in-memory mount (PHYSFS_mountMemory via FileData). Avoids Horizon's
+  -- "file already open" failure when write-then-mount reopens a save-dir zip.
   local mount = "mod_import_mount"
-  if not fs.mount(tmp, mount) then
-    fs.remove(tmp)
-    return nil, "that .zip could not be opened"
+  local tmp = nil
+  local mountKey = nil
+  local mounted = false
+  if fs.newFileData then
+    local archiveName = ("mod_import_%d_%d.zip"):format(
+      os.time(), math.random(0, 999999))
+    local okFd, fd = pcall(fs.newFileData, data, archiveName)
+    if okFd and fd and fs.mount(fd, mount) then
+      mounted = true
+      mountKey = fd
+    end
+  end
+  if not mounted then
+    -- Fallback: stage into a save-dir temp so path-mount can reach it.
+    tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
+    local ok, writeErr = fs.write(tmp, data)
+    if not ok then
+      return nil, "could not stage the .zip: " .. tostring(writeErr)
+    end
+    if not fs.mount(tmp, mount) then
+      fs.remove(tmp)
+      return nil, "that .zip could not be opened"
+    end
+    mountKey = tmp
   end
   local function cleanup()
-    pcall(fs.unmount, tmp)
-    fs.remove(tmp)
+    pcall(fs.unmount, mountKey)
+    if tmp then fs.remove(tmp) end
   end
 
   local prefix, rootErr = LauncherMods.locateRoot(topLevelPaths(mount))

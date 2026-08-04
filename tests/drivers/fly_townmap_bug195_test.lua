@@ -30,14 +30,11 @@ return function(game)
   U.teleport(game, "PALLET_TOWN", 10, 8, "down")
   U.wait(5)
 
-  -- open the party menu and pick FLY on slot 1 (submenu: STATS / SWITCH / FLY)
+  -- open the party menu and pick FLY on slot 1 (submenu: FLY / STATS / SWITCH,
+  -- field moves on top like start_sub_menus.asm -- #768)
   Screens.push(game, "PartyMenu")
   U.wait(5)
-  U.tap(game, "a")    -- open the per-mon submenu
-  U.wait(2)
-  U.tap(game, "down") -- STATS -> SWITCH
-  U.wait(2)
-  U.tap(game, "down") -- SWITCH -> FLY
+  U.tap(game, "a")    -- open the per-mon submenu, cursor on FLY
   U.wait(2)
   U.tap(game, "a")    -- choose FLY
   U.wait(5)

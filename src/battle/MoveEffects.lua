@@ -23,7 +23,7 @@ local MoveEffects = {}
 -- pokered's <USER>/<TARGET> text macros print "Enemy " before the
 -- enemy mon's nickname (home/text.asm PlaceMoveUsersName)
 local function displayName(b)
-  return b.isPlayer and b.name or ("Enemy " .. b.name)
+  return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
 end
 
 local STAT_LABEL = {
@@ -259,15 +259,29 @@ MoveEffects.primary = {
     return { romText(battle.data, "_StatusChangesEliminatedText", "All STATUS changes\nare eliminated!") }
   end,
 
+  -- substitute.asm reaches its PlayCurrentMoveAnimation / AnimationSubstitute
+  -- Bankswitch only inside the success branch, after `set HAS_SUBSTITUTE_UP`;
+  -- .alreadyHasSubstitute and .notEnoughHP fall straight through to PrintText,
+  -- so both failures print with no animation at all.  That is load bearing
+  -- here: the SUBSTITUTE animation opens with SE_SLIDE_MON_OFF, which leaves
+  -- the user's pic hidden (BattleState.lua slideOff end state) until the doll
+  -- is drawn in its place -- and with no substituteHP raised there is no doll,
+  -- so a failed Substitute used to erase the user's sprite for the rest of the
+  -- battle (#644).  The failed flag rides the message list so performMove can
+  -- peel the announcement-time anim row without matching on printed text.
   SUBSTITUTE_EFFECT = function(battle, user)
-    if user.substituteHP then return { romText(battle.data, "_HasSubstituteText", "%s\nhas a SUBSTITUTE!", displayName(user)) } end
+    if user.substituteHP then
+      return { romText(battle.data, "_HasSubstituteText", "%s\nhas a SUBSTITUTE!", displayName(user)),
+               failed = true }
+    end
     local cost = math.floor(user.mon.stats.hp / 4)
     -- substitute.asm only fails on subtraction underflow (current HP
     -- strictly below maxHP/4); at equality the substitute is built and
     -- the user is left standing on exactly 0 HP (it faints only when
     -- the engine next checks HP, not here)
     if user.mon.hp < cost then
-      return { romText(battle.data, "_TooWeakSubstituteText", "Too weak to make\na SUBSTITUTE!") }
+      return { romText(battle.data, "_TooWeakSubstituteText", "Too weak to make\na SUBSTITUTE!"),
+               failed = true }
     end
     user.mon.hp = user.mon.hp - cost
     user.substituteHP = cost + 1
@@ -332,7 +346,7 @@ MoveEffects.primary = {
                                                 battle.data.moves[id].name) }
   end,
 
-  SPLASH_EFFECT = function()
+  SPLASH_EFFECT = function(battle)
     return { romText(battle.data, "_NoEffectText", "No effect!") }
   end,
 }

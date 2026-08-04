@@ -190,7 +190,10 @@ do
   eq(tb.fx.shakeProg, nil, "type 4 arms no shake (#354 must not regress it)")
   check(tb.fx.blink ~= nil and tb.fx.blink.target == tb.enemy,
         "type 4 blinks the enemy pic")
-  eq(tb.waitFrames, 20, "for the 20 frames AnimationBlinkEnemyMon takes")
+  -- AnimationBlinkMon (animations.asm:1360-1376) is `ld c, 6` iterations
+  -- of hide + DelayFrames 5 + show + DelayFrames 5 = 60 frames; the port
+  -- once ran it in 20, a third of its length (Timing.BLINK_MON).
+  eq(tb.waitFrames, 60, "for the 60 frames AnimationBlinkEnemyMon takes")
 end
 
 -- the OPTIONS animation toggle still gates the whole thing; the sound does not

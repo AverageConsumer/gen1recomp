@@ -44,7 +44,8 @@ local function makeGame(party)
   function stack:pop() return table.remove(self.states) end
   function stack:top() return self.states[#self.states] end
   return { data = Data, save = save, stack = stack,
-           input = { wasPressed = function() return false end } }
+           input = { wasPressed = function() return false end,
+                     isDown = function() return false end } }
 end
 
 local game = makeGame({ Pokemon.new(Data, "BULBASAUR", 50) })

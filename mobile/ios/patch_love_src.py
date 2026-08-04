@@ -103,6 +103,7 @@ WRAP_REGISTRATION = """#ifdef LOVE_IOS
 	{ "pickFile", w_pickFile },
 	{ "createFile", w_createFile },
 	{ "syncHealthSteps", w_syncHealthSteps },
+	{ "httpDownload", w_httpDownload },
 #endif
 """
 
@@ -144,6 +145,32 @@ int w_syncHealthSteps(lua_State *L)
 
 WRAP_SYNC_REGISTRATION = """#ifdef LOVE_IOS
 	{ "syncHealthSteps", w_syncHealthSteps },
+	{ "httpDownload", w_httpDownload },
+#endif
+"""
+
+BRIDGE_EXTRA_FUNCS = """
+#ifdef LOVE_IOS
+int w_httpDownload(lua_State *L)
+{
+	const char *url = luaL_checkstring(L, 1);
+	const char *destination = luaL_checkstring(L, 2);
+	const char *userAgent = luaL_optstring(L, 3, "gen1recomp");
+	const char *accept = luaL_optstring(L, 4, "");
+	Class cls = objc_getClass("GRPickerBridge");
+	if (cls == nullptr)
+	{
+		lua_pushboolean(L, 0);
+		return 1;
+	}
+	typedef signed char (*GRDownload)(Class, SEL, const char *, const char *,
+	                                  const char *, const char *);
+	signed char ok = ((GRDownload)objc_msgSend)(
+		cls, sel_registerName("httpDownloadWithUrl:destination:userAgent:accept:"),
+		url, destination, userAgent, accept);
+	lua_pushboolean(L, ok != 0);
+	return 1;
+}
 #endif
 """
 
@@ -216,7 +243,8 @@ def patch_wrap_system():
     if anchor not in text:
         fail(f"anchor not found in {WRAP_SYSTEM}")
     has_native_picker = re.search(r"\bint w_pickFile\s*\(", text) is not None
-    text = text.replace(anchor, (WRAP_SYNC_FUNCS if has_native_picker else WRAP_FUNCS) + anchor, 1)
+    bridge_funcs = WRAP_SYNC_FUNCS if has_native_picker else WRAP_FUNCS
+    text = text.replace(anchor, bridge_funcs + BRIDGE_EXTRA_FUNCS + anchor, 1)
     reg_anchor = '\t{ "vibrate", w_vibrate },\n'
     if reg_anchor not in text:
         fail(f"registration anchor not found in {WRAP_SYSTEM}")
@@ -224,7 +252,7 @@ def patch_wrap_system():
     text = text.replace(reg_anchor, reg_anchor + registration, 1)
     WRAP_SYSTEM.write_text(text)
     print("patch_love_src: wrap_System.cpp patched "
-          "(pickFile/createFile/syncHealthSteps)")
+          "(pickFile/createFile/syncHealthSteps/httpDownload)")
 
 
 def patch_pbxproj():

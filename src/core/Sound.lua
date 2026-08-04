@@ -92,19 +92,30 @@ end
 -- Chip SFX and cries are already stereo at the source (ChipSynth
 -- renderEffectData); this covers file defs, i.e. Yellow's 8-bit mono PCM
 -- Pikachu clips (RomExtractor extractPikachuCries) and mod-supplied wav/ogg
--- SFX.  Every step is guarded: a headless love stub without love.sound, or a
--- decoder that will not hand back SoundData, keeps the original Source.
+-- SFX.
+--
+-- Decode the FILE (not Source:getChannelCount): love-nx/audren has reported
+-- channel counts that skip this widen silently, and preserving 8-bit depth
+-- into a stereo buffer also sounds wrong on that backend.  Always emit
+-- 16-bit stereo like ChipSynth.  Failure keeps the original Source and logs.
 local function widenMono(source, file)
-  if not (source and love.sound and love.sound.newSoundData) then
+  if type(file) ~= "string" then return source end
+  if not (love.sound and love.sound.newSoundData and love.audio
+      and love.audio.newSource) then
     return source
   end
-  local ok, channels = pcall(function() return source:getChannelCount() end)
-  if not ok or channels ~= 1 then return source end
+  -- Quiet skip when the path is unreadable (headless stub SFX keys, missing
+  -- files).  On NX, overlay-wrapped getInfo makes the yellow|blue copy visible
+  -- at the bare assets/generated path so the widen still runs.
+  local fs = love.filesystem
+  if not (fs and fs.getInfo and fs.getInfo(file)) then
+    return source
+  end
   local built, widened = pcall(function()
     local mono = love.sound.newSoundData(file)
+    if mono:getChannelCount() ~= 1 then return source end
     local frames = mono:getSampleCount()
-    local stereo = love.sound.newSoundData(frames, mono:getSampleRate(),
-                                           mono:getBitDepth(), 2)
+    local stereo = love.sound.newSoundData(frames, mono:getSampleRate(), 16, 2)
     for index = 0, frames - 1 do
       local value = mono:getSample(index)
       stereo:setSample(index, 1, value)
@@ -112,7 +123,10 @@ local function widenMono(source, file)
     end
     return love.audio.newSource(stereo, "static")
   end)
-  if built and widened then return widened end
+  if built and widened and widened ~= source then return widened end
+  if not built then
+    Logger.warn("sound: widenMono failed for %s: %s", file, tostring(widened))
+  end
   return source
 end
 
@@ -274,9 +288,9 @@ function Sound.playPikaCry(data, n)
       cache[key] = false
       return nil
     end
-    -- the importer writes these clips as 8-bit mono (RomExtractor
-    -- extractPikachuCries), so they need the same widening as the chip
-    -- effects to stay off a multi-output device's surround channels (#626)
+    -- importer historically wrote these as 8-bit mono (RomExtractor
+    -- extractPikachuCries); widenMono re-decodes to 16-bit stereo so they
+    -- stay off surround outputs (#626).  Fresh extracts are already stereo.
     s = widenMono(s, path)
     s:setVolume(volumeFor(key))
     cache[key] = s

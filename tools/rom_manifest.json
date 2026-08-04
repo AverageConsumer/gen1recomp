@@ -20442,6 +20442,10 @@
       19,
       21537
     ],
+    "GameBoyTiles": [
+      30,
+      23584
+    ],
     "GameCornerPrizeRoom_h": [
       18,
       20708
@@ -20817,6 +20821,10 @@
     "LickitungPicFront": [
       9,
       21671
+    ],
+    "LinkCableTiles": [
+      30,
+      23632
     ],
     "LoreleiPic": [
       19,
@@ -22122,9 +22130,21 @@
       28,
       20288
     ],
+    "TradeBubbleIconGFX": [
+      28,
+      23129
+    ],
     "TradeCenter_h": [
       19,
       32004
+    ],
+    "TradingAnimationGraphics": [
+      14,
+      27070
+    ],
+    "TradingAnimationGraphics2": [
+      14,
+      27854
     ],
     "TrainerAI": [
       14,

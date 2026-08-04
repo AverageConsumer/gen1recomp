@@ -1,8 +1,8 @@
 -- Launcher Delete affordance (src/import/RomImporter.lua): the two-click arm
 -- that guards both save-slot and mod deletes (#433).  Every Delete control in
 -- the FlexLove view routes through RomImporter:pressDelete, and every other
--- queued action clears self._confirmDelete (LauncherView's queueAction), so
--- the guarantees live on this seam: the first press only arms, the second
+-- queued action clears self._confirmDelete (RomImporter:runActions as the
+-- batch drains, #780), so the guarantees live on this seam: the first press only arms, the second
 -- press on the SAME target commits, any other target or a cleared arm asks
 -- again, and a stale arm expires instead of committing much later.
 --   luajit tests/engine/launcher_delete_confirm.lua

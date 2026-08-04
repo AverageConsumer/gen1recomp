@@ -203,7 +203,20 @@ local function loadModule(dir, name)
     if not chunk then return false, err end
     return pcall(chunk)
   end
-  return pcall(require, "data.generated." .. name)
+  local ok, mod = pcall(require, "data.generated." .. name)
+  if ok then return true, mod end
+  -- Fused PhysFS / Blue|Yellow prefix: load bytes from the active version's
+  -- cache explicitly when require cannot see the mounted tree.
+  local CacheFs = require("src.import.CacheFs")
+  local GameVersion = require("src.core.GameVersion")
+  local path = "data/generated/" .. name .. ".lua"
+  local bytes = CacheFs.readActive(path)
+  if type(bytes) == "string" then
+    local chunk, err = loadstring(bytes, "@" .. GameVersion.cachePrefix() .. path)
+    if not chunk then return false, err or mod end
+    return pcall(chunk)
+  end
+  return false, mod
 end
 
 function Data:load()

@@ -235,8 +235,10 @@ local mid, done, tpopped = 0, 0, 0
 local g5 = { data = Data, save = SaveData.newGame() }
 g5.stack = { push = function() end, pop = function() tpopped = tpopped + 1 end,
              top = function() return nil end }
+-- warp = true: the map-change shape with no fade back in.  Script fades
+-- (ViridianGym.asm .afterBeat) keep the symmetric GBFadeInFromBlack.
 local fade = Transition.new(g5, function() mid = mid + 1 end,
-                                function() done = done + 1 end)
+                                function() done = done + 1 end, true)
 
 local f = 0
 while done == 0 and f < 500 do

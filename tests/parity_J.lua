@@ -283,7 +283,8 @@ end
 do
   local pressed = {}
   local tb = freshBattle()
-  tb.game = { input = { wasPressed = function(_, k) return pressed[k] or false end },
+  tb.game = { input = { wasPressed = function(_, k) return pressed[k] or false end,
+                        isDown = function(_, k) return pressed[k] or false end },
               stack = { top = function() return tb end },
               save = Game.save }
   tb.kind = "wild"
@@ -359,7 +360,8 @@ do
   local fg = {
     data = Data,
     save = require("src.core.SaveData").newGame(),
-    input = { wasPressed = function(_, k) return pressed[k] or false end },
+    input = { wasPressed = function(_, k) return pressed[k] or false end,
+              isDown = function(_, k) return pressed[k] or false end },
     stack = stack,
   }
   fg.save.party = { Pokemon.new(Data, "BULBASAUR", 20) }
@@ -426,10 +428,15 @@ do
     bag:update(1 / 60)
   end
   check(stack:top() ~= bag, "the ball is thrown without input")
+  -- Battle exit now rides Transition.battleReturn (MapEntryAfterBattle's
+  -- GBFadeInFromWhite, home/overworld.asm:749-753): the battle pops itself
+  -- and pushes the fade, which fires onFinish only once ITS update counts
+  -- down -- so pump whatever sits on top of the stack, not the demo state.
   for _ = 1, 2000 do
     if finished then break end
     pressed.a = true
-    demo:update(1 / 60)
+    local top = stack:top()
+    if top then top:update(1 / 60) else break end
   end
   pressed.a = false
   check(finished, "the throw ends the demo battle")

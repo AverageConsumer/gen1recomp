@@ -62,7 +62,9 @@ local expected = 100 + 128 + 16 + 20 + 600
 for _, s in ipairs(credits.screens) do
   expected = expected + (s.fade and 20 or 0)
     + (s.mon and (s.fade and 90 or 110) or (s.fade and 120 or 140))
-    + (s.mon and 27 or 0)
+    -- DisplayCreditsMon: 3 x CreditsCopyTileMapToVRAM (Delay3) then 27 scroll
+    -- frames (#703)
+    + (s.mon and (9 + 27) or 0)
 end
 while roll.phase ~= "end_wait" and frame < expected + 120 do
   frame = frame + 1

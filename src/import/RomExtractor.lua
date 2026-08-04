@@ -1639,9 +1639,100 @@ function RomExtractor:raw1bpp(label, width, height, relative, transparent)
   return image
 end
 
+-- Trading animation art: gfx/trade.asm TradingAnimationGraphics is one
+-- 49-tile atlas (game_boy.2bpp, built with --remove-duplicates, then
+-- link_cable.2bpp), and the Game Boy and open-cable plates are painted out
+-- of it through the tilemaps in data/tilemaps.asm (GameBoyTiles 6x8,
+-- LinkCableTiles 12x3), whose ids are absolute vChars2 ids starting at $31
+-- because trade.asm reaches them through
+-- CopyTileIDsFromList_ZeroBaseTileID.  Only the developer-only Python path
+-- ever wrote these files, so an imported cache had none of them and
+-- TradeAnim drew the whole cinematic as plain rectangles (#750).
+function RomExtractor:extractTradeArt()
+  local BASE, COUNT = 0x31, 49
+  local gfx = self:symbol("TradingAnimationGraphics")
+  local atlas = ImageWriter.decode2bpp(
+    self.rom:bytes(gfx.bank, gfx.address, COUNT * 16), COUNT * 8, 8)
+  local function tileX(id)
+    local index = id - BASE
+    assert(index >= 0 and index < COUNT,
+      ("trade tile $%02X is outside the animation atlas"):format(id))
+    return index * 8
+  end
+  local function plate(label, tilesWide, tilesHigh, relative, matte)
+    local map = self:symbol(label)
+    local ids = self.rom:bytes(map.bank, map.address, tilesWide * tilesHigh)
+    local image = ImageWriter.blank(tilesWide * 8, tilesHigh * 8, 1, 1, 1, 1)
+    for index, id in ipairs(ids) do
+      ImageWriter.blit(image, atlas,
+        (index - 1) % tilesWide * 8,
+        math.floor((index - 1) / tilesWide) * 8, tileX(id), 0, 8, 8)
+    end
+    if matte then image = ImageWriter.matteColor0(image) end
+    self:save(image, relative)
+  end
+  plate("GameBoyTiles", 6, 8, "trade/game_boy.png", true)
+  plate("LinkCableTiles", 12, 3, "trade/open_cable.png", false)
+  for _, spec in ipairs({
+    { 0x5D, "cable_conn" }, { 0x5E, "cable_seg" }, { 0x5F, "cable_corner" },
+    { 0x60, "cable_end" }, { 0x61, "cable_vert" },
+  }) do
+    local tile = ImageWriter.blank(8, 8, 1, 1, 1, 1)
+    ImageWriter.blit(tile, atlas, 0, 0, tileX(spec[1]), 0, 8, 8)
+    self:save(tile, "trade/" .. spec[2] .. ".png")
+  end
+  -- Trade_DrawCableAcrossScreen fills a whole 20-tile row with tile $5e.
+  local horizontal = ImageWriter.blank(160, 8, 1, 1, 1, 1)
+  for column = 0, 19 do
+    ImageWriter.blit(horizontal, atlas, column * 8, 0, tileX(0x5E), 0, 8, 8)
+  end
+  self:save(horizontal, "trade/cable_horiz.png")
+
+  -- Trade_BallInsideLinkCableOAMBlock draws one tile four times with the
+  -- X/Y flips, so each of the two frames -- $7e travelling, $7f bulging,
+  -- the bottom row of TradingAnimationGraphics2 -- makes a 16x16 ball.
+  local ball = self:symbol("TradingAnimationGraphics2")
+  local frames = ImageWriter.decode2bpp(
+    self.rom:bytes(ball.bank, ball.address, 64), 16, 16, true)
+  for index, name in ipairs({ "cable_ball", "cable_ball_alt" }) do
+    local image = ImageWriter.blank(16, 16, 1, 1, 1, 0)
+    for y = 0, 7 do
+      for x = 0, 7 do
+        local r, g, b, a = frames:getPixel((index - 1) * 8 + x, 8 + y)
+        image:setPixel(x, y, r, g, b, a)
+        image:setPixel(15 - x, y, r, g, b, a)
+        image:setPixel(x, 15 - y, r, g, b, a)
+        image:setPixel(15 - x, 15 - y, r, g, b, a)
+      end
+    end
+    self:save(image, "trade/" .. name .. ".png")
+  end
+  -- The ring around the travelling mon: one 16x16 quadrant per animation
+  -- frame (engine/gfx/mon_icons.asm TradeBubbleIconGFX), mirrored into a
+  -- 32x32 circle by the OAM attributes in Trade_CircleOAMBlocks.
+  local bubble = self:symbol("TradeBubbleIconGFX")
+  self:write2bpp(self.rom:bytes(bubble.bank, bubble.address, 128),
+    16, 32, "trade/bubble.png", true)
+
+  return {
+    gameBoy = "assets/generated/trade/game_boy.png",
+    openCable = "assets/generated/trade/open_cable.png",
+    cableHoriz = "assets/generated/trade/cable_horiz.png",
+    cableConn = "assets/generated/trade/cable_conn.png",
+    cableVert = "assets/generated/trade/cable_vert.png",
+    cableCorner = "assets/generated/trade/cable_corner.png",
+    cableEnd = "assets/generated/trade/cable_end.png",
+    cableBall = "assets/generated/trade/cable_ball.png",
+    cableBallAlt = "assets/generated/trade/cable_ball_alt.png",
+    bubble = "assets/generated/trade/bubble.png",
+    source = "ROM:TradingAnimationGraphics + ROM:TradeBubbleIconGFX"
+      .. " (engine/movie/trade.asm InternalClockTradeAnim)",
+  }
+end
+
 function RomExtractor:extractField()
   self:beginStage("Interface artwork")
-  local done, total = 0, 49
+  local done, total = 0, 50
   local function tick()
     done = done + 1
     self:tick("Interface artwork", math.min(done, total), total)
@@ -1832,6 +1923,8 @@ function RomExtractor:extractField()
   end
   self:save(emotes, "emotes.png"); tick()
 
+  local tradeArt = self:extractTradeArt(); tick()
+
   -- Yellow-only: the Surfing Pikachu minigame sheets
   -- (gfx/surfing_pikachu.asm) at pret's canvas widths, so
   -- src/ui/SurfingMinigame.lua's quads can be read off the source pngs.
@@ -1962,6 +2055,7 @@ function RomExtractor:extractField()
   local converted = {}
   for index, values in pairs(adjacency) do converted[tonumber(index)] = values end
   data.hiddenExtras.trashCans.adjacent = converted
+  data.tradeArt = tradeArt
   data.source = "canonical Pokemon Red ROM + bundled port metadata"
   self:write("field", data)
   self:tick("Interface artwork", total, total)
@@ -2023,21 +2117,23 @@ end
 -- PikachuCriesPointerTable, 42 `dba` rows; each clip is `dw length` then
 -- 1-bit PCM, MSB first -- home/pikachu_cries.asm PlayPikachuPCM toggles
 -- rAUD3LEVEL per bit at roughly 190 CPU cycles a sample).  Decoded to
--- plain 8-bit mono WAVs; returns the clip count for data.audio.pikaCries,
+-- 16-bit stereo WAVs (identical L/R) so OpenAL never spatializes them as
+-- ambient surround (#626); returns the clip count for data.audio.pikaCries,
 -- or nil when the manifest has no pointer table (Red/Blue).
 function RomExtractor:extractPikachuCries()
   if not self.symbols["PikachuCriesPointerTable"] then return nil end
   local NUM = 42   -- NUM_PIKA_CRIES
   local RATE = 22050 -- ~4.19 MHz / ~190 cycles per sample
-  -- byte -> 8 samples, MSB first (LoadNextSoundClipSample: `and $80`)
+  -- byte -> 8 mono sample levels, MSB first (LoadNextSoundClipSample: `and $80`)
+  -- levels match the old unsigned-8 WAV (on=0xE0, off=0x20) as floats in [-1,1]
   local lut = {}
   for byte = 0, 255 do
     local out = {}
     for bit = 7, 0, -1 do
       local on = math.floor(byte / 2 ^ bit) % 2 == 1
-      out[#out + 1] = string.char(on and 0xE0 or 0x20)
+      out[#out + 1] = on and ((0xE0 - 128) / 128) or ((0x20 - 128) / 128)
     end
-    lut[byte] = table.concat(out)
+    lut[byte] = out
   end
   local function u16(v)
     return string.char(v % 256, math.floor(v / 256) % 256)
@@ -2045,6 +2141,12 @@ function RomExtractor:extractPikachuCries()
   local function u32(v)
     return string.char(v % 256, math.floor(v / 256) % 256,
       math.floor(v / 65536) % 256, math.floor(v / 16777216) % 256)
+  end
+  local function i16le(f)
+    local v = math.floor(f * 32767 + (f >= 0 and 0.5 or -0.5))
+    if v > 32767 then v = 32767 elseif v < -32768 then v = -32768 end
+    if v < 0 then v = v + 65536 end
+    return string.char(v % 256, math.floor(v / 256) % 256)
   end
   local CacheFs = require("src.import.CacheFs")
   local pointers = self:symbol("PikachuCriesPointerTable")
@@ -2054,11 +2156,16 @@ function RomExtractor:extractPikachuCries()
     local header = self.rom:bytes(bank, address, 2)
     local length = header[1] + header[2] * 256
     local raw = self.rom:bytes(bank, address + 2, length)
-    local samples = {}
-    for i, byte in ipairs(raw) do samples[i] = lut[byte] end
-    local pcm = table.concat(samples)
+    local parts = {}
+    for _, byte in ipairs(raw) do
+      for _, level in ipairs(lut[byte]) do
+        local s = i16le(level)
+        parts[#parts + 1] = s .. s -- identical L/R (#626)
+      end
+    end
+    local pcm = table.concat(parts)
     local wav = "RIFF" .. u32(36 + #pcm) .. "WAVEfmt " .. u32(16)
-      .. u16(1) .. u16(1) .. u32(RATE) .. u32(RATE) .. u16(1) .. u16(8)
+      .. u16(1) .. u16(2) .. u32(RATE) .. u32(RATE * 4) .. u16(4) .. u16(16)
       .. "data" .. u32(#pcm) .. pcm
     local ok, err = CacheFs.write(
       ("assets/generated/audio/pika_cries/cry_%02d.wav"):format(index + 1),

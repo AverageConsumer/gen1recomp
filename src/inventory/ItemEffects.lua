@@ -12,8 +12,18 @@
 
 local Flags = require("src.script.Flags")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local ItemEffects = {}
+
+local function notTime(data, save)
+  return romText(data, "_ItemUseNotTimeText",
+    "OAK: %s!\nThis isn't the\ntime to use that!", save.player.name)
+end
+
+local function noEffect(data)
+  return romText(data, "_ItemUseNoEffectText", "It won't have\nany effect.")
+end
 
 local HEAL_AMOUNT = {
   POTION = 20, SUPER_POTION = 50, HYPER_POTION = 200,
@@ -88,6 +98,14 @@ local function cureActiveToxic(battle, target)
   end
 end
 
+-- the per-item cure lines (item_effects.asm .cureStatusAilment picks the
+-- text by item id); FULL_RESTORE lands here too when it acts as a cure
+local CURE_TEXT = {
+  ANTIDOTE = "_AntidoteText", BURN_HEAL = "_BurnHealText",
+  ICE_HEAL = "_IceHealText", AWAKENING = "_AwakeningText",
+  PARLYZ_HEAL = "_ParlyzHealText", FULL_HEAL = "_FullHealText",
+}
+
 -- battle-only stat boosters (engine/items/item_effects.asm ItemUseXStat)
 local X_ITEMS = {
   X_ATTACK = "attack", X_DEFEND = "defense", X_SPEED = "speed",
@@ -138,8 +156,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
                  or itemId == "ESCAPE_ROPE" or itemId == "REPEL"
                  or itemId == "SUPER_REPEL" or itemId == "MAX_REPEL"
                  or (itemDef and itemDef.machine)) then
-    return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!",
-                               save.player.name) }
+    return "failed", { notTime(data, save) }
   end
 
   if BALLS[itemId] then
@@ -156,13 +173,14 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       -- data/scripts/story.lua's snorlaxWake)
       local mapId, npc = adjacentSleepingSnorlax(save, ow)
       if npc then
-        return "flute_wake", { data.text._PlayedFluteHadEffectText
-          or Strings("{PLAYER} played the\nPOKé FLUTE.") },
+        return "flute_wake", { romText(data, "_PlayedFluteHadEffectText",
+          "{PLAYER} played the\nPOKé FLUTE.") },
           { mapId = mapId, npc = npc }
       end
       -- otherwise: play the tune, nothing happens (ItemUsePokeFlute's
       -- PlayedFluteNoEffectText branch)
-      return "flute_field", { Strings("Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!") }
+      return "flute_field", { romText(data, "_PlayedFluteNoEffectText",
+        "Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!") }
     end
     local woke = false
     local function wake(mon)
@@ -177,17 +195,20 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     -- WakeUpEntireParty runs on the enemy's bench too
     for _, mon in ipairs(battle.enemyParty or {}) do wake(mon) end
     if not woke then
-      return "failed", { Strings("Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!") }
+      return "failed", { romText(data, "_PlayedFluteNoEffectText",
+        "Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!") }
     end
-    return "flute", { Strings("%s played the\nPOKé FLUTE.", save.player.name),
-                      Strings("All sleeping\nPOKéMON woke up!") }
+    return "flute", { romText(data, "_PlayedFluteHadEffectText",
+                        "%s played the\nPOKé FLUTE.", save.player.name),
+                      romText(data, "_FluteWokeUpText",
+                        "All sleeping\nPOKéMON woke up!") }
   end
 
   -- battle-only items
   if X_ITEMS[itemId] or itemId == "DIRE_HIT" or itemId == "GUARD_SPEC"
      or itemId == "POKE_DOLL" then
     if not battle then
-      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+      return "failed", { notTime(data, save) }
     end
     local b = battle.player
     -- PIKAHAPPY_USEDXITEM (item_effects.asm ItemUseXAccuracy /
@@ -209,7 +230,8 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       -- effect, so at +6 it is still consumed and StatModifierUpEffect
       -- just prints "Nothing happened!"
       if cur >= 6 then
-        return "consumed", { Strings("Nothing happened!") }
+        return "consumed", { romText(data, "_NothingHappenedText",
+          "Nothing happened!") }
       end
       b.stages[stat] = cur + 1
       return "consumed", { Strings("%s's\n%s rose!", b.name, stat:upper()) }
@@ -218,7 +240,8 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     -- the item, even when it is already active
     if itemId == "DIRE_HIT" then
       b.focusEnergy = true
-      return "consumed", { Strings("%s's\ngetting pumped!", b.name) }
+      return "consumed", { romText(data, "_GettingPumpedText",
+        "%s's\ngetting pumped!", b.name) }
     end
     if itemId == "GUARD_SPEC" then
       b.mist = true
@@ -227,10 +250,10 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     if itemId == "POKE_DOLL" then
       if battle.kind ~= "wild" then
         -- ItemUsePokeDoll jumps to ItemUseNotTime in trainer battles
-        return "failed", { Strings(
-          "OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+        return "failed", { notTime(data, save) }
       end
-      return "consumed_escape", { Strings("The wild POKéMON\nran away!") }
+      return "consumed_escape", { romText(data, "_WildRanText",
+        "The wild POKéMON\nran away!", battle.enemy and battle.enemy.name) }
     end
   end
 
@@ -239,7 +262,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   -- restore every move with no menu.
   if itemId == "ETHER" or itemId == "MAX_ETHER"
      or itemId == "ELIXER" or itemId == "MAX_ELIXER" then
-    if not target then return "failed", { Strings("It won't have\nany effect.") } end
+    if not target then return "failed", { noEffect(data) } end
     local restored = false
     local full = itemId == "MAX_ETHER" or itemId == "MAX_ELIXER"
     local allMoves = itemId == "ELIXER" or itemId == "MAX_ELIXER"
@@ -261,9 +284,10 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       restored = mv and restore(mv) or false
     end
     if not restored then
-      return "failed", { Strings("It won't have\nany effect.") }
+      return "failed", { noEffect(data) }
     end
-    return "consumed", { Strings("%s's PP\nwas restored!", monName(data, target)) }
+    -- pokered's line names no mon, so the extracted text takes no args
+    return "consumed", { romText(data, "_PPRestoredText", "PP was restored.") }
   end
 
   -- PIKAHAPPY_USEDITEM (item_effects.asm ItemUseMedicine, item id up to
@@ -288,10 +312,11 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       target.status = nil
       cureActiveToxic(battle, target)
       require("src.core.Sound").play(data, "Heal_Ailment")
-      return "consumed", { Strings("%s's\nstatus returned\nto normal!", monName(data, target)) }
+      return "consumed", { romText(data, CURE_TEXT.FULL_HEAL,
+        "%s's\nstatus returned\nto normal!", monName(data, target)) }
     end
     if not target or target.hp <= 0 or target.hp >= target.stats.hp then
-      return "failed", { Strings("It won't have\nany effect.") }
+      return "failed", { noEffect(data) }
     end
     -- wHPBarOldHP: the bar animation starts from the HP the mon had BEFORE
     -- the item landed (item_effects.asm latches it with the party menu still
@@ -303,7 +328,10 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     else
       target.hp = math.min(target.stats.hp, target.hp + heal)
     end
-    local msgs = { Strings("%s's HP\nwas restored!", monName(data, target)) }
+    -- _PotionText's second slot is the recovered amount ({NUM:
+    -- wHPBarHPDifference}); the engine fallback never prints it
+    local msgs = { romText(data, "_PotionText", "%s's HP\nwas restored!",
+                     monName(data, target), target.hp - before) }
     if itemId == "FULL_RESTORE" then
       target.status = nil
       cureActiveToxic(battle, target)
@@ -315,17 +343,18 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   local cures = STATUS_HEAL[itemId]
   if cures then
     if not target or not target.status or not cures[target.status] then
-      return "failed", { Strings("It won't have\nany effect.") }
+      return "failed", { noEffect(data) }
     end
     target.status = nil
     cureActiveToxic(battle, target)
     require("src.core.Sound").play(data, "Heal_Ailment")
-    return "consumed", { Strings("%s's\nstatus returned\nto normal!", monName(data, target)) }
+    return "consumed", { romText(data, CURE_TEXT[itemId],
+      "%s's\nstatus returned\nto normal!", monName(data, target)) }
   end
 
   if itemId == "REVIVE" or itemId == "MAX_REVIVE" then
     if not target or target.hp > 0 then
-      return "failed", { Strings("It won't have\nany effect.") }
+      return "failed", { noEffect(data) }
     end
     target.status = nil
     target.hp = itemId == "REVIVE" and math.floor(target.stats.hp / 2) or target.stats.hp
@@ -337,13 +366,14 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     if battle and battle.participants then
       battle.participants[target] = true
     end
-    return "consumed", { Strings("%s\nis revitalized!", monName(data, target)) },
+    return "consumed", { romText(data, "_ReviveText",
+      "%s\nis revitalized!", monName(data, target)) },
            { healedFrom = 0 }
   end
 
   if itemId == "RARE_CANDY" then
     if not target or target.level >= 100 then
-      return "failed", { Strings("It won't have\nany effect.") }
+      return "failed", { noEffect(data) }
     end
     local Growth = require("src.pokemon.Growth")
     local Stats = require("src.pokemon.Stats")
@@ -356,12 +386,13 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     -- PIKAHAPPY_LEVELUP on a candy level (item_effects.asm:1540)
     require("src.world.PikachuFollower")
       .modifyHappiness(save, "LEVELUP", target)
-    return "consumed", { Strings("%s grew\nto level %d!", monName(data, target), target.level) },
+    return "consumed", { romText(data, "_RareCandyText",
+      "%s grew\nto level %d!", monName(data, target), target.level) },
            { leveledTo = target.level }
   end
 
   if STONES[itemId] then
-    if not target then return "failed", { Strings("It won't have\nany effect.") } end
+    if not target then return "failed", { noEffect(data) } end
     -- Yellow's starter Pikachu never evolves: ItemUseEvoStone runs
     -- IsThisPartyMonStarterPikachu (OT identity match) before
     -- TryEvolvingMon and bails with the voiced cry + RefusingText.
@@ -371,10 +402,8 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
        and target.ot == save.player.name
        and target.otId == save.player.id then
       require("src.core.Sound").playCry(data, "PIKACHU")
-      local raw = data.text and data.text._RefusingText
-      local line = raw and raw:gsub("{RAM:[^}]*}", monName(data, target))
-        or Strings("%s\nis refusing!", monName(data, target))
-      return "failed", { line }
+      return "failed", { romText(data, "_RefusingText",
+        "%s\nis refusing!", monName(data, target)) }
     end
     local speciesDef = data.pokemon[target.species]
     for _, evo in ipairs(speciesDef.evolutions) do
@@ -382,44 +411,48 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
         return "consumed", nil, { evolveTo = evo.species }
       end
     end
-    return "failed", { Strings("It won't have\nany effect.") }
+    return "failed", { noEffect(data) }
   end
 
   -- vitamins: +2560 stat exp, refused at 25600+ (ItemUseVitamin,
   -- engine/items/item_effects.asm)
   local vitaminStat = VITAMINS[itemId]
   if vitaminStat then
-    if not target then return "failed", { Strings("It won't have\nany effect.") } end
+    if not target then return "failed", { noEffect(data) } end
     target.statExp = target.statExp or {}
     local cur = target.statExp[vitaminStat] or 0
     if cur >= 25600 then
-      return "failed", { Strings("It won't have\nany effect.") }
+      return "failed", { noEffect(data) }
     end
     target.statExp[vitaminStat] = math.min(65535, cur + 2560)
     local Stats = require("src.pokemon.Stats")
     target.stats = Stats.calc(data.pokemon[target.species], target.level,
                               target.dvs, target.statExp)
     target.hp = math.min(target.hp, target.stats.hp)
+    -- _VitaminStatRoseText's slot order is localization-dependent (the
+    -- Spanish ROM puts the stat before the name), so the extracted line
+    -- cannot be filled positionally; the engine wording stands
     return "consumed", { Strings("%s's %s\nrose!", monName(data, target),
       vitaminStat == "hp" and "HP" or vitaminStat:upper()) }
   end
 
   -- PP UP boosts the move the player picked (ItemUsePPUp's move menu)
   if itemId == "PP_UP" then
-    if not target then return "failed", { Strings("It won't have\nany effect.") } end
+    if not target then return "failed", { noEffect(data) } end
     local mv = target.moves[moveIndex or 1]
     local mdef = mv and data.moves[mv.id]
     if mdef and (mv.ppUps or 0) < 3 then
       mv.ppUps = (mv.ppUps or 0) + 1
       -- each PP UP adds maxPP/5 uses on top of the base maximum
       mv.pp = mv.pp + math.floor(mdef.pp / 5)
-      return "consumed", { Strings("%s's PP\nincreased!", mdef.name) }
+      return "consumed", { romText(data, "_PPIncreasedText",
+        "%s's PP\nincreased!", mdef.name) }
     end
-    return "failed", { Strings("It won't have\nany effect.") }
+    return "failed", { noEffect(data) }
   end
 
   if itemDef and itemDef.machine then
-    if not target then return "failed", { Strings("It won't have\nany effect.") } end
+    if not target then return "failed", { noEffect(data) } end
     local speciesDef = data.pokemon[target.species]
     local ok = false
     for _, m in ipairs(speciesDef.tmhm) do
@@ -430,11 +463,16 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       -- plays SFX_DENIED before MonCannotLearnMachineMoveText (the generic
       -- ItemUseNotTime/NoCyclingAllowedHere paths are silent)
       require("src.core.Sound").play(data, "Denied")
-      return "failed", { Strings("%s can't\nlearn that move!", monName(data, target)) }
+      local moveName = data.moves[itemDef.machine.move].name
+      return "failed", { romText(data, "_MonCannotLearnMachineMoveText",
+        "%s can't\nlearn that move!",
+        monName(data, target), moveName, moveName) }
     end
     for _, mv in ipairs(target.moves) do
       if mv.id == itemDef.machine.move then
-        return "failed", { Strings("It knows that\nmove already!") }
+        return "failed", { romText(data, "_AlreadyKnowsText",
+          "It knows that\nmove already!",
+          monName(data, target), data.moves[itemDef.machine.move].name) }
       end
     end
     -- HMs are never consumed; TMs are single-use
@@ -443,21 +481,21 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
 
   if itemId == "OLD_ROD" or itemId == "GOOD_ROD" or itemId == "SUPER_ROD" then
     if battle then
-      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+      return "failed", { notTime(data, save) }
     end
     -- FishingInit (engine/items/item_effects.asm): cp wWalkBikeSurfState, 2
     -- (surfing) sets carry, and every ItemUseXRod does jp c, ItemUseNotTime
     -- on that carry -- surfing refuses the rod with the same OAK text as
     -- the mid-battle case above, no rod-specific message (#533)
     if ow and ow.player and ow.player.surfing then
-      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+      return "failed", { notTime(data, save) }
     end
     return "fish", itemId
   end
 
   if itemId == "BICYCLE" then
     if battle then
-      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+      return "failed", { notTime(data, save) }
     end
     return "bicycle"
   end
@@ -467,18 +505,19 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   end
   if itemId == "TOWN_MAP" then
     if battle then
-      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+      return "failed", { notTime(data, save) }
     end
     return "townmap"
   end
   if itemId == "ITEMFINDER" then
     if battle then
-      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+      return "failed", { notTime(data, save) }
     end
     return "itemfinder"
   end
   if itemId == "COIN_CASE" then
-    return "failed", { Strings("Coin count:\n%d", save.coins or 0) }
+    return "failed", { romText(data, "_CoinCaseNumCoinsText",
+      "Coin count:\n%d", save.coins or 0) }
   end
   if itemId == "REPEL" or itemId == "SUPER_REPEL" or itemId == "MAX_REPEL" then
     local steps = itemId == "REPEL" and 100 or itemId == "SUPER_REPEL" and 200 or 250
@@ -486,7 +525,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     return "consumed", { Strings("%s used\n%s!", save.player.name, name) }
   end
 
-  return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
+  return "failed", { notTime(data, save) }
 end
 
 return ItemEffects

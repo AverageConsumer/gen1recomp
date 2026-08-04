@@ -72,8 +72,13 @@ rm -f "$LOVE_FILE"
   tools/rom_manifest.json tools/rom_manifest_blue.json \
   tools/rom_manifest_yellow.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
-if unzip -Z1 "$LOVE_FILE" \
-    | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then
+# Materialize the listing once and grep the file: piping unzip straight into
+# grep -q under `set -o pipefail` SIGPIPEs unzip when grep exits early on a
+# match, and the pipeline's failure reads as "missing <file>" for whichever
+# entry happened to match first (see the same fix in pack_love.sh).
+LOVE_LISTING="$WORK/love-listing.txt"
+unzip -Z1 "$LOVE_FILE" > "$LOVE_LISTING"
+if grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/' "$LOVE_LISTING"; then
   fail "game.love unexpectedly contains generated ROM data"
 fi
 # The editor is only reachable if its entry point and both module directories
@@ -86,7 +91,7 @@ for required in tools/save-editor/App.lua tools/save-editor/Kit.lua \
                 libs/flexlove/FlexLove.lua \
                 tools/rom_manifest.json tools/rom_manifest_blue.json \
                 tools/rom_manifest_yellow.json; do
-  unzip -Z1 "$LOVE_FILE" | grep -qx "$required" \
+  grep -qxF "$required" "$LOVE_LISTING" \
     || fail "game.love is missing $required"
 done
 say "game.love: $(du -h "$LOVE_FILE" | cut -f1)"
@@ -116,6 +121,32 @@ else
   say "version '$VERSION' is not X.Y.Z,  shipping default engine (no stamp)"
 fi
 
+# --------------------------------------------------------------- app icon
+# One source of truth for every platform's launcher icon; iOS resizes the
+# same file in scripts/build_ios.sh (apply_ios_icon) and the Android res/
+# drawables are generated from it too.
+ICON_SRC="$ROOT/assets/logo/gen1recomp_cover.png"
+
+# pipx installs peresed (Windows exe icon patcher) here, off the default PATH.
+PATH="$PATH:$HOME/.local/bin"
+
+make_icns() { # $1 = output .icns path
+  [ -f "$ICON_SRC" ] || fail "missing icon source: $ICON_SRC"
+  local iconset="$WORK/GameIcon.iconset" size scaled
+  rm -rf "$iconset"; mkdir -p "$iconset"
+  for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" "$ICON_SRC" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    scaled=$((size * 2))
+    sips -z "$scaled" "$scaled" "$ICON_SRC" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$iconset" -o "$1"
+}
+
+make_ico() { # $1 = output .ico path
+  [ -f "$ICON_SRC" ] || fail "missing icon source: $ICON_SRC"
+  magick "$ICON_SRC" -define icon:auto-resize=256,128,64,48,32,16 "$1"
+}
+
 # --------------------------------------------------------------- macOS
 build_mac() {
   say "building macOS app"
@@ -142,9 +173,21 @@ build_mac() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$plist"
 
-  if [ -f "$ROOT/assets/icon.icns" ]; then
-    cp "$ROOT/assets/icon.icns" "$out_app/Contents/Resources/GameIcon.icns"
+  # Brand the app icon. LÖVE.app resolves its icon through CFBundleIconName ->
+  # Assets.car first, so overwriting the loose .icns files alone changes
+  # nothing; the compiled asset catalog has to go and the plist has to fall
+  # back to CFBundleIconFile.
+  local icns="$ROOT/assets/icon.icns"
+  if [ ! -f "$icns" ]; then
+    icns="$WORK/GameIcon.icns"
+    make_icns "$icns"
   fi
+  cp "$icns" "$out_app/Contents/Resources/GameIcon.icns"
+  cp "$icns" "$out_app/Contents/Resources/OS X AppIcon.icns"
+  rm -f "$out_app/Contents/Resources/Assets.car"
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile OS X AppIcon" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string 'OS X AppIcon'" "$plist"
 
   local id="$IDENTITY"
   if [ -z "$id" ]; then
@@ -218,7 +261,47 @@ build_win() {
   cp "$love_dir"/*.dll "$out_dir"/
   cp "$love_dir"/license.txt "$out_dir"/ 2>/dev/null || true
 
-  cat "$love_dir/love.exe" "$LOVE_FILE" > "$out_dir/$APP_NAME.exe"
+  # The exe's icon lives in love.exe's PE resources, so it must be patched
+  # BEFORE the .love is appended: peresed rewrites the whole file and would
+  # drop the fused bytes. peresed (pipx install pe_tools) has no .ico input,
+  # only raw --set-resource, so split the .ico into RT_ICON blobs plus a
+  # GRPICONDIR that reuses love.exe's existing resource ids (1..N, lang 1033).
+  local ico="$WORK/$APP_NAME.ico"
+  make_ico "$ico"
+  if command -v peresed >/dev/null 2>&1; then
+    local ico_parts="$WORK/ico-parts"
+    rm -rf "$ico_parts"; mkdir -p "$ico_parts"
+    python3 - "$ico" "$ico_parts" <<'PY'
+import struct, sys
+data = open(sys.argv[1], "rb").read()
+outdir = sys.argv[2]
+count = struct.unpack_from("<H", data, 4)[0]
+group = struct.pack("<HHH", 0, 1, count)
+for i in range(count):
+    w, h, colors, res, planes, bpp, size, off = struct.unpack_from("<BBBBHHII", data, 6 + 16 * i)
+    open("%s/icon_%d.bin" % (outdir, i + 1), "wb").write(data[off:off + size])
+    group += struct.pack("<BBBBHHIH", w, h, colors, res, planes, bpp, size, i + 1)
+open(outdir + "/group.bin", "wb").write(group)
+print(count)
+PY
+    local n_icons args=()
+    n_icons=$(ls "$ico_parts" | grep -c '^icon_')
+    for i in $(seq 1 "$n_icons"); do
+      args+=(-R RT_ICON "#$i" 1033 "$ico_parts/icon_$i.bin")
+    done
+    args+=(-R RT_GROUP_ICON "#1" 1033 "$ico_parts/group.bin")
+    local exe_branded="$WORK/love-branded.exe"
+    cp "$love_dir/love.exe" "$exe_branded"
+    if peresed "${args[@]}" "$exe_branded" >/dev/null; then
+      cat "$exe_branded" "$LOVE_FILE" > "$out_dir/$APP_NAME.exe"
+    else
+      warn "peresed failed to patch the exe icon,  shipping stock LÖVE icon"
+      cat "$love_dir/love.exe" "$LOVE_FILE" > "$out_dir/$APP_NAME.exe"
+    fi
+  else
+    warn "peresed not found (pipx install pe_tools),  shipping stock LÖVE exe icon"
+    cat "$love_dir/love.exe" "$LOVE_FILE" > "$out_dir/$APP_NAME.exe"
+  fi
 
   local zip_out="$DIST/win/$APP_NAME-win64.zip"
   rm -f "$zip_out"
@@ -273,6 +356,15 @@ build_linux() {
   unsquashfs -q -no-xattrs -o "$sfs_offset" -d "$appdir" "$love_appimage" >/dev/null
 
   cp "$LOVE_FILE" "$appdir/game.love"
+
+  # The .desktop's Icon=love resolves against the AppDir root by basename,
+  # so drop the stock love.svg and provide our PNG under the same name;
+  # .DirIcon is what appimaged/thumbnailers show for the file itself.
+  [ -f "$ICON_SRC" ] || fail "missing icon source: $ICON_SRC"
+  rm -f "$appdir/love.svg" "$appdir/.DirIcon"
+  sips -z 512 512 "$ICON_SRC" --out "$appdir/love.png" >/dev/null
+  cp "$appdir/love.png" "$appdir/.DirIcon"
+
   sed -i '' 's|^#FUSE_PATH="$APPDIR/my_game.love"$|FUSE_PATH="$APPDIR/game.love"|' "$appdir/AppRun"
   grep -q '^FUSE_PATH="\$APPDIR/game.love"$' "$appdir/AppRun" \
     || fail "failed to enable FUSE_PATH in AppRun (upstream AppRun changed?)"

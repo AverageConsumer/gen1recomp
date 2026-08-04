@@ -9,6 +9,7 @@ local Renderer = require("src.render.Renderer")
 local SaveData = require("src.core.SaveData")
 local StateStack = require("src.core.StateStack")
 local TouchControls = require("src.core.TouchControls")
+local GamepadMap = require("src.core.GamepadMap")
 local ModLoader = require("src.mods.Loader")
 local ModRuntime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
@@ -44,6 +45,13 @@ function Game:load()
   -- render pipelines dispatch off the merged dataset; point them at the
   -- one the mods just merged into before anything can draw a frame
   require("src.render.Pipelines").install(Data)
+  -- Same reason, same moment: TypeChart caches the merged type records in an
+  -- upvalue, and until now only BattleState loaded it, on entering a battle.
+  -- Every non-battle reader of a type -- the summary screen's TYPE1/TYPE2
+  -- rows, the move-select TYPE/ box -- ran against an unloaded module and got
+  -- the raw id back instead of the display name, so a translation could not
+  -- reach them. Loading here means a type reads the same whoever asks first.
+  require("src.battle.TypeChart").load(Data)
 
   self.input = Input
   Input:init()
@@ -280,6 +288,21 @@ function Game.worldBgBattleDim(stack)
     end
   end
   return nil
+end
+
+-- Is a BATTLE BG "world" battle composing itself over the live map right now?
+-- Same whole-stack walk as worldBgBattleDim, asked for a different reason: the
+-- dark-cave shade shift (wMapPalOffset) must not reach a frame a battle is
+-- drawing in.  InitBattleCommon (engine/battle/core.asm) pushes wMapPalOffset,
+-- InitBattleVariables (engine/battle/init_battle_variables.asm) writes 0 over
+-- it and core.asm pops it back when the battle ends, so a battle in an
+-- un-flashed Rock Tunnel is lit on hardware.  Every other BATTLE BG gets that
+-- for free -- no map draws beneath an opaque battle, so nothing re-arms the
+-- per-frame shade map -- but "world" keeps the overworld drawing underneath,
+-- and its arming then darkened the battle's own pics, HUD and text at colorize
+-- time (#773).
+function Game.worldBgBattleInStack(stack)
+  return Game.worldBgBattleDim(stack) ~= nil
 end
 
 -- Does anything on the stack want the surface scaled to FILL the window
@@ -660,23 +683,45 @@ function Game:gamepadpressed(joystick, button)
   -- a controller is being used: the touch overlay steps aside until the
   -- next screen touch (mobile only; a no-op elsewhere)
   TouchControls:noteGamepad()
+  -- Select held? Needed both to suppress shoulder speed hotkeys (Select+L
+  -- is a display chord on NX) and for the chord path below.
+  local selectHeld = Input:isDown("select")
+  if not selectHeld and joystick and joystick.isGamepadDown then
+    local ok, down = pcall(function()
+      return joystick:isGamepadDown("back")
+    end)
+    selectHeld = ok and down == true
+  end
   -- shoulder buttons and analog triggers cycle GAME SPEED (R1/RB or
   -- R2/RT = faster, L1/LB or L2/LT = slower; same as keyboard hotkey
   -- 1).  LÖVE reports an analog trigger as gamepadpressed once it
   -- crosses the press threshold, so a trigger pull lands here like any
-  -- other pad button.
-  if button == "rightshoulder" or button == "righttrigger" then
-    self:_cycleSpeed(1)
-    return
-  elseif button == "leftshoulder" or button == "lefttrigger" then
-    self:_cycleSpeed(-1)
-    return
+  -- other pad button.  Skip while Select is held so Select+L can reach
+  -- displayChordDigit ("7").
+  if not selectHeld then
+    if button == "rightshoulder" or button == "righttrigger" then
+      self:_cycleSpeed(1)
+      return
+    elseif button == "leftshoulder" or button == "lefttrigger" then
+      self:_cycleSpeed(-1)
+      return
+    end
   end
   -- BindingsMenu's pad capture rides the same top-state routing as keys
   local top = self.stack and self.stack:top()
   if top and top.onGamepadPressed then
     top:onGamepadPressed(button)
     return
+  end
+  -- Select+face display chords → same digit path as Game:keypressed
+  -- (COLORS/TILT/pipelines). Intercept before Input so face does not
+  -- also fire GB A/B. Dual-path: raw already ignored when isGamepad().
+  if selectHeld then
+    local digit = GamepadMap.displayChordDigit(button)
+    if digit then
+      self:keypressed(digit)
+      return
+    end
   end
   Input:gamepadpressed(joystick, button)
 end
@@ -761,15 +806,51 @@ function Game:focus(f)
 end
 
 function Game:visible(v)
+  if v then
+    self:onResume()
+  else
+    Input:reset()
+    TouchControls:reset()
+  end
+end
+
+function Game:onResume()
   Input:reset()
   TouchControls:reset()
+  -- Chip music may survive NX suspend as a duplicate stream; stop it and let
+  -- the active screen re-cue on the next frame (hardware audio check: T19).
+  -- Desktop/mobile window-visible flips must not kill overworld music.
+  if require("src.core.Platform").isNX() then
+    require("src.core.ChipAudio").stopMusic()
+  end
+  local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
+  if SwitchDiagnostics.isEnabled() then
+    SwitchDiagnostics.onEvent("lifecycle", { event = "resume" })
+  end
+end
+
+function Game:recoverInput(event, joystick)
+  Input:reset()
+  TouchControls:reset()
+  local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
+  if SwitchDiagnostics.isEnabled() then
+    if joystick then
+      SwitchDiagnostics.onJoystickEvent(event, joystick)
+    else
+      SwitchDiagnostics.onEvent("lifecycle", { event = event })
+    end
+  end
+end
+
+function Game:joystickadded(joystick)
+  self:recoverInput("joystickadded", joystick)
 end
 
 -- A disconnected/dropped controller can't send the button-up for whatever
 -- it was holding, so drop all input state rather than try to guess which
 -- flags it owned.
 function Game:joystickremoved(joystick)
-  Input:reset()
+  self:recoverInput("joystickremoved", joystick)
   TouchControls:joystickremoved()
 end
 
@@ -846,6 +927,8 @@ function Game:applyOptions(opts)
   -- returns true when a persisted GBC FX level was cleared on mobile
   local gbcCleared = require("src.render.GBCFX").applyOptions(opts)
   require("src.core.VideoMode").applyOptions(opts)
+  -- Android orientation lock (#592); no-op everywhere else
+  require("src.core.Orientation").applyOptions(opts)
   -- after VideoMode: a faithful-resolution lock is an exact window size, so
   -- it has to be the last word on the window (it drops fullscreen to hold)
   require("src.core.FaithfulRes").applyOptions(opts)

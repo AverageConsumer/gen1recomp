@@ -126,6 +126,12 @@ end
 
 do
   Zoom.reset()
+  -- Zoom.reset() clears only the offset: allowSurvey is the performance
+  -- tier's clamp (Game:applyOptions), and an earlier suite in the same
+  -- process may have applied a LOW tier.  Pin the vanilla precondition and
+  -- restore whatever the run had afterwards.
+  local savedSurvey = Zoom.allowSurvey
+  Zoom.allowSurvey = true
   local lo, hi = Zoom.offsetRange(4)
   check(lo == -3 and hi == 4, "vanilla zoom.range is (1-S, S)")
   local unsub = wrap("zoom.range", function(next, a, b, S)
@@ -141,6 +147,7 @@ do
   unsub()
   Zoom.reset()
   check(Zoom.scale(4) == 4, "unwrapped zoom returns to FIT")
+  Zoom.allowSurvey = savedSurvey
 end
 
 -- ------- battle.overlay (shiny sparkles / HUD chrome)

@@ -714,7 +714,9 @@ function LinkState:draw()
     end
 
   elseif self.stage == "notice" then
-    drawTitle("CHECK YOUR MODS")
+    -- a version-skew notice has nothing to do with mods (#758)
+    drawTitle(self.verdict == "engine_skew" and "UPDATE YOUR GAME"
+                                             or "CHECK YOUR MODS")
     for i, line in ipairs(self.noticeLines or {}) do
       if i > 8 then break end -- what fits above the prompt row
       Font.draw(line, 8, 24 + (i - 1) * 12)

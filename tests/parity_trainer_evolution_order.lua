@@ -77,8 +77,13 @@ check(#Game.stack.states == 1,
 Game.stack:pop()
 moreText.onDone()
 
-local evolutionText = Game.stack:top()
-check(stateHas(evolutionText, "evolving"),
+-- The evolution runs as the EvolutionState cutscene screen now (the
+-- evolve_mon.asm sequence lives in src/ui/EvolutionState.lua), not a bare
+-- "evolving!" text box, so assert the screen itself took the stack.
+local evolution = Game.stack:top()
+check(evolution ~= nil
+      and (evolution.screenId == "EvolutionState"
+           or stateHas(evolution, "evolving")),
   "the level evolution starts after trainer after-text closes")
 
 S.finish()

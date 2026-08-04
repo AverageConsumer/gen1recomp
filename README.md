@@ -245,6 +245,27 @@ ships with every release as `gen1recomp-*-rg34xxsp-stockos64-mod.zip`.
 Install steps, controls, and troubleshooting live in
 [docs/anbernic-rg34xxsp.md](docs/anbernic-rg34xxsp.md).
 
+## Nintendo Switch
+
+Releases ship an SD-ready `gen1recomp-*-switch.zip` (issue
+[#531](https://github.com/bryanthaboi/gen1recomp/issues/531)). Runtime target
+is pinned [love-nx](https://github.com/retronx-team/love-nx) `11.5-nx1`.
+Requires a console that can run Switch homebrew. Hardware evidence: **OLED**
+(author) and **V1 / Erista** boot (community).
+
+- Players: [docs/switch-install.md](docs/switch-install.md) — download the
+  zip, extract at the microSD root (install or update), title-override
+  launch, import your own legal ROM, Joy-Con controls and shortcuts.
+- Builders: [docs/switch-build.md](docs/switch-build.md) — `--fetch` /
+  `--loose` / `--fused`, toolchain, Docker fallback, and **CI vs release**
+  (path-gated ubuntu selftest, canonical fused PR artifact, release hard-fail).
+
+Limitations, Dusklight-derived method, and how we tested:
+[docs/switch-development.md](docs/switch-development.md) and
+[docs/switch-hardware-evidence.md](docs/switch-hardware-evidence.md). Community
+help — especially HOS / love-nx packaging and broader hardware coverage — is
+welcome.
+
 ## Modding
 
 The game ships a native mod platform: content registries, events and hooks,
@@ -291,5 +312,8 @@ request with real detail is one that can actually get built.
 This project would not be possible without [pret](https://github.com/pret) >
 the pret band of decompiling maniacs > and their
 [pokered](https://github.com/pret/pokered) disassembly.
+
+Nintendo Switch port: [andrewqsantos](https://github.com/andrewqsantos).  
+Switch hardware testing (V1 boot): [booshankles](https://github.com/booshankles).
 
 <p align="center"><a href="https://boisclub.games"><img src="https://raw.githubusercontent.com/bryanthaboi/gen1recomp/refs/heads/dev/assets/logo/bcg.png"></a></p>

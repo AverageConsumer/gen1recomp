@@ -1,6 +1,8 @@
 local GameVersion = require("src.core.GameVersion")
+local GamepadMap = require("src.core.GamepadMap")
 local Strings = require("src.core.Strings")
 local HostShell = require("src.core.HostShell")
+local Platform = require("src.core.Platform")
 local SafeArea = require("src.core.SafeArea")
 
 local RomImporter = {}
@@ -55,6 +57,10 @@ local REQUIRED_FILES = {
   "assets/generated/battle/anims/move_anim_0.png",
   "assets/generated/battle/anims/move_anim_1.png",
   "assets/generated/audio/programs.bin",
+  -- The trade cinematic's Game Boy / cable art. Caches built before #750
+  -- carry none of it and fall back to plain rectangles, so listing one of
+  -- the files re-imports them without a CACHE_FORMAT bump.
+  "assets/generated/trade/game_boy.png",
 }
 
 -- Files only one version's cache carries.  A version that predates one of
@@ -328,6 +334,7 @@ local function releasePointerGrab()
 end
 
 local function commandOutput(command)
+  if not Platform.canSpawnProcess() then return nil end
   releasePointerGrab()
   local pipe = HostShell.popen(command)
   if not pipe then return nil end
@@ -335,6 +342,417 @@ local function commandOutput(command)
   pipe:close()
   result = trim(result)
   return result ~= "" and result or nil
+end
+
+local IMPORTS_DIR = "imports"
+local MODS_INBOX_DIR = "imports/mods"
+local SAVES_INBOX_DIR = "imports/saves"
+local ROM_BYTES = 1024 * 1024
+
+local function savesInboxDir(version)
+  return SAVES_INBOX_DIR .. "/" .. tostring(version)
+end
+
+local function savesImportedHashesPath(version)
+  return savesInboxDir(version) .. "/.imported-sha1"
+end
+
+local function exportsDir(version)
+  return "exports/" .. tostring(version)
+end
+
+-- Strip only a validated sdmc:/ prefix for OpenMTP/DBI relative paths.
+function RomImporter.mtpHintPath(saveDir)
+  if type(saveDir) ~= "string" then return "" end
+  if saveDir:sub(1, 6) == "sdmc:/" then return saveDir:sub(7) end
+  return saveDir
+end
+
+function RomImporter:ensureImportsDir()
+  local info = love.filesystem.getInfo(IMPORTS_DIR)
+  if info and info.type == "directory" then return true end
+  if info then return false end
+  if love.filesystem.createDirectory then
+    return love.filesystem.createDirectory(IMPORTS_DIR)
+  end
+  return false
+end
+
+-- NX mod zip inbox (separate from ROM imports/). Parent imports/ first —
+-- love.filesystem.createDirectory does not create nested parents.
+function RomImporter:ensureModsInboxDir()
+  self:ensureImportsDir()
+  local info = love.filesystem.getInfo(MODS_INBOX_DIR)
+  if info and info.type == "directory" then return true end
+  if info then return false end
+  if love.filesystem.createDirectory then
+    return love.filesystem.createDirectory(MODS_INBOX_DIR)
+  end
+  return false
+end
+
+-- NX raw .sav inbox per game: imports/saves/{red,blue,yellow}/.
+-- Parent imports/ then imports/saves/ first — createDirectory is not nested.
+-- Creates all three version folders so MTP browsing shows where each game goes.
+function RomImporter:ensureSavesInboxDir(version)
+  self:ensureImportsDir()
+  local info = love.filesystem.getInfo(SAVES_INBOX_DIR)
+  if info and info.type ~= "directory" then return false end
+  if not info then
+    if not (love.filesystem.createDirectory
+        and love.filesystem.createDirectory(SAVES_INBOX_DIR)) then
+      return false
+    end
+  end
+  for v in pairs(GameVersion.VERSIONS) do
+    local dir = savesInboxDir(v)
+    local vInfo = love.filesystem.getInfo(dir)
+    if vInfo and vInfo.type ~= "directory" then return false end
+    if not vInfo then
+      if not (love.filesystem.createDirectory
+          and love.filesystem.createDirectory(dir)) then
+        return false
+      end
+    end
+  end
+  return true
+end
+
+function RomImporter:_setNxInboxNotice(version)
+  version = version or self.tab or "red"
+  local saveDir = love.filesystem.getSaveDirectory()
+  local rel = RomImporter.mtpHintPath(saveDir)
+  if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
+  self.notice = {
+    version = version,
+    status = Strings("Copy your .gb/.gbc into:"),
+    detail = Strings("%s/imports/\nDBI MTP → 1: SD Card/%simports/", saveDir, rel),
+  }
+end
+
+function RomImporter:_setNxModsInboxNotice()
+  local saveDir = love.filesystem.getSaveDirectory()
+  local rel = RomImporter.mtpHintPath(saveDir)
+  if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
+  self.modNotice = {
+    ok = true,
+    text = Strings("Copy your .zip into:\n%s/imports/mods/\nDBI MTP → 1: SD Card/%simports/mods/",
+      saveDir, rel),
+  }
+end
+
+function RomImporter:_resolveSaveVersion(version)
+  version = version or self.panelVersion or self.tab
+  if GameVersion.VERSIONS[version] then return version end
+  return self:_savedropTarget()
+end
+
+function RomImporter:_setNxSavesInboxNotice(version)
+  version = self:_resolveSaveVersion(version)
+  local inbox = savesInboxDir(version)
+  local saveDir = love.filesystem.getSaveDirectory()
+  local rel = RomImporter.mtpHintPath(saveDir)
+  if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
+  local game = GameVersion.info(version).displayName
+  self.saveNotice = self.saveNotice or {}
+  self.saveNotice[version] = {
+    ok = true,
+    text = Strings("Copy your %s .sav into:\n%s/%s/\nDBI MTP → 1: SD Card/%s%s/",
+      game, saveDir, inbox, rel, inbox),
+  }
+end
+
+local function listRomPaths(dir)
+  local paths = {}
+  for _, name in ipairs(love.filesystem.getDirectoryItems(dir) or {}) do
+    -- Skip AppleDouble / hidden junk from Mac MTP (._cart.gb ends in .gb
+    -- but is not a ROM — rescan would try it first and block the real dump).
+    if name:sub(1, 1) ~= "." then
+      local path = (dir == "" or dir == "/") and name or (dir .. "/" .. name)
+      if name:lower():match("%.gbc?$")
+          and love.filesystem.getInfo(path, "file") then
+        paths[#paths + 1] = path
+      end
+    end
+  end
+  return paths
+end
+
+local function listZipPaths(dir)
+  local paths = {}
+  for _, name in ipairs(love.filesystem.getDirectoryItems(dir) or {}) do
+    -- Skip AppleDouble / hidden junk from Mac MTP (._foo.zip ends in .zip
+    -- but is not a PhysFS archive — mount fails with "could not be opened").
+    if name:sub(1, 1) ~= "." then
+      local path = (dir == "" or dir == "/") and name or (dir .. "/" .. name)
+      if name:lower():match("%.zip$")
+          and love.filesystem.getInfo(path, "file") then
+        paths[#paths + 1] = path
+      end
+    end
+  end
+  return paths
+end
+
+local function listSavPaths(dir)
+  local paths = {}
+  for _, name in ipairs(love.filesystem.getDirectoryItems(dir) or {}) do
+    -- Skip AppleDouble / hidden junk from Mac MTP (._foo.sav ends in .sav
+    -- but is not a real battery save — import would fail and invent noise).
+    if name:sub(1, 1) ~= "." then
+      local path = (dir == "" or dir == "/") and name or (dir .. "/" .. name)
+      if name:lower():match("%.sav$")
+          and love.filesystem.getInfo(path, "file") then
+        paths[#paths + 1] = path
+      end
+    end
+  end
+  return paths
+end
+
+function RomImporter:scanInbox()
+  local paths = {}
+  for _, path in ipairs(listRomPaths(IMPORTS_DIR)) do
+    paths[#paths + 1] = path
+  end
+  for _, path in ipairs(listRomPaths("")) do
+  -- Root scan is second; imports/ entries were already collected above.
+    paths[#paths + 1] = path
+  end
+  return paths
+end
+
+-- NX mods inbox: only *.zip under imports/mods/ (never ROM extensions).
+function RomImporter:scanModsInbox()
+  self:ensureModsInboxDir()
+  return listZipPaths(MODS_INBOX_DIR)
+end
+
+-- NX saves inbox: only non-hidden *.sav under imports/saves/<version>/.
+function RomImporter:scanSavesInbox(version)
+  version = self:_resolveSaveVersion(version)
+  self:ensureSavesInboxDir(version)
+  return listSavPaths(savesInboxDir(version))
+end
+
+local function loadImportedSavHashes(version)
+  local set = {}
+  local raw = love.filesystem.read(savesImportedHashesPath(version))
+  if type(raw) ~= "string" then return set end
+  for line in raw:gmatch("[^\r\n]+") do
+    local h = line:match("^(%x+)$")
+    if h then set[h] = true end
+  end
+  return set
+end
+
+local function appendImportedSavHash(version, hash)
+  if type(hash) ~= "string" or hash == "" then return end
+  local path = savesImportedHashesPath(version)
+  local prev = love.filesystem.read(path) or ""
+  if prev:find(hash, 1, true) then return end
+  love.filesystem.write(path, prev .. hash .. string.char(10))
+end
+
+-- Keep bytes for the player (MTP recovery) but stop matching %.sav$ on rescan.
+local function retireImportedSav(path)
+  if type(path) ~= "string" or path == "" then return false end
+  local data = love.filesystem.read(path)
+  if type(data) ~= "string" then return false end
+  local dest = path .. ".imported"
+  if love.filesystem.getInfo(dest) then
+    dest = path .. ".imported." .. tostring(os.time())
+  end
+  if not love.filesystem.write(dest, data) then return false end
+  love.filesystem.remove(path)
+  return true
+end
+
+-- Rescan imports/mods/: install each .zip via _installMod / installZip.
+-- Never deletes inbox zips (success or failure). Empty inbox → MTP notice.
+function RomImporter:rescanModsAction()
+  if self.workState == "working" then return end
+  self.tab = "mods"
+  self:ensureModsInboxDir()
+  local candidates = self:scanModsInbox()
+  if #candidates == 0 then
+    self:_setNxModsInboxNotice()
+    return
+  end
+  local anyOk = false
+  local lastOk = nil
+  local lastFail = nil
+  local failCount = 0
+  for _, path in ipairs(candidates) do
+    -- Reuse _installMod carefully: it must not remove the inbox source.
+    self:_installMod(path)
+    if self.modNotice and self.modNotice.ok then
+      anyOk = true
+      lastOk = self.modNotice
+    else
+      failCount = failCount + 1
+      lastFail = self.modNotice
+    end
+  end
+  -- Success wins overall ok=true so a leftover MTP junk sibling cannot hide
+  -- a good install; still append the last failure so a real broken zip is
+  -- visible beside the success line.
+  if anyOk and lastFail then
+    local okText = (lastOk and lastOk.text) or "Installed"
+    local failText = (lastFail and lastFail.text) or "unknown error"
+    self.modNotice = {
+      ok = true,
+      text = Strings("%s\n(%d failed: %s)", okText, failCount, failText),
+    }
+  elseif anyOk then
+    self.modNotice = lastOk
+  elseif lastFail then
+    self.modNotice = lastFail
+  end
+end
+
+-- Rescan imports/saves/<version>/: import each new .sav via _importSave.
+-- Failure retains the original .sav. Success records a per-game content hash
+-- and retires the file to `*.sav.imported` so a second Import save cannot clone
+-- slots (bytes stay in the inbox for MTP recovery). Already-hashed content
+-- is skipped even under a new filename. Empty / AppleDouble-only → MTP notice.
+function RomImporter:rescanSavesAction(version)
+  if self.workState == "working" then return end
+  version = self:_resolveSaveVersion(version)
+  self:ensureSavesInboxDir(version)
+  local candidates = self:scanSavesInbox(version)
+  if #candidates == 0 then
+    self:_setNxSavesInboxNotice(version)
+    return
+  end
+  local seenHashes = loadImportedSavHashes(version)
+  local okCount, failCount, skipCount = 0, 0, 0
+  local lastOk, lastFail = nil, nil
+  local gameLabel = GameVersion.info(version).displayName
+  for _, path in ipairs(candidates) do
+    local data = love.filesystem.read(path)
+    local hash = (type(data) == "string" and data ~= "") and sha1(data) or nil
+    if hash and seenHashes[hash] then
+      skipCount = skipCount + 1
+      -- Leftover live .sav after a prior success: retire without re-importing.
+      retireImportedSav(path)
+    else
+      self:_importSave(version, path)
+      local notice = self.saveNotice and self.saveNotice[version]
+      if notice and notice.ok then
+        okCount = okCount + 1
+        lastOk = notice
+        if hash then
+          seenHashes[hash] = true
+          appendImportedSavHash(version, hash)
+        end
+        retireImportedSav(path)
+      else
+        failCount = failCount + 1
+        lastFail = notice
+      end
+    end
+  end
+  if okCount > 0 then
+    local okText
+    if okCount == 1 and lastOk then
+      okText = Strings("%s (%s tab)", lastOk.text, gameLabel)
+    else
+      okText = Strings("Imported %d saves into %s. Active: %s.",
+        okCount, gameLabel, tostring(self.activeSlot[version]))
+    end
+    if failCount > 0 then
+      local failText = (lastFail and lastFail.text) or "unknown error"
+      okText = Strings("%s\n(%d failed: %s)", okText, failCount, failText)
+    end
+    if skipCount > 0 then
+      okText = Strings("%s\n(%d already imported, skipped)", okText, skipCount)
+    end
+    self.saveNotice[version] = { ok = true, text = okText }
+  elseif failCount > 0 then
+    self.saveNotice[version] = lastFail
+  elseif skipCount > 0 then
+    self.saveNotice[version] = {
+      ok = true,
+      text = Strings("Already imported — %d file(s) skipped. Check SAVE SLOT.",
+        skipCount),
+    }
+  end
+end
+
+-- NX "Scan again" on a game tab: import only the dump whose SHA-1 matches
+-- that tab. A shared imports/ inbox often holds Red+Blue+Yellow at once;
+-- picking the first pending file would jump Yellow → Red (and switch the
+-- launcher tab via startData). Other known dumps stay for their own tabs.
+-- Junk (wrong size / unknown hash) still surfaces when nothing matches the
+-- tab and no other known dump is present — same feedback as before for a
+-- lone bad file.
+function RomImporter:rescanAction(version)
+  if self.workState == "working" then return end
+  version = version or self.tab or "red"
+  self.chooseVersion = version
+  self:ensureImportsDir()
+  local ready = self.ready
+  local candidates = self:scanInbox()
+  local targetReady = false
+  local sawOtherVersion = false
+  local junkData, junkName = nil, nil
+  for _, path in ipairs(candidates) do
+    local data = love.filesystem.read(path)
+    local displayName = path:match("[^/\\]+$") or path
+    if type(data) ~= "string" then
+      self:setError("The file could not be read: " .. displayName, version)
+      return
+    end
+    if #data ~= ROM_BYTES then
+      if not junkData then junkData, junkName = data, displayName end
+    else
+      local romVersion = GameVersion.forSha1(sha1(data))
+      if not romVersion then
+        if not junkData then junkData, junkName = data, displayName end
+      elseif romVersion ~= version then
+        sawOtherVersion = true
+      elseif ready[romVersion] then
+        targetReady = true
+      else
+        self:startData(data, displayName)
+        return
+      end
+    end
+  end
+  if targetReady then
+    self.notice = {
+      version = version,
+      status = Strings("No new ROM found."),
+      detail = Strings("Already-imported dumps are ignored. Add another version or "
+        .. "delete the copy when finished."),
+    }
+    return
+  end
+  if junkData and not sawOtherVersion then
+    self:startData(junkData, junkName)
+    return
+  end
+  if #candidates > 0 then
+    local label = GameVersion.info(version).displayName
+    self.notice = {
+      version = version,
+      status = Strings("No matching ROM found."),
+      detail = Strings(
+        "%s is matched by SHA-1 on this tab. Other dumps in imports/ stay "
+          .. "for their own tabs — open that game and Scan again.", label),
+    }
+    return
+  end
+  self:_setNxInboxNotice(version)
+end
+
+function RomImporter:_romAction(version)
+  if self.isNX then
+    if self.ready[version] then self:reimport(version)
+    else self:rescanAction(version) end
+  elseif self.ready[version] then self:reimport(version)
+  else self:choose(version) end
 end
 
 -- Sanitize a string before it is interpolated into a picker shell command:
@@ -573,6 +991,7 @@ end
 -- up the background worker or reach out to the network.
 local function updaterAllowed()
   if require("src.core.Version").selfUpdate == false then return false end
+  if not Platform.networkValidated() then return false end
   if not (love.filesystem.isFused and love.filesystem.isFused()) then return false end
   if os.getenv("POKEPORT_AUTOPILOT") or os.getenv("POKEPORT_DRIVER") then return false end
   if os.getenv("POKEPORT_IMPORT_ONLY") == "1" then return false end
@@ -597,8 +1016,13 @@ function RomImporter.new(onComplete, opts)
   -- pending-file scan plus love.system.pickFile / createFile, provided
   -- natively by the Swift GRPickerBridge (mobile/ios/native/).  The flag
   -- keeps its historical name so every Android call site stays untouched.
+  -- NX uses a separate save-directory inbox (isNX / romImportMode) and must
+  -- never set android or take the mobile delete-after-import path.
   local mobileOS = love.system.getOS()
-  local android = mobileOS == "Android" or mobileOS == "iOS"
+  local isNX = Platform.isNX()
+  local romImportMode = Platform.romImportMode()
+  local mobileFileBridge = mobileOS == "Android" or mobileOS == "iOS"
+  local android = mobileFileBridge
   local CacheFs = require("src.import.CacheFs")
   local self = setmetatable({
     onComplete = onComplete,
@@ -606,6 +1030,9 @@ function RomImporter.new(onComplete, opts)
     forceImport = opts.forceImport or false,
     onEditSave = opts.onEditSave,
     onEditTouchControls = opts.onEditTouchControls,
+    isNX = isNX,
+    romImportMode = romImportMode,
+    mobileFileBridge = mobileFileBridge,
     android = android,
     ios = mobileOS == "iOS",
     -- One startup poll pass on both mobiles.  iOS: files dropped through the
@@ -617,11 +1044,11 @@ function RomImporter.new(onComplete, opts)
     -- pick never arrives.  The file is sitting in the save dir either way, so
     -- boot armed and let the first poll tick consume it, rather than making the
     -- player tap Import a second time to trigger the scan by hand (#553).
-    pickPending = android or nil,
+    pickPending = mobileFileBridge or nil,
     -- Mobile drag-scroll goes through FlexLove.touch* (main.lua forwards the
     -- full touch stream while the launcher is up). love.touch remains pollable
     -- for click hit-testing inside EventHandler.
-    touchPollable = android and love.touch ~= nil
+    touchPollable = mobileFileBridge and love.touch ~= nil
       and love.touch.getTouches ~= nil and love.touch.getPosition ~= nil,
     tab = "red",          -- active launcher tab: "red"/"blue"/"yellow"/"mods"
     logo = love.graphics.newImage("assets/logo/logo.png"),
@@ -703,7 +1130,7 @@ function RomImporter.new(onComplete, opts)
   for _, version in ipairs(GameVersion.ORDER) do
     if not self.ready[version] then needRom = true; break end
   end
-  if android and needRom then
+  if mobileFileBridge and needRom then
     local name, data = findPendingRom(self.ready)
     if name then
       self:startData(data, name)
@@ -712,6 +1139,9 @@ function RomImporter.new(onComplete, opts)
       -- is up, so a rejected pick can outlive the focus handler (#442).
       consumePickedRomError(self)
     end
+  elseif self.isNX and self.launcher then
+    self:ensureImportsDir()
+    self:_setNxInboxNotice()
   end
 
   -- Mouse-wheel scroll for the save-slot / mods lists.  main.lua (off limits)
@@ -741,13 +1171,16 @@ function RomImporter.new(onComplete, opts)
     end
   end
 
-  -- On Linux handhelds a gamepad is usually already connected at boot; arm
-  -- the virtual cursor immediately so the player does not have to press a
-  -- button before seeing something move.
-  if self.launcher and love.system.getOS() == "Linux"
-      and love.joystick and love.joystick.getJoystickCount
+  -- On Linux handhelds / NX a gamepad is usually already connected at boot;
+  -- arm the virtual cursor immediately so the player does not have to press a
+  -- button before seeing something move.  Desktop keeps the cursor latent
+  -- until the first stick bump so a plugged DualSense does not steal the mouse.
+  if self.launcher and love.joystick and love.joystick.getJoystickCount
       and love.joystick.getJoystickCount() > 0 then
-    self:_activatePadCursor()
+    local osName = (love.system and love.system.getOS and love.system.getOS()) or ""
+    if osName == "Linux" or self.isNX then
+      self:_activatePadCursor()
+    end
   end
 
   return self
@@ -941,7 +1374,7 @@ function RomImporter:startData(data, displayName)
       and (displayName:match("[^/\\]+$") or displayName)) or self.romName[version]
     -- Android: drop the consumed save-dir .gb/.gbc (picked_rom.gb or a USB copy)
     -- so the next Choose / focus cannot treat it as a fresh pending ROM.
-    if self.android and type(displayName) == "string"
+    if self.mobileFileBridge and type(displayName) == "string"
         and not displayName:find("[/\\]") then
       love.filesystem.remove(displayName)
     end
@@ -949,7 +1382,14 @@ function RomImporter:startData(data, displayName)
     self.workState = "complete"
     self.completeVersion = version
     self.status = "Ready"
-    self.detail = "Starting " .. info.displayName .. "..."
+    -- NX launcher stays put: keep the imports/ cleanup hint instead of
+    -- overwriting it with a "Starting…" line that never boots from here.
+    if self.launcher and self.isNX and type(displayName) == "string" then
+      self.detail = Strings("%s imported. You may delete the copy from "
+        .. "imports/ when finished.", displayName)
+    else
+      self.detail = "Starting " .. info.displayName .. "..."
+    end
     self.progress = 1
     if self.launcher then
       -- Stay on the launcher; the player presses Play to boot the new game.
@@ -1046,8 +1486,14 @@ end
 -- Android mirrors ROM import: scan for a pending .zip in the save dir (USB
 -- or a fresh SAF drop), else love.system.pickFile("mod") -> picked_mod.zip
 -- which focus/Choose consumes on return.
+-- NX: no HostShell/desktop picker — rescan imports/mods/ inbox instead.
 function RomImporter:chooseMod()
   if self.workState == "working" then return end
+  if self.isNX then
+    self:ensureModsInboxDir()
+    self:rescanModsAction()
+    return
+  end
   if self.ios and love.system.getPickedFile then
     self.iosPendingKind = "mod"
     if not pickFile("mod") then
@@ -1115,8 +1561,15 @@ end
 
 -- "Import save" button: open a native .sav picker and import the pick.
 -- Android mirrors ROM / mod import via love.system.pickFile("sav").
+-- NX: no HostShell/desktop picker — rescan imports/saves/ inbox instead.
 function RomImporter:chooseSaveImport(version)
   if self.workState == "working" then return end
+  version = self:_resolveSaveVersion(version)
+  if self.isNX then
+    self:ensureSavesInboxDir(version)
+    self:rescanSavesAction(version)
+    return
+  end
   if self.ios and love.system.getPickedFile then
     self.iosPendingKind = "sav"
     self.iosPendingVersion = version
@@ -1156,15 +1609,29 @@ end
 -- affordance.  On Android, stage pending_export.sav and open the system
 -- create-document picker (love.system.createFile) so the player can save to
 -- Downloads / Drive / etc. -- the app-private exports/ path is not useful there.
+-- NX: surface exports path + MTP hint; do not rely on openURL / open-folder.
 function RomImporter:exportSave(version)
   if self.workState == "working" then return end
+  version = self:_resolveSaveVersion(version)
   local ok, res = require("src.import.SaveFileIO").exportActiveSlot(version)
   if not ok then
     self.saveNotice[version] = { ok = false, text = tostring(res) }
     return
   end
+  if self.isNX then
+    local saveDir = love.filesystem.getSaveDirectory()
+    local rel = RomImporter.mtpHintPath(saveDir)
+    if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
+    local outDir = exportsDir(version)
+    self.saveNotice[version] = {
+      ok = true,
+      text = Strings("Exported to %s\nDBI MTP → 1: SD Card/%s%s/", res, rel, outDir),
+    }
+    return
+  end
   if self.android then
-    local rel = res:match("exports[/\\][^/\\]+$")
+    local rel = res:match("(exports[/\\].+%.[Ss][Aa][Vv])$")
+      or res:match("(exports[/\\].+)$")
     local data = rel and love.filesystem.read(rel)
     if not data then
       self.saveNotice[version] = { ok = false,
@@ -1216,6 +1683,11 @@ end
 function RomImporter:choose(version)
   if self.workState == "working" then return end
   self.chooseVersion = version or "red"
+  if self.isNX then
+    -- Same path as the Scan again button: rescan imports/ (or show MTP hint).
+    self:rescanAction(self.chooseVersion)
+    return
+  end
   if self.ios and love.system.getPickedFile then
     self.iosPendingKind = "rom"
     if not pickFile("rom") then
@@ -1359,6 +1831,18 @@ function RomImporter:update(dt)
       end
       local tab = os.getenv("POKEPORT_LAUNCHER_TAB")
       if tab and tab ~= "" then self:_switchTab(tab) end
+      -- POKEPORT_LAUNCHER_CONFIRM=1 arms a representative install confirm so
+      -- a capture can see the modal (it is otherwise only reachable by click)
+      if os.getenv("POKEPORT_LAUNCHER_CONFIRM") == "1" then
+        self._modConfirm = {
+          kind = "update",
+          title = "Install mod",
+          yesLabel = "Install",
+          lines = { "JP GREEN - Poketto Monsuta Midori v0.4.4",
+                    "by bryanthaboi",
+                    "Mods are not reviewed - trust the author." },
+        }
+      end
       local query = os.getenv("POKEPORT_LAUNCHER_QUERY")
       if query and query ~= "" then
         self.findQuery = query
@@ -1470,6 +1954,71 @@ function RomImporter:_activatePadCursor()
   self._padCursorActive = true
 end
 
+-- NX: FlexLove hover/hit-test polls love.mouse.getPosition every interactive
+-- element. Warping via setPosition every stick frame is expensive on love-nx
+-- and makes the virtual cursor lag. Expose the pad pointer through a getPosition
+-- shim instead; desktop keeps the setPosition path unchanged.
+function RomImporter:_ensureNxPointerBridge()
+  if not self.isNX or self._nxPointerBridge then return end
+  if not (love and love.mouse and love.mouse.getPosition) then return end
+  self._nxRealGetPosition = love.mouse.getPosition
+  local importer = self
+  love.mouse.getPosition = function()
+    if importer._padCursorActive then
+      return importer._padCursor.x, importer._padCursor.y
+    end
+    return importer._nxRealGetPosition()
+  end
+  self._nxPointerBridge = true
+end
+
+function RomImporter:_restoreNxPointerBridge()
+  if not self._nxPointerBridge then return end
+  if love and love.mouse and self._nxRealGetPosition then
+    love.mouse.getPosition = self._nxRealGetPosition
+  end
+  self._nxPointerBridge = false
+  self._nxRealGetPosition = nil
+end
+
+-- NX only: drop the getPosition shim + hide the virtual cursor before a host
+-- takes over input (embedded save editor). Desktop is a no-op.
+function RomImporter:parkNxPointerForHost()
+  if not self.isNX then return end
+  self._padCursorActive = false
+  self:_restoreNxPointerBridge()
+end
+
+-- Temporary overlay handoff (Edit Save / Touch Controls): restore the system
+-- arrow cursor, hide the virtual pad pointer, tear down FlexLove when the
+-- view is already loaded, and drop the NX getPosition shim.  Play uses
+-- resetPointerCursor + detach directly because it never returns here.
+function RomImporter:prepareOverlayHandoff()
+  resetPointerCursor(self)
+  self._padCursorActive = false
+  -- Avoid requiring LauncherView from headless unit tests (no luautf8).  In
+  -- a real session draw() has already loaded it, so detach runs normally.
+  if self._flex and package.loaded["src.import.LauncherView"] then
+    require("src.import.LauncherView").detach(self)
+  else
+    self._flex = nil
+    self:parkNxPointerForHost()
+  end
+end
+
+-- After an overlay closes: re-arm the pad cursor when a stick is already
+-- connected so NX / handhelds are not stranded without a pointer until the
+-- next stick bump (same class of bug as opening Touch Controls).
+function RomImporter:resumeAfterOverlay()
+  if not self.launcher then return end
+  if not (love.joystick and love.joystick.getJoystickCount) then return end
+  if love.joystick.getJoystickCount() <= 0 then return end
+  local osName = (love.system and love.system.getOS and love.system.getOS()) or ""
+  if osName == "Linux" or self.isNX then
+    self:_activatePadCursor()
+  end
+end
+
 function RomImporter:_cycleTab(delta)
   local order = { "red", "blue", "yellow", "mods", "find" }
   local idx = 1
@@ -1480,15 +2029,26 @@ function RomImporter:_cycleTab(delta)
 end
 
 function RomImporter:_updatePadCursor(dt)
-  -- Real mouse motion yields the pad cursor so desktop users keep a normal
-  -- pointer after bumping a stick once.
-  local mx, my = love.mouse.getPosition()
-  if self._lastMouseX and self._padCursorActive then
-    if math.abs(mx - self._lastMouseX) > 3 or math.abs(my - self._lastMouseY) > 3 then
-      self._padCursorActive = false
-    end
+  if self.isNX then
+    self:_ensureNxPointerBridge()
+    -- Cap dt so a hitch in the FlexLove immediate-mode frame does not fling
+    -- the cursor; desktop keeps raw dt (setPosition path already smooth there).
+    if dt > 1 / 30 then dt = 1 / 30 end
   end
-  self._lastMouseX, self._lastMouseY = mx, my
+
+  -- Real mouse motion yields the pad cursor so desktop users keep a normal
+  -- pointer after bumping a stick once. On NX this must stay off: love-nx /
+  -- SDL often drifts the system mouse with the stick (or touch), and axis
+  -- events are not every frame, so yield+reactivate flickers the overlay.
+  if not self.isNX then
+    local mx, my = love.mouse.getPosition()
+    if self._lastMouseX and self._padCursorActive then
+      if math.abs(mx - self._lastMouseX) > 3 or math.abs(my - self._lastMouseY) > 3 then
+        self._padCursorActive = false
+      end
+    end
+    self._lastMouseX, self._lastMouseY = mx, my
+  end
 
   local ax = self._padAxis.leftx or 0
   local ay = self._padAxis.lefty or 0
@@ -1511,11 +2071,9 @@ function RomImporter:_updatePadCursor(dt)
     local ny = self._padCursor.y + dy * speed * dt
     self._padCursor.x = math.max(ox, math.min(ox + w, nx))
     self._padCursor.y = math.max(oy, math.min(oy + h, ny))
-    -- The FlexLove view polls the real mouse for hover and wheel targeting,
-    -- so the pad pointer warps it along.  The self-caused motion is recorded
-    -- as the last seen position, or the yield check above would read the warp
-    -- as real mouse movement and drop the pad cursor immediately.
-    if love.mouse.setPosition then
+    -- Desktop: FlexLove polls the real mouse, so warp it with the pad pointer.
+    -- NX: the getPosition bridge already returns pad coords — skip setPosition.
+    if not self.isNX and love.mouse.setPosition then
       pcall(love.mouse.setPosition, self._padCursor.x, self._padCursor.y)
       self._lastMouseX, self._lastMouseY = self._padCursor.x, self._padCursor.y
     end
@@ -1533,7 +2091,9 @@ end
 
 function RomImporter:gamepadpressed(_, button)
   self:_activatePadCursor()
-  if button == "a" then
+  -- Map through GamepadMap so NX swaps SDL face labels to Nintendo A/B.
+  local action = GamepadMap.mapGamepadButton(button)
+  if action == "a" then
     -- Instant click at the virtual pointer: dispatched straight into the
     -- view, since the launcher no longer hit-tests presses itself.
     if self._flex then
@@ -1552,7 +2112,7 @@ function RomImporter:gamepadpressed(_, button)
     if self.workState == "working" then return end
     local version = self.tab
     if GameVersion.VERSIONS[version] then
-      if self.ready[version] then self:play(version) else self:choose(version) end
+      if self.ready[version] then self:play(version) else self:_romAction(version) end
     end
   end
 end
@@ -1571,25 +2131,23 @@ function RomImporter:gamepadaxis(_, axis, value)
   end
 end
 
--- Same gate as src/core/Input.lua's isMappedPad: a pad SDL can map already
--- reached gamepadpressed this frame, so re-entering it from the raw event
--- would fire the virtual cursor's click twice off one A press (#620).
-local function isMappedPad(joystick)
-  return joystick ~= nil and joystick.isGamepad ~= nil and joystick:isGamepad()
-end
-
+-- Same gate as src/core/Input.lua: a pad SDL can map already reached
+-- gamepadpressed this frame, so re-entering it from the raw event would
+-- fire the virtual cursor's click twice off one A press (#620).
 function RomImporter:joystickpressed(joystick, button)
-  if isMappedPad(joystick) then return end
-  if button == 1 then self:gamepadpressed(joystick, "a") end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  local padButton = GamepadMap.mapRawToGamepadButton(button)
+  if padButton then self:gamepadpressed(joystick, padButton) end
 end
 
 function RomImporter:joystickreleased(joystick, button)
-  if isMappedPad(joystick) then return end
-  if button == 1 then self:gamepadreleased(joystick, "a") end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  local padButton = GamepadMap.mapRawToGamepadButton(button)
+  if padButton then self:gamepadreleased(joystick, padButton) end
 end
 
 function RomImporter:joystickaxis(joystick, axis, value)
-  if isMappedPad(joystick) then return end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
   if axis == 1 then
     self:gamepadaxis(joystick, "leftx", value)
   elseif axis == 2 then
@@ -1598,7 +2156,7 @@ function RomImporter:joystickaxis(joystick, axis, value)
 end
 
 function RomImporter:joystickhat(joystick, hat, direction)
-  if isMappedPad(joystick) then return end
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
   for _, dir in ipairs(self._rawHatDirs[hat] or {}) do
     self._padDir[dir] = nil
   end
@@ -1701,6 +2259,39 @@ function RomImporter:pressDelete(kind, id, version, commit)
   return false
 end
 
+-- Drain one frame's queued launcher actions; LauncherView.update hands the
+-- batch straight over.  A touch tap fires on EVERY element whose bounds hold
+-- the finger, not only the topmost one: FlexLove gates its mouse path on
+-- Context.findInteractiveAtPosition (libs/flexlove/modules/behaviors/
+-- Clickable.lua) but polls touches per element with a bare bounds test
+-- (EventHandler:processTouchEvents), so a phone tap on a save row's Delete
+-- chip also lands on the row behind it.  Control keys inside a row are the
+-- row's key plus "-<what>", so a row's own action is dropped whenever a
+-- control inside that row queued in the same batch, and #433's disarm runs
+-- here instead of at queue time.  Without both halves an Android tap on
+-- Delete selected the slot and wiped the arm it had just set, so a secondary
+-- slot became the loaded one and could never be deleted (#780).
+function RomImporter:runActions(queue)
+  for i = 1, #queue do
+    local entry = queue[i]
+    local key = type(entry.key) == "string" and entry.key or ""
+    local superseded = false
+    for j = 1, #queue do
+      local other = queue[j]
+      if j ~= i and type(other.key) == "string"
+          and other.key:sub(1, #key + 1) == key .. "-" then
+        superseded = true
+        break
+      end
+    end
+    if not superseded then
+      if not entry.keepArm then self._confirmDelete = nil end
+      local ok, err = pcall(entry.fn)
+      if not ok then print("launcher action error: " .. tostring(err)) end
+    end
+  end
+end
+
 -- Clicks are polled inside FlexLove (mouse + love.touch); host-forwarded
 -- mousepressed stays inert so Android's synthesized mouse path cannot
 -- double-fire a tap (#553).  Touch move/press/release must still reach
@@ -1732,6 +2323,15 @@ function RomImporter:_switchTab(id)
   self.tab = id
   self._findSearchFocus = false
   self:_disarmTextInput()
+end
+
+function RomImporter:_toggleFindSearchFocus()
+  self._findSearchFocus = not self._findSearchFocus
+  if self._findSearchFocus then
+    self:_armTextInput()
+  else
+    self:_disarmTextInput()
+  end
 end
 
 -- ------- settings gear (options.lua + enabled mods' option schemas)
@@ -1836,7 +2436,7 @@ function RomImporter:keypressed(key)
     -- open its picker.  The mods tab has no keyboard action.
     local version = self.tab
     if GameVersion.VERSIONS[version] then
-      if self.ready[version] then self:play(version) else self:choose(version) end
+      if self.ready[version] then self:play(version) else self:_romAction(version) end
     end
   end
 end
@@ -2043,6 +2643,8 @@ function RomImporter:_syncModUpdateInfo(force)
           latest = best and best.version or nil,
           best = best,
           releases = packed.releases,
+          downloads = ModUpdate.totalDownloads(packed.releases),
+          dates = ModUpdate.releaseDates(packed.releases),
           err = nil,
           checkedAt = packed.checkedAt or os.time(),
         }
@@ -2059,6 +2661,9 @@ function RomImporter:_syncModUpdateInfo(force)
       self.modUpdateInfo[m.id] = nil
     end
   end
+  -- Bump so the view's sorted-list cache (keyed on this revision) rebuilds
+  -- when release/download data actually changes, not every frame.
+  self._modUpdateRev = (self._modUpdateRev or 0) + 1
 end
 
 function RomImporter:_modUpdateInfo(id)
@@ -2144,6 +2749,11 @@ end
 -- Update button: when a newer release is known, confirm then install; when
 -- already current, force-refresh the 6h cache and report / offer update.
 function RomImporter:_modGithubAction(id, action)
+  if not Platform.networkValidated() then
+    self.modNotice = { ok = false,
+      text = "Remote mod download is unavailable on this platform." }
+    return
+  end
   local ran, err = pcall(function()
     local ModUpdate = require("src.mods.ModUpdate")
     local row
@@ -2167,6 +2777,8 @@ function RomImporter:_modGithubAction(id, action)
       self.modUpdateInfo[row.id] = {
         status = status, latest = best and best.version, best = best,
         releases = releases,
+        downloads = ModUpdate.totalDownloads(releases),
+        dates = ModUpdate.releaseDates(releases),
       }
       self._modVersions = {
         id = row.id, name = row.name, current = row.version,
@@ -2210,6 +2822,8 @@ function RomImporter:_modGithubAction(id, action)
     self.modUpdateInfo[row.id] = {
       status = status, latest = best and best.version, best = best,
       releases = releases, checkedAt = os.time(),
+      downloads = ModUpdate.totalDownloads(releases),
+      dates = ModUpdate.releaseDates(releases),
     }
     if status == "available" and best then
       self.modNotice = { ok = true,
@@ -2283,6 +2897,53 @@ function RomImporter:_installModVersion(modId, release)
   end
 end
 
+
+-- NX / desktop / Android labels and inbox hints for the FlexLove view.
+function RomImporter:_modsImportButtonLabel()
+  if self.isNX then return Strings("Scan again") end
+  return Strings("Import mod .zip")
+end
+
+function RomImporter:_modsDefaultHint()
+  if self.isNX then
+    local saveDir = love.filesystem.getSaveDirectory()
+    local rel = RomImporter.mtpHintPath(saveDir)
+    if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
+    return Strings("Copy a .zip via MTP into %s/imports/mods/\n"
+      .. "DBI MTP → 1: SD Card/%simports/mods/", saveDir, rel)
+  end
+  if self.android then return Strings("Or copy a mod .zip via USB.") end
+  return Strings("Or drop a mod .zip onto the window.")
+end
+
+function RomImporter:_savesDefaultHint(version)
+  if self.isNX then
+    version = self:_resolveSaveVersion(version)
+    local inbox = savesInboxDir(version)
+    local saveDir = love.filesystem.getSaveDirectory()
+    local rel = RomImporter.mtpHintPath(saveDir)
+    if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
+    local game = GameVersion.info(version).displayName
+    return Strings("Copy a %s .sav via MTP into %s/%s/\n"
+      .. "DBI MTP → 1: SD Card/%s%s/", game, saveDir, inbox, rel, inbox)
+  end
+  if self.android then
+    return Strings("Import or export a .sav with the system file picker.")
+  end
+  return Strings("Import a .sav to a new slot, or export the active slot.")
+end
+
+function RomImporter:_modsEmptyHint()
+  if self.isNX then
+    return Strings("No mods installed - copy a .zip into imports/mods/ "
+      .. "and tap Scan again.")
+  end
+  if self.android then
+    return "No mods installed - tap Import mod .zip to add one."
+  end
+  return Strings("No mods installed - drop a mod .zip here to add one.")
+end
+
 -- ------- FIND MODS: browsing a community mod index -------------------------
 --
 -- The index is metadata only (src/mods/ModIndex.lua): it says where a mod's
@@ -2310,6 +2971,11 @@ end
 -- must not offer two.  Per-source failures are collected rather than fatal: an
 -- index that is down should cost its own rows, not everybody else's.
 function RomImporter:_refreshFind(force)
+  if not Platform.networkValidated() then
+    self.findLoaded = true
+    self.findIndex = { mods = {}, categories = {} }
+    return
+  end
   local ModIndex = require("src.mods.ModIndex")
   self:_refreshFindSources()
   local mods, seen, cats, catSeen, errs = {}, {}, {}, {}, {}
@@ -2373,12 +3039,22 @@ end
 -- The rows the filters leave, and the installed-mod context the compatibility
 -- warnings are judged against.
 function RomImporter:_findRows()
-  local ModIndex = require("src.mods.ModIndex")
   local all = (self.findIndex and self.findIndex.mods) or {}
-  return ModIndex.filter(all, {
+  -- The view asks every frame (immediate mode); only re-filter when the
+  -- index, query, or category actually changed.
+  local c = self._findRowsCache
+  if c and c.src == all and c.query == self.findQuery
+      and c.category == self.findCategory then
+    return c.rows
+  end
+  local ModIndex = require("src.mods.ModIndex")
+  local rows = ModIndex.filter(all, {
     query = self.findQuery,
     category = self.findCategory,
   })
+  self._findRowsCache = { src = all, query = self.findQuery,
+    category = self.findCategory, rows = rows }
+  return rows
 end
 
 function RomImporter:_findInstalledMap()
@@ -2410,6 +3086,56 @@ function RomImporter:_findThumb(entry)
   end)
   self._findThumbs[entry.id] = ok and image or false
   return ok and image or nil
+end
+
+-- Release stats for a FIND MODS row, resolved the same way the MODS tab
+-- does it: the mod's own GitHub releases through ModUpdate's cached fetch,
+-- so an installed mod's repo is instant and every result lands in
+-- options.modUpdateCache for six hours.  A feed that publishes stats wins
+-- outright (fresher, zero network); otherwise the repo is fetched, one
+-- entry per frame so opening the tab cannot stall for the whole listing.
+-- The result is memoized per id for the session; a repo with no releases
+-- or a failed fetch resolves to an empty table so it is tried once.
+function RomImporter:_findStats(entry)
+  self._findStatsCache = self._findStatsCache or {}
+  local cached = self._findStatsCache[entry.id]
+  if cached then
+    if cached.done or (cached.retryAt and os.time() < cached.retryAt) then
+      return cached
+    end
+    self._findStatsCache[entry.id] = nil  -- retry window open, refetch
+  end
+  if entry.downloads ~= nil or entry.first_release or entry.last_release then
+    cached = { total = entry.downloads, first = entry.first_release,
+               latest = entry.last_release, done = true }
+    self._findStatsCache[entry.id] = cached
+    return cached
+  end
+  if self._findStatsFetched then return nil end   -- budget spent this frame
+  if not entry.github or entry.github == "" then
+    cached = { done = true }
+    self._findStatsCache[entry.id] = cached
+    return cached
+  end
+  self._findStatsFetched = true
+  local ModUpdate = require("src.mods.ModUpdate")
+  local list, fetchErr
+  local ok = pcall(function()
+    list, fetchErr = ModUpdate.fetchReleases(entry.github, entry.id, {})
+  end)
+  local stats = list and ModUpdate.statsForReleases(list) or nil
+  if stats then
+    cached = { total = stats.total, first = stats.first,
+               latest = stats.latest, done = true }
+  else
+    -- A repo that does not exist is permanent; every other failure (the
+    -- hourly API rate limit, a hiccup) is retried in a minute so rows can
+    -- recover without restarting the launcher.
+    local permanent = tostring(fetchErr):find("Not Found", 1, true) ~= nil
+    cached = { done = permanent, retryAt = os.time() + 60 }
+  end
+  self._findStatsCache[entry.id] = cached
+  return cached
 end
 
 -- Open the "add an index" text prompt.  Deliberately a typed URL rather than a

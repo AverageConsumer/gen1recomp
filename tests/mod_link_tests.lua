@@ -378,6 +378,25 @@ local nextEngine = Handshake.hello(fakeGame(vanilla, "BLUE"), nil)
 nextEngine.engineVersion = "2.0.0"
 eq(Handshake.checkCompat(helloA, nextEngine), "refused", "engine major mismatch refuses")
 
+-- same major, different release: the fingerprint can't see engine code,
+-- and battle logic changes between releases, so lockstep would desync a
+-- few turns in (#758) -- battle is refused up front, trade still works
+local skewed = Handshake.hello(fakeGame(vanilla, "BLUE"), nil)
+skewed.engineVersion = (tostring(helloA.engineVersion):match("^(%d+)") or "0") .. ".999.0"
+local skewVerdict, skewReason = Handshake.checkCompat(helloA, wire(skewed))
+eq(skewVerdict, "engine_skew", "same-major release skew is its own verdict")
+eq(skewReason, "engine_release_mismatch", "and says why")
+check(not Handshake.battleAllowed("engine_skew"), "release skew refuses lockstep")
+check(Handshake.tradeAllowed("engine_skew"), "release skew still trades")
+check(Handshake.strict("engine_skew"), "release skew negotiates strictly")
+local skewLines = Handshake.describe(helloA, wire(skewed), "engine_skew", "battle")
+local skewJoined = table.concat(skewLines, " ")
+check(skewJoined:find("version", 1, true) ~= nil, "skew notice mentions versions")
+check(skewJoined:find("999", 1, true) ~= nil, "skew notice names the peer release")
+for _, line in ipairs(skewLines) do
+  check(#line <= 20, "skew line fits the screen: " .. line)
+end
+
 local lines = Handshake.describe(helloA, wire(helloMod), "subset", "battle")
 check(#lines > 0, "the incompatibility screen has something to say")
 local joined = table.concat(lines, " ")

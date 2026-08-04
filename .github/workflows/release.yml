@@ -1,8 +1,9 @@
 name: Release
 
 # Builds the macOS, Windows, and Linux desktop apps, an Android APK, an iOS
-# IPA, and the Anbernic RG34XXSP (Stock OS 64-bit MOD / PortMaster) port on
-# the self-hosted Mac runner, and publishes them as a GitHub Release.
+# IPA, a Nintendo Switch SD-ready zip (experimental), and the Anbernic RG34XXSP
+# (Stock OS 64-bit MOD / PortMaster) port on the self-hosted Mac runner, and
+# publishes them as a GitHub Release.
 #
 # Versioning:
 #   - First ever release is 0.1.0.
@@ -196,6 +197,17 @@ jobs:
               --version "${{ steps.ver.outputs.version }}"
           fi
 
+      - name: Build Switch
+        run: |
+          set -euo pipefail
+          # Hard-fail gate: Switch ships with every release (never soft-fail).
+          # PR CI is path-gated (ubuntu selftest + canonical fused); release
+          # always builds Switch regardless of which files changed.
+          # Needs native switch-tools (nacptool/elf2nro) and/or Docker on the
+          # Mac self-hosted runner; see docs/switch-build.md.
+          scripts/build_switch.sh --fetch --fused \
+            --version "${{ steps.ver.outputs.version }}"
+
       - name: Build Anbernic RG34XXSP port
         run: |
           set -euo pipefail
@@ -257,6 +269,12 @@ jobs:
           ipa="dist/ios/gen1recomp.ipa"
           [ -f "$ipa" ] || { echo "::error::$ipa not found (expected from scripts/build_ios.sh --device)"; exit 1; }
           cp "$ipa" "$outdir/gen1recomp-${v}-ios.ipa"
+
+          swzip="dist/switch/gen1recomp-${v}-switch.zip"
+          [ -f "$swzip" ] || { echo "::error::$swzip not found (expected from scripts/build_switch.sh --fused → pack_sd_zip.sh)"; exit 1; }
+          cp "$swzip" "$outdir/gen1recomp-${v}-switch.zip"
+          # Local fused .nro stays under dist/switch/ for PR CI / debug; release
+          # publishes the SD-ready zip only.
 
           # Anbernic handheld port (suffix names the CFW it targets, so a
           # future RG35XX/other-CFW pack can ship alongside it).
@@ -369,18 +387,23 @@ jobs:
           fi
           printf 'Release notes:\n%s\n' "$notes"
 
+          release_files=(
+            "dist/release/gen1recomp-${v}-macos.zip"
+            "dist/release/gen1recomp-${v}-windows.zip"
+            "dist/release/gen1recomp-${v}-linux.zip"
+            "dist/release/gen1recomp-${v}-android.apk"
+            "dist/release/gen1recomp-${v}-ios.ipa"
+            "dist/release/gen1recomp-${v}-switch.zip"
+            "dist/release/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip"
+            "dist/release/gen1recomp-${v}.love"
+            "dist/release/sha256sums.txt"
+          )
+
           gh release create "$tag" \
             --target "$GITHUB_SHA" \
             --title "$v" \
             --notes "$notes" \
-            "dist/release/gen1recomp-${v}-macos.zip" \
-            "dist/release/gen1recomp-${v}-windows.zip" \
-            "dist/release/gen1recomp-${v}-linux.zip" \
-            "dist/release/gen1recomp-${v}-android.apk" \
-            "dist/release/gen1recomp-${v}-ios.ipa" \
-            "dist/release/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip" \
-            "dist/release/gen1recomp-${v}.love" \
-            "dist/release/sha256sums.txt"
+            "${release_files[@]}"
 
           echo "Published release $tag"
 

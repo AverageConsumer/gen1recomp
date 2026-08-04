@@ -68,14 +68,10 @@ return function(game)
   U.wait(4)
 
   -- open the party menu and pick DIG on slot 1
-  -- (submenu order for a DIG-only mon: STATS / SWITCH / DIG)
+  -- (submenu order for a DIG-only mon: DIG / STATS / SWITCH -- #768)
   Screens.push(game, "PartyMenu")
   U.wait(5)
-  U.tap(game, "a")    -- open the per-mon submenu
-  U.wait(2)
-  U.tap(game, "down") -- STATS -> SWITCH
-  U.wait(2)
-  U.tap(game, "down") -- SWITCH -> DIG
+  U.tap(game, "a")    -- open the per-mon submenu, cursor on DIG
   U.wait(2)
   U.tap(game, "a")    -- choose DIG
   U.wait(2)

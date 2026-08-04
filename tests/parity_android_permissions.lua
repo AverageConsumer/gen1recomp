@@ -39,7 +39,16 @@ check(type(script) == "string", SCRIPT .. " is readable")
 -- The trim is only dangerous because it edits the tracked manifest in place; if
 -- that stops being true, everything below tests a file the build never touches.
 if script then
-  local target = script:match('local manifest="([^"]+)"')
+  -- The script has grown other `local manifest=` locals (the Yellow ROM
+  -- import manifest recovery), so scan every assignment for the one that
+  -- names the Android manifest instead of trusting the first match.
+  local target
+  for candidate in script:gmatch('local manifest="([^"]+)"') do
+    if candidate:find("AndroidManifest.xml", 1, true) then
+      target = candidate
+      break
+    end
+  end
   check(target ~= nil, "build_android.sh names the manifest it rewrites")
   check(target ~= nil
           and target:find("app/src/main/AndroidManifest.xml", 1, true) ~= nil,

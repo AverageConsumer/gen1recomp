@@ -102,6 +102,85 @@ jobs:
         if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
         run: security delete-keychain "$RUNNER_TEMP/gen1recomp-ci-signing.keychain-db" 2>/dev/null || true
 
+  switch-changes:
+    name: detect Switch changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(scripts/build_switch\.sh$|scripts/switch/|docs/switch-.*\.md$|tests/switch_ci_workflows_test\.lua$|tests/switch_transfer_docs_test\.lua$|\.github/workflows/(ci|release|switch-artifact-comment)\.yml$|src/core/(NxAssetOverlay|Platform|GameVersion)\.lua$|src/import/CacheFs\.lua$|tests/engine/(assets_version_fallback|nx_generated_guard|nx_yellow_boot|switch_diagnostics)_test\.lua$|tests/engine/platform_nx)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  switch-selftest:
+    name: Switch offline selftest
+    needs: switch-changes
+    if: needs.switch-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: install luajit
+        run: sudo apt-get update && sudo apt-get install -y luajit
+      - name: Switch offline selftest
+        run: bash scripts/switch/selftest_build_switch.sh
+      - name: verify_payload self-test
+        run: bash scripts/switch/verify_payload.sh --self-test
+      - name: Switch CI workflow content gate
+        run: luajit tests/switch_ci_workflows_test.lua
+      - name: Switch transfer docs content gate
+        run: luajit tests/switch_transfer_docs_test.lua
+      # NX runtime regressions gate this job via switch-changes; run the NX
+      # engine suites here too so a PR touching them gets feedback on the
+      # fork-safe ubuntu runner before the self-hosted Mac build.
+      - name: NX engine suites (headless)
+        run: |
+          luajit tests/engine/assets_version_fallback_test.lua
+          luajit tests/engine/nx_generated_guard_test.lua
+          luajit tests/engine/nx_yellow_boot_test.lua
+
+  switch-build:
+    name: Switch fused build
+    needs: [switch-changes, switch-selftest]
+    if: |
+      always()
+      && needs.switch-changes.outputs.changed == 'true'
+      && needs.switch-selftest.result == 'success'
+      && github.repository == 'bryanthaboi/gen1recomp'
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ["self-hosted", "macOS"]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build Switch fused NRO
+        run: |
+          set -euo pipefail
+          VER="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          scripts/build_switch.sh --fetch --fused --version "$VER"
+          echo "SWITCH_VER=$VER" >> "$GITHUB_ENV"
+      - name: upload Switch NRO artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-switch-nro
+          path: |
+            dist/switch/gen1recomp-${{ env.SWITCH_VER }}-switch.nro
+            dist/switch/gen1recomp-${{ env.SWITCH_VER }}-switch.nro.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   headless:
     name: headless suites (no ROM)
     runs-on: ubuntu-latest
