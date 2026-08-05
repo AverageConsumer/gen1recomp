@@ -93,6 +93,12 @@ O.statusFlags1 = O.townVisited + 29                       -- 1B
 O.statusFlags4 = O.townVisited + 35                       -- 1B
 O.elite4Flags = O.townVisited + 41                        -- 1B
 O.tradeFlags = O.townVisited + 44                         -- 2B (flag_array NUM_NPC_TRADES)
+-- wToggleableObjectFlags (ram/wram.asm, flag_array $100): the ShowObject/
+-- HideObject persistence, one bit per data/maps/toggleable_objects.asm entry,
+-- set = hidden (engine/overworld/toggleable_objects.asm IsObjectHidden).
+-- Sits 2 bytes (wPlayerCoins) past O.coins per the walk above; absolute
+-- 0x2852 (#763, #857).
+O.toggleObjectFlags = O.coins + 2                         -- 32B
 -- Play time (wPlayTimeHours/Maxed/Minutes/Seconds/Frames) lives INSIDE the
 -- sMainData window (wMainDataStart..wMainDataEnd is copied verbatim into
 -- SRAM), 1866 bytes past wMainDataStart -- reached from the checksum-verified
@@ -107,6 +113,15 @@ O.playTimeMaxed = O.mainData + 1867                       -- 1B (set once past 2
 O.playTimeMinutes = O.mainData + 1868                     -- 1B (0-59)
 O.playTimeSeconds = O.mainData + 1869                     -- 1B (0-59)
 O.playTimeFrames = O.mainData + 1870                      -- 1B (0-59, 1/60s ticks)
+-- wPikachuHappiness, Yellow only (pret/pokeyellow ram/wram.asm; no local
+-- pokeyellow checkout, so verified against the pokeyellow symbol file
+-- instead: d46f - wMainDataStart d2f6 = 377, the well-known absolute
+-- 0x271C).  In Red/Blue this byte is current-map scratch the game
+-- regenerates on load, so the codec touches it only when the crosswalk
+-- data set names the game "yellow" (#763, #838).  Every other modeled
+-- offset is identical between pokered and pokeyellow (same sram.asm, same
+-- wMainData field spacing per both symbol files).
+O.pikachuHappiness = O.mainData + 377
 O.mainDataSize = 1929                                     -- wMainDataEnd - wMainDataStart
 
 O.spriteData = O.mainData + O.mainDataSize
@@ -729,6 +744,25 @@ function GenSave.decode(bytes, data, opts)
     if save.flags[vanillaName] then save.flags[portName] = true end
   end
 
+  -- wToggleableObjectFlags -> save.objectToggles (bit set = hidden).  A few
+  -- of these are re-derived from flags on map entry (#106/#234 onEnter
+  -- re-applies), but most ShowObject/HideObject state -- the Mt Moon
+  -- fossils, the Cerulean guard swap -- has no flag to re-derive from, so
+  -- an import that drops the array resurrects taken fossils and blocking
+  -- guards (#763, #857).
+  local toggles = data.toggleObjects
+  if toggles then
+    save.objectToggles = {}
+    for bitIdx, e in pairs(toggles.byBit) do
+      local mapToggles = save.objectToggles[e[1]]
+      if not mapToggles then
+        mapToggles = {}
+        save.objectToggles[e[1]] = mapToggles
+      end
+      mapToggles[e[2]] = not bitGet(bytes, O.toggleObjectFlags, bitIdx)
+    end
+  end
+
   -- FLY destinations.  wTownVisitedFlag's bit index IS the town's map index:
   -- engine/items/town_map.asm BuildFlyLocationsList loads the 16-bit value
   -- into de and rotates it right one bit per iteration with b counting up
@@ -773,6 +807,15 @@ function GenSave.decode(bytes, data, opts)
                 + u8(bytes, O.playTimeMinutes) * 60
                 + u8(bytes, O.playTimeSeconds)
                 + u8(bytes, O.playTimeFrames) / 60
+
+  -- Yellow starter friendship (save.pikachuHappiness,
+  -- src/world/PikachuFollower.lua reads it; pokeyellow's
+  -- init_player_data.asm seeds 90 on a new game), gated on the data set's
+  -- game because the byte is map scratch in Red/Blue (see
+  -- O.pikachuHappiness) (#763, #838).
+  if data.gameVersion == "yellow" then
+    save.pikachuHappiness = u8(bytes, O.pikachuHappiness)
+  end
 
   save.warnings = warnings
   save.rawImport = bytes -- template for a later encode(); see file header
@@ -865,6 +908,41 @@ function GenSave.encode(save, data, template)
   if save.flags then
     for name, spec in pairs(EXTRA_FLAG_BITS) do
       bitSet(buf, spec[1], spec[2], save.flags[name] and true or false)
+    end
+  end
+
+  -- wToggleableObjectFlags, written both ways like the #396 extras: this
+  -- port's save is the authority, and vanilla folds three stores this port
+  -- keeps separate into these same bits -- script ShowObject/HideObject
+  -- (save.objectToggles), taken overworld items (engine/events/
+  -- pick_up_item.asm -> save.itemsTaken) and beaten static encounters
+  -- (home/trainers.asm HideObject after battle -> save.defeatedTrainers) --
+  -- so all three fold back in here or an exported save resurrects them
+  -- (#763, #857).
+  local toggleData = data.toggleObjects
+  if toggleData then
+    local objectToggles = save.objectToggles or {}
+    local itemsTaken = save.itemsTaken or {}
+    local beaten = save.defeatedTrainers or {}
+    for bitIdx, e in pairs(toggleData.byBit) do
+      local mapId, objName, visible = e[1], e[2], e[3]
+      local mapToggles = objectToggles[mapId]
+      if mapToggles and mapToggles[objName] ~= nil then
+        visible = mapToggles[objName]
+      end
+      if visible and data.maps and data.maps[mapId] then
+        for _, obj in ipairs(data.maps[mapId].objects or {}) do
+          if obj.name == objName then
+            local key = mapId .. "_obj_" .. obj.index
+            if (obj.item and itemsTaken[key])
+               or (obj.pokemon and beaten[key]) then
+              visible = false
+            end
+            break
+          end
+        end
+      end
+      bitSet(buf, O.toggleObjectFlags, bitIdx, not visible)
     end
   end
 
@@ -965,6 +1043,16 @@ function GenSave.encode(save, data, template)
     setByte(buf, O.playTimeMinutes, mins)
     setByte(buf, O.playTimeSeconds, secs)
     setByte(buf, O.playTimeFrames, rem - secs * 60)
+  end
+
+  -- Yellow starter friendship back out (see O.pikachuHappiness); Red/Blue
+  -- data sets never reach this write.  90 is the fresh-game seed the
+  -- follower system itself uses when the save has never tracked it.
+  -- Placed before the checksum pass so the byte is covered by the
+  -- main-data checksum automatically (#763, #838).
+  if data.gameVersion == "yellow" then
+    local h = tonumber(save.pikachuHappiness) or 90
+    setByte(buf, O.pikachuHappiness, math.max(0, math.min(255, math.floor(h))))
   end
 
   local out = table.concat(buf)

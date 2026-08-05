@@ -474,6 +474,33 @@ local function removeTree(path)
   fs.remove(path)
 end
 
+-- Every mods/ folder currently holding this id, plus the bare mods/<id> tree
+-- even when its manifest is missing or unreadable.  Second return: whether any
+-- of them carries a manifest the panel can actually list.  An install names
+-- its dest after the manifest id, but a hand-unzipped copy keeps whatever
+-- folder name the archive carried, and discover()'s first-id-wins rule means
+-- whichever folder physfs happens to enumerate first is the one the panel and
+-- the loader really use.  Replacing only mods/<id> let an update report
+-- success while the old copy kept winning that race (#801); and a
+-- manifest-less mods/<id> left by an interrupted copy blocked every re-import
+-- as "already installed" while showing nowhere the player could see (#834).
+local function sameIdTrees(fs, id)
+  local out, installed = {}, false
+  if not fs.getInfo("mods") then return out, installed end
+  for _, name in ipairs(fs.getDirectoryItems("mods")) do
+    local path = "mods/" .. name
+    local raw = fs.read(path .. "/manifest.json")
+    local manifest = raw and decodeManifest(raw, path)
+    if manifest and manifest.id == id then
+      out[#out + 1] = path
+      installed = true
+    elseif name == id and fs.getInfo(path) then
+      out[#out + 1] = path
+    end
+  end
+  return out, installed
+end
+
 -- ------- strays: mods dropped beside the game that it cannot see
 
 -- love.filesystem looks in two places for "mods/": the save directory, and --
@@ -666,16 +693,21 @@ function LauncherMods._installZipInner(source, opts)
   end
 
   local dest = "mods/" .. manifest.id
-  if fs.getInfo(dest) then
-    if not opts.replace then
-      cleanup()
-      return nil, "a mod named '" .. manifest.id .. "' is already installed"
-    end
-    -- drop the old tree before copy; enable-flag is preserved (uninstall
-    -- would clear it, which would surprise an update)
+  local existing, installedSomewhere = sameIdTrees(fs, manifest.id)
+  if installedSomewhere and not opts.replace then
+    cleanup()
+    return nil, "a mod named '" .. manifest.id .. "' is already installed"
+  end
+  if #existing > 0 then
+    -- drop every old tree before copy -- mods/<id> and any same-id folder
+    -- under another name, or the survivor keeps winning discover()'s
+    -- first-id-wins race after the "successful" update (#801).  A tree with
+    -- no readable manifest is debris from an interrupted copy: it never
+    -- refuses the install, it only gets cleared (#834).  Enable-flag is
+    -- preserved (uninstall would clear it, which would surprise an update).
     local savedPrefix = CacheFs.prefix
     CacheFs.prefix = ""
-    removeTree(dest)
+    for _, path in ipairs(existing) do removeTree(path) end
     CacheFs.prefix = savedPrefix
   end
 
@@ -789,14 +821,17 @@ function LauncherMods.uninstall(id)
     return nil, "mod uninstall needs LOVE"
   end
   local fs = love.filesystem
-  local dest = "mods/" .. id
-  if not fs.getInfo(dest) then
+  local trees = sameIdTrees(fs, id)
+  if #trees == 0 then
     return nil, "mod '" .. id .. "' is not installed"
   end
-  -- same root pin as installZip: the mods tree is not version-prefixed (#330)
+  -- same root pin as installZip: the mods tree is not version-prefixed (#330).
+  -- Every same-id tree goes, folder name notwithstanding, so Delete works on a
+  -- hand-unzipped copy too and cannot leave a shadow copy for discover()'s
+  -- first-id-wins rule to resurrect on the next boot (#801)
   local savedPrefix = CacheFs.prefix
   CacheFs.prefix = ""
-  removeTree(dest)
+  for _, path in ipairs(trees) do removeTree(path) end
   CacheFs.prefix = savedPrefix
   -- Drop the enable flag so a reinstall of the same id starts from the
   -- loader's default (enabled) rather than a stale false.

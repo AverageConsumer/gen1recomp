@@ -188,6 +188,43 @@ local leftover = 0
 for _ in pairs(stagedTemps) do leftover = leftover + 1 end
 eq(leftover, 0, "fallback cleans staged temp after install")
 
+-- #801: a same-id copy under a different folder name is replaced too, so the
+-- update cannot leave a shadow copy for discover()'s first-id-wins race
+resetFs()
+files["mods/WildsOfKanto-1.5.0/manifest.json"] =
+  ('{"id":"%s","name":"Old Copy","version":"0.9.0","entry":"main.lua"}')
+    :format(MOD_ID)
+files["mods/WildsOfKanto-1.5.0/main.lua"] = "return function() end\n"
+files["imports/mods/update.zip"] = "PK\3\4update"
+ok, err = LauncherMods.installZip("imports/mods/update.zip",
+  { replace = true, expectId = MOD_ID })
+check(ok == true, "replace install succeeds over an odd-named copy ("
+  .. tostring(err) .. ")")
+check(files["mods/WildsOfKanto-1.5.0/manifest.json"] == nil,
+  "odd-named same-id folder is removed by the replace")
+check(files["mods/" .. MOD_ID .. "/manifest.json"] ~= nil,
+  "replace still lands in mods/<id>")
+
+-- #834: a manifest-less mods/<id> tree (interrupted copy debris) must not
+-- block a plain re-import as "already installed"
+resetFs()
+files["mods/" .. MOD_ID .. "/gfx/a.bin"] = "x"
+files["imports/mods/again.zip"] = "PK\3\4again"
+ok, err = LauncherMods.installZip("imports/mods/again.zip")
+check(ok == true, "debris tree does not block re-import ("
+  .. tostring(err) .. ")")
+check(files["mods/" .. MOD_ID .. "/gfx/a.bin"] == nil,
+  "debris is cleared by the re-import")
+
+-- a real installed copy still refuses a plain duplicate import
+resetFs()
+files["mods/" .. MOD_ID .. "/manifest.json"] = ARCHIVE[MOD_ID .. "/manifest.json"]
+files["imports/mods/dup.zip"] = "PK\3\4dup"
+ok, err = LauncherMods.installZip("imports/mods/dup.zip")
+check(not ok, "a listed install still refuses a plain duplicate import")
+check(tostring(err):find("already installed", 1, true),
+  "duplicate refusal still names already installed")
+
 -- Restore
 love.filesystem = savedFs
 SaveData.portableBaseDir = savedSaveDataPortable

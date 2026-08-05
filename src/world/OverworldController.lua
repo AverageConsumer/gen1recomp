@@ -440,8 +440,10 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   self.entities = { self.player }
   for _, n in ipairs(self.npcs) do table.insert(self.entities, n) end
   -- Yellow's companion Pikachu trails the player (never in
-  -- self.entities: it does not block movement, pikachu_follow.asm)
-  require("src.world.PikachuFollower").onMapEntered(Game, self, opts)
+  -- self.entities: it does not block movement, pikachu_follow.asm).
+  -- true = fresh map entry: the follower spawns under the player and
+  -- walks out of the warp, not beside him (#863)
+  require("src.world.PikachuFollower").onMapEntered(Game, self, opts, true)
 
   -- opts.keepMusic: the Oak-escort warp keeps MUSIC_MEET_PROF_OAK
   -- playing into the lab (BIT_NO_MAP_MUSIC in wStatusFlags7);
@@ -1998,7 +2000,14 @@ function OverworldState:tryHiddenObject(fx, fy)
       save.hiddenTaken = save.hiddenTaken or {}
       if save.hiddenTaken[key] then return false end
       if not require("src.inventory.Bag").add(save, h.item, 1, Game.data) then
-        Game.stack:push(TextBox.new(Game, romText(Game.data, "_CantCarryMoreText", "You can't carry\nany more items!")))
+        -- hidden_items.asm FoundHiddenItemText: the find is announced first,
+        -- then GiveItem's .bagFull branch prints _HiddenItemBagFullText and
+        -- leaves the spot unfound; _CantCarryMoreText is the Toss line (#872)
+        local name = Game.data.items[h.item] and Game.data.items[h.item].name or h.item
+        Game.stack:push(TextBox.new(Game,
+          Strings("%s found\n%s!", save.player.name, name) .. "\f"
+          .. romText(Game.data, "_HiddenItemBagFullText",
+                     "But, {PLAYER} has\nno more room for\vother items!")))
         return true
       end
       save.hiddenTaken[key] = true
@@ -2663,7 +2672,17 @@ function OverworldState:talkTo(npc)
   -- the string "0" as truthy, so screen it out and fall through to text.
   if d.item and d.item ~= "0" and d.item ~= 0 then
     if not require("src.inventory.Bag").add(Game.save, d.item, 1, Game.data) then
-      Game.stack:push(TextBox.new(Game, romText(Game.data, "_CantCarryMoreText", "You can't carry\nany more items!")))
+      -- pick_up_item.asm .BagFull prints _NoMoreRoomForItemText, not the
+      -- Toss-screen _CantCarryMoreText; Yellow announces the find first,
+      -- then the refusal (#872)
+      local noRoom = romText(Game.data, "_NoMoreRoomForItemText",
+        "No more room for\nitems!")
+      if GameVersion.isYellow() then
+        local name = Game.data.items[d.item] and Game.data.items[d.item].name or d.item
+        noRoom = Strings("%s found\n%s!", Game.save.player.name, name)
+                 .. "\f" .. noRoom
+      end
+      Game.stack:push(TextBox.new(Game, noRoom))
       return
     end
     Game.save.itemsTaken = Game.save.itemsTaken or {}
@@ -3077,7 +3096,12 @@ local function meetTrainerTheme(cls)
 end
 
 -- Run the pre-battle text -> battle -> won text -> flags sequence.
-function OverworldState:engageTrainer(npc, onDone, endBattleText)
+-- skipBattleText is for map scripts shaped like SilphCo11FDefaultScript
+-- (scripts/SilphCo11F.asm), which DisplayTextID the challenge line BEFORE
+-- the approach walk and then EngageMapTrainer with no further text: the
+-- caller already showed the box, so the battle starts without a second
+-- one (#869).
+function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText)
   local d = npc.def
   Runtime.emit("world.trainer_engaged", { npc = npc, trainerClass = d.trainerClass,
                                           partyIndex = d.trainerParty })
@@ -3098,7 +3122,7 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText)
                   or (header and header.won and Game.data.text[header.won])
 
   local BattleState = require("src.battle.BattleState")
-  Game.stack:push(TextBox.new(Game, battleText, function()
+  local function startBattle()
     -- TalkToTrainer (home/trainers.asm:88) prints the before-battle text
     -- FIRST and only then runs `call EngageMapTrainer` / `jp
     -- StartTrainerBattle`, so a trainer challenged on foot gets the sting
@@ -3141,7 +3165,12 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText)
       end
     end
     self:pushBattle(battle)
-  end))
+  end
+  if skipBattleText then
+    startBattle()
+  else
+    Game.stack:push(TextBox.new(Game, battleText, startBattle))
+  end
 end
 
 -- Shared GiveItem step for the victory rewards (pokered home/give.asm):
@@ -4563,7 +4592,13 @@ function OverworldState:drawWorld()
   -- ghost NPCs on neighbor maps, y-sorted among themselves
   table.sort(self.ghosts,
              function(a, b) return a.npc.py + a.oy < b.npc.py + b.oy end)
-  table.sort(self.entities, function(a, b) return a.py < b.py end)
+  table.sort(self.entities, function(a, b)
+    if a.py ~= b.py then return a.py < b.py end
+    -- a fresh warp spawn parks the follower on the player's own cell
+    -- until it trails out; the tie must draw it under him, never on
+    -- top (#863)
+    return a.pikachuFollower == true and b.pikachuFollower ~= true
+  end)
 
   -- === shared FX draw bodies ==========================================
   -- Each draws at flat world-canvas offsets; the tilt path wraps the

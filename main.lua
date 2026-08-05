@@ -667,7 +667,33 @@ function love.wheelmoved(x, y)
   Game:wheelmoved(x, y)
 end
 
+-- #781: Linux X11 multi-monitor with the primary display away from desktop
+-- (0,0): SDL's polled mouse state can come back in desktop-virtual
+-- coordinates while the event stream stays window-relative, which strands
+-- every polled consumer (launcher Kit rising-edge clicks, the pad-cursor
+-- motion yield, PadCursor) on coordinates no hit test can match.  Sanitize
+-- the poll once here: remember the last window-relative event coordinates
+-- and substitute them whenever the polled value falls outside the window.
+-- Linux only -- macOS / Windows / mobile keep the stock function, and the
+-- NX launcher shim still composes because it captures whatever
+-- love.mouse.getPosition is at bridge time (_ensureNxPointerBridge).
+local eventMouseX, eventMouseY
+if love.system and love.system.getOS() == "Linux"
+    and love.mouse and love.mouse.getPosition then
+  local polledGetPosition = love.mouse.getPosition
+  love.mouse.getPosition = function()
+    local x, y = polledGetPosition()
+    local w, h = love.graphics.getDimensions()
+    if x < 0 or y < 0 or x > w or y > h then
+      if eventMouseX then return eventMouseX, eventMouseY end
+      return math.max(0, math.min(x, w)), math.max(0, math.min(y, h))
+    end
+    return x, y
+  end
+end
+
 function love.mousepressed(x, y, button, istouch)
+  if not istouch then eventMouseX, eventMouseY = x, y end
   if TouchEditor then
     -- Android primary touch already arrived via love.touchpressed; a second
     -- mouse path would double-fire Done / begin a second drag.
@@ -720,6 +746,7 @@ function love.mousereleased(x, y, button, istouch)
 end
 
 function love.mousemoved(x, y, dx, dy, istouch)
+  if not istouch then eventMouseX, eventMouseY = x, y end
   if TouchEditor then
     if love.system.getOS() == "Android" then return end
     return TouchEditor.mousemoved(x, y)
@@ -748,7 +775,13 @@ local quitToLauncher = false
 
 function love.quit()
   if editorMode and EditorApp.quit then
-    return EditorApp.quit() -- return true to abort quit
+    -- true blocks the quit (unsaved-changes prompt).  A quit that proceeds
+    -- must fall through to the worker shutdowns below instead of returning:
+    -- the bundled editor opens from a live launcher whose update-check and
+    -- fetch-pool workers are still parked in Channel:demand(), and returning
+    -- here skipped their "quit" push, so the process outlived the closed
+    -- window and kept the install folder locked on Windows (#727).
+    if EditorApp.quit() then return true end
   end
   -- Closing the window of a running game returns to the launcher instead of
   -- exiting the app, so testing a mod does not need a relaunch every time

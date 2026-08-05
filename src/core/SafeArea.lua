@@ -28,6 +28,24 @@ function SafeArea.rect()
     return 0, 0, ww, wh
   end
 
+  -- A safe rect that cannot fit the window's unit space is a backend
+  -- reporting framebuffer PIXELS -- the iOS build (LOVE 12 + SDL3) did this
+  -- in portrait on iOS 16, and clamping it as-is kept a DPI-inflated top
+  -- inset that pushed the whole launcher a band down the screen (#810).
+  -- Convert back to units with per-axis ratios; the axes can disagree on
+  -- forced-rotation devices (see displayMetrics in src/render/Renderer.lua,
+  -- #208).
+  if (w > ww + 0.5 or h > wh + 0.5)
+     and love.graphics.getPixelDimensions then
+    local pw, ph = love.graphics.getPixelDimensions()
+    local dx = (pw and pw > 0) and (pw / ww) or 1
+    local dy = (ph and ph > 0) and (ph / wh) or 1
+    if dx > 1.01 or dy > 1.01 then
+      x, w = x / dx, w / dx
+      y, h = y / dy, h / dy
+    end
+  end
+
   -- Clamp to the drawable window so a bad / mid-rotation backend cannot
   -- push layout outside the surface.
   x = math.max(0, math.min(x, ww))

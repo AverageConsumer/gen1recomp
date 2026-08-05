@@ -800,9 +800,13 @@ M.SILPH_CO_11F = {
   -- line) would touch, and the whole Silph ending -- the flag, the Master
   -- Ball, the Saffron streets clearing -- silently never happened.
   --
-  -- engageTrainer shows TEXT_SILPHCO11F_GIOVANNI as the battle text and,
-  -- via victories.lua OPP_GIOVANNI#2, sets the event on a win; a loss
-  -- sets nothing, so the trigger re-arms exactly as vanilla does.
+  -- SilphCo11FDefaultScript orders it DisplayTextID TEXT_SILPHCO11F_GIOVANNI
+  -- FIRST, then MoveSprite .GiovanniMovement: he speaks from behind the desk
+  -- and only then walks the three tiles down.  Moving him before the box made
+  -- him cross the room in silence and deliver the speech point-blank (#869),
+  -- so the box comes first here and engageTrainer skips its own battle text.
+  -- victories.lua OPP_GIOVANNI#2 sets the event on a win; a loss sets
+  -- nothing, so the trigger re-arms exactly as vanilla does.
   onStep = function(game, ow, x, y)
     if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then return false end
     if not ((x == 6 and y == 13) or (x == 7 and y == 12)) then return false end
@@ -811,21 +815,28 @@ M.SILPH_CO_11F = {
       if npc.def and npc.def.name == "SILPHCO11F_GIOVANNI" then gio = npc break end
     end
     if not gio or ow:trainerDefeated(gio) then return false end
-    ow:scriptMove(gio, "down", 3, function()
-      gio:facePlayer(ow.player)
-      ow:engageTrainer(gio, function()
-        -- SilphCo11FGiovanniAfterBattleScript: the "Blast it all!" speech,
-        -- then SilphCo11FTeamRocketLeavesScript behind a fade so every Silph
-        -- rocket leaves off-screen (the street rockets are handled by
-        -- M.SAFFRON_CITY.onEnter in story4.lua).  Queued, not run here: the
-        -- battle's own callbacks are still unwinding, so queueScript starts
-        -- it on the first idle overworld frame -- after the end-battle
-        -- "Arrgh!!" box victories.lua OPP_GIOVANNI#2 pushes (#722).
-        if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
-          ow:queueScript(silphAftermathRows())
-        end
-      end)
-    end)
+    local TextBox = require("src.render.TextBox")
+    game.stack:push(TextBox.new(game,
+      game.data.text._SilphCo11FGiovanniText
+      or "Ah {PLAYER}!\nSo we meet again!",
+      function()
+        ow:scriptMove(gio, "down", 3, function()
+          gio:facePlayer(ow.player)
+          ow:engageTrainer(gio, function()
+            -- SilphCo11FGiovanniAfterBattleScript: the "Blast it all!"
+            -- speech, then SilphCo11FTeamRocketLeavesScript behind a fade so
+            -- every Silph rocket leaves off-screen (the street rockets are
+            -- handled by M.SAFFRON_CITY.onEnter in story4.lua).  Queued, not
+            -- run here: the battle's own callbacks are still unwinding, so
+            -- queueScript starts it on the first idle overworld frame --
+            -- after the end-battle "Arrgh!!" box victories.lua OPP_GIOVANNI#2
+            -- pushes (#722).
+            if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
+              ow:queueScript(silphAftermathRows())
+            end
+          end, nil, true)
+        end)
+      end))
     return true
   end,
   onEnter = function(game, ow)

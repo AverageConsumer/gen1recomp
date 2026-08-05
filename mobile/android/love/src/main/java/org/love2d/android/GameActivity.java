@@ -139,6 +139,18 @@ public class GameActivity extends SDLActivity {
     // bad ROM instead of installing it (#553).
     private String pendingPickFilename = PICKED_ROM_FILENAME;
     private static final String STATE_PENDING_PICK = "pendingPickFilename";
+    // Absolute save directory physfs actually mounted, as reported by the
+    // native bridge call that opened the picker (love/src/common/android.cpp,
+    // bridgeSaveDirectory).  This activity used to recompute
+    // getExternalFilesDir(null)/save/<identity> on its own at result time; on
+    // merged / adopted-SD storage that can name a different volume than the
+    // one LOVE mounted, so the copied pick (and pick_error.flag) landed where
+    // Lua never scans -- the launcher then "did nothing" after a pick (#604)
+    // and the folders a file manager can browse stayed empty while the game
+    // saved fine elsewhere (#839).  Empty string means "not told yet": fall
+    // back to the historical computation.
+    private String pendingPickSaveDir = "";
+    private static final String STATE_PENDING_PICK_DIR = "pendingPickSaveDir";
     private static final String STATE_PENDING_CREATE = "pendingCreateSuggestedName";
     // Suggested download name for the in-flight SAF create (set by showCreateDocument).
     private String pendingCreateSuggestedName = "export.sav";
@@ -209,6 +221,8 @@ public class GameActivity extends SDLActivity {
             // a recreated activity still lands under the basename it asked for.
             String pick = savedInstanceState.getString(STATE_PENDING_PICK);
             if (pick != null) pendingPickFilename = pick;
+            String pickDir = savedInstanceState.getString(STATE_PENDING_PICK_DIR);
+            if (pickDir != null) pendingPickSaveDir = pickDir;
             String create = savedInstanceState.getString(STATE_PENDING_CREATE);
             if (create != null) pendingCreateSuggestedName = create;
         }
@@ -522,13 +536,23 @@ public class GameActivity extends SDLActivity {
      * @param destFilename basename under the app save identity (e.g.
      *                     picked_rom.gb, picked_mod.zip, picked_save.sav)
      */
+    /** Legacy single-argument entry; resolves the save dir itself. */
     @Keep
     public static boolean showFilePicker(String destFilename) {
+        return showFilePicker(destFilename, null);
+    }
+
+    @Keep
+    public static boolean showFilePicker(String destFilename, String saveDir) {
         GameActivity self = (GameActivity) mSingleton;
         if (self == null) return false;
         if (destFilename == null || destFilename.length() == 0) {
             destFilename = PICKED_ROM_FILENAME;
         }
+        // Remember where LOVE's filesystem is really mounted so
+        // onActivityResult copies the pick there, not into a recomputed
+        // (possibly different-volume) root (#604, #839).
+        self.pendingPickSaveDir = (saveDir != null) ? saveDir : "";
         // Reject path separators so a hostile JNI caller cannot escape the
         // save identity directory.
         if (destFilename.indexOf('/') >= 0 || destFilename.indexOf('\\') >= 0) {
@@ -747,8 +771,14 @@ public class GameActivity extends SDLActivity {
      * return degrades on the Lua side (RomImporter export) to "Exported
      * inside the app folder", which is the correct pre-KitKat behavior.
      */
+    /** Legacy single-argument entry; resolves the save dir itself. */
     @Keep
     public static boolean showCreateDocument(String suggestedName) {
+        return showCreateDocument(suggestedName, null);
+    }
+
+    @Keep
+    public static boolean showCreateDocument(String suggestedName, String saveDir) {
         if (android.os.Build.VERSION.SDK_INT < 19) return false;
         // (see showFilePicker for why the import side got a pre-19 path)
         GameActivity self = (GameActivity) mSingleton;
@@ -760,9 +790,12 @@ public class GameActivity extends SDLActivity {
             Log.d("GameActivity", "refusing unsafe create name: " + suggestedName);
             return false;
         }
-        File source = new File(
-            new File(self.getExternalFilesDir(null), "save"),
-            ROM_SAVE_IDENTITY + "/" + PENDING_EXPORT_FILENAME);
+        // Route through the mounted save dir (#604, #839): Lua staged
+        // pending_export.sav where physfs writes, which is not necessarily
+        // where a fresh getExternalFilesDir(null) points on merged /
+        // adopted-SD storage.
+        self.pendingPickSaveDir = (saveDir != null) ? saveDir : "";
+        File source = new File(self.saveIdentityDir(), PENDING_EXPORT_FILENAME);
         if (!source.isFile()) {
             Log.d("GameActivity", "no pending export at " + source);
             return false;
@@ -783,7 +816,21 @@ public class GameActivity extends SDLActivity {
     }
 
     private File saveIdentityDir() {
-        return new File(new File(getExternalFilesDir(null), "save"), ROM_SAVE_IDENTITY);
+        // Prefer the mounted save dir the last bridge call reported: the
+        // recomputation below can name a different volume than the one LOVE
+        // mounted on merged / adopted-SD storage (#604, #839).
+        if (pendingPickSaveDir != null && pendingPickSaveDir.length() > 0) {
+            return new File(pendingPickSaveDir);
+        }
+        File ext = getExternalFilesDir(null);
+        if (ext == null) {
+            // Shared storage unavailable (ejected / mid-adoption): without
+            // this guard File(null, "save") silently built the RELATIVE
+            // path save/<identity>, mkdirs() failed against "/", and the
+            // pick was dropped with no message at all (#604).
+            ext = getFilesDir();
+        }
+        return new File(new File(ext, "save"), ROM_SAVE_IDENTITY);
     }
 
     /** Drops a small flag file in the save identity for Lua to consume on focus. */
@@ -978,6 +1025,7 @@ public class GameActivity extends SDLActivity {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_PENDING_PICK, pendingPickFilename);
+        outState.putString(STATE_PENDING_PICK_DIR, pendingPickSaveDir);
         outState.putString(STATE_PENDING_CREATE, pendingCreateSuggestedName);
     }
 

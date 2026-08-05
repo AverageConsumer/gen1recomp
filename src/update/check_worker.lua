@@ -234,6 +234,11 @@ local function launchDownload(url, partAbs, doneAbs)
     local batRel = "updates/dl.bat"
     love.filesystem.write(batRel,
       "@echo off\r\n"
+      -- start /b hands the child our cwd, the install folder, and the
+      -- detached cmd.exe held that folder un-movable for the rest of the
+      -- transfer after the game exited (#727).  Every path below is
+      -- absolute, so park the child in its own directory (the save dir).
+      .. "cd /d \"%~dp0\"\r\n"
       .. "curl -fsSL --connect-timeout 15 --max-time 900 -o \""
       .. partAbs .. "\" \"" .. url .. "\"\r\n"
       .. "type nul > \"" .. doneAbs .. "\"\r\n")
@@ -271,6 +276,14 @@ local function doDownload()
   -- stalled or run-away transfer breaks out and lets verification fail cleanly
   local waited, lastSize, lastChange = 0, -1, 0
   while true do
+    -- A queued quit means the window already closed.  Bail so the join in
+    -- Check.shutdown does not hold the dead window's process (and, on
+    -- Windows, its folder) open for up to the whole transfer (#727).  The
+    -- quit stays on the channel for the command loop; the detached curl
+    -- times out on its own and the next launch's doCheck verifies and
+    -- re-offers whatever landed.
+    local peeked = cmdCh:peek()
+    if type(peeked) == "table" and peeked.cmd == "quit" then return end
     if love.filesystem.getInfo(doneRel) then break end
     local pinfo = love.filesystem.getInfo(partRel)
     local cur = (pinfo and pinfo.size) or 0

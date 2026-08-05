@@ -131,6 +131,31 @@ eq(healed and healed.battleLayout, "wide",
 check(live.files[OPTIONS] ~= "return { battleLayout = ",
   "the main options file is healed from the copy that parsed")
 
+-- ---- a lost main file must recover to the NEWEST verified write
+-- The platforms that lose options.lua do it on the hard teardown out of a
+-- game session (HostShell.restart's restartApp kill on Android, execv on a
+-- SteamOS AppImage), after rewrites whose bytes matched the file already on
+-- disk: play()'s lastVersion stamp and the in-game save flush re-encode the
+-- same table, and the key-sorted encoder makes those byte-identical, so the
+-- conditional pre-write roll skips them.  The backup is therefore rolled
+-- forward after every verified write; otherwise recovery handed back the
+-- file from BEFORE the launcher's change, which is exactly the reported
+-- "set BATTLE LAYOUT to WIDE, go in game, close, and it is OG again" (#828).
+local lost = memfs("honest")
+SaveData.saveOptions({ battleLayout = "og", lastVersion = "red" }, lost)
+local editedOpts = SaveData.loadOptions(lost)
+editedOpts.battleLayout = "wide"
+SaveData.saveOptions(editedOpts, lost)              -- the launcher's toggle
+local replay = SaveData.loadOptions(lost)
+replay.lastVersion = "red"                          -- play() re-stamps the same value
+SaveData.saveOptions(replay, lost)                  -- byte-identical rewrite
+SaveData.saveOptions(SaveData.loadOptions(lost), lost)  -- in-game save flush, identical too
+lost.files[OPTIONS] = nil                           -- the platform ate the main file
+local promoted = SaveData.loadOptions(lost)
+eq(promoted.battleLayout, "wide",
+  "a lost main file recovers to the newest verified write, not the "
+  .. "pre-change backup (#828)")
+
 local gone = memfs("honest")
 SaveData.saveOptions({ battleLayout = "wide" }, gone)
 gone.files[OPTIONS] = nil

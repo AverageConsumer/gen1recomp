@@ -37,6 +37,13 @@
 
 #include "filesystem/physfs/PhysfsIo.h"
 
+// #604 / #839: the SAF bridges below must hand GameActivity the exact
+// directory physfs mounted as the save dir -- the same contract the iOS
+// GRPickerBridge already gets (mobile/ios/patch_love_src.py,
+// gr_saveDirectory) -- instead of letting Java recompute the root on its
+// own, which can name a different volume on merged / adopted-SD storage.
+#include "filesystem/Filesystem.h"
+
 namespace love
 {
 namespace android
@@ -183,6 +190,19 @@ void vibrate(double seconds)
 	env->DeleteLocalRef(activity);
 }
 
+// The directory physfs actually mounted as the save dir, or "" before the
+// filesystem module is up.  GameActivity must copy SAF picks HERE: its own
+// getExternalFilesDir(null) recomputation can disagree with the mounted
+// root on merged / adopted-SD storage (#604, #839).
+static const char *bridgeSaveDirectory()
+{
+	auto fs = Module::getInstance<love::filesystem::Filesystem>(Module::M_FILESYSTEM);
+	if (fs == nullptr)
+		return "";
+	const char *dir = fs->getSaveDirectory();
+	return dir != nullptr ? dir : "";
+}
+
 bool showFilePicker(const char *destFilename)
 {
 	if (destFilename == nullptr || destFilename[0] == '\0')
@@ -192,9 +212,11 @@ bool showFilePicker(const char *destFilename)
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
 
 	jmethodID method = env->GetStaticMethodID(activity, "showFilePicker",
-		"(Ljava/lang/String;)Z");
+		"(Ljava/lang/String;Ljava/lang/String;)Z");
 	jstring jname = env->NewStringUTF(destFilename);
-	jboolean result = env->CallStaticBooleanMethod(activity, method, jname);
+	jstring jsavedir = env->NewStringUTF(bridgeSaveDirectory());
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jname, jsavedir);
+	env->DeleteLocalRef(jsavedir);
 	env->DeleteLocalRef(jname);
 
 	env->DeleteLocalRef(activity);
@@ -210,9 +232,11 @@ bool showCreateDocument(const char *suggestedName)
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
 
 	jmethodID method = env->GetStaticMethodID(activity, "showCreateDocument",
-		"(Ljava/lang/String;)Z");
+		"(Ljava/lang/String;Ljava/lang/String;)Z");
 	jstring jname = env->NewStringUTF(suggestedName);
-	jboolean result = env->CallStaticBooleanMethod(activity, method, jname);
+	jstring jsavedir = env->NewStringUTF(bridgeSaveDirectory());
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jname, jsavedir);
+	env->DeleteLocalRef(jsavedir);
 	env->DeleteLocalRef(jname);
 
 	env->DeleteLocalRef(activity);

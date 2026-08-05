@@ -700,8 +700,14 @@ do
 end
 
 -- issue #133: title menu / continue overlays must not inherit LOGO2/LOGO1
--- (blue/red UI ink).  A trailing trueColor zone covers the overlay box.
+-- (blue/red UI ink).  A trailing GRAYS zone covers the overlay box: through
+-- the shade-remap shader it is the identity for the box's DMG shades, so
+-- pass-through modes keep #133's white paper / black ink, while the mono
+-- and inverted display modes still recolor it with the rest of the screen
+-- (a trueColor rect skipped the shader and left a raw white hole over a
+-- CLASSIC pea-green title, #870).
 do
+  local PaletteFX = require("src.render.PaletteFX")
   local logo2 = {
     { 255, 255, 255 }, { 230, 197, 0 }, { 148, 156, 148 }, { 41, 99, 181 },
   }
@@ -730,8 +736,8 @@ do
   menu.titleUiBox = { 0, 0, 12, 3 }
   game.stack:push(menu)
   local withMenu = TitleState.sgbPalettes(title, game)
-  check(withMenu and #withMenu == 4 and withMenu[4].colors == false,
-        "title menu adds a trueColor overlay zone")
+  check(withMenu and #withMenu == 4 and withMenu[4].colors == PaletteFX.GRAYS,
+        "title menu adds a DMG-grays overlay zone (#870)")
   check(withMenu[4].x == 0 and withMenu[4].y == 0
         and withMenu[4].w == 13 * 8 and withMenu[4].h == 4 * 8,
         "menu overlay covers the CONTINUE/NEW GAME box")
@@ -739,8 +745,8 @@ do
   game.stack:pop()
   game.stack:push({ titleUiBox = { 4, 7, 19, 16 } })
   local withCont = TitleState.sgbPalettes(title, game)
-  check(withCont and #withCont == 4 and withCont[4].colors == false,
-        "continue-info overlay adds a trueColor zone")
+  check(withCont and #withCont == 4 and withCont[4].colors == PaletteFX.GRAYS,
+        "continue-info overlay adds a DMG-grays zone (#870)")
   check(withCont[4].x == 4 * 8 and withCont[4].y == 7 * 8
         and withCont[4].w == 16 * 8 and withCont[4].h == 10 * 8,
         "continue overlay matches DisplayContinueGameInfo's box")

@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.71",
+          "date": "2026-08-05",
+          "size": 9569738,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.71/gen1recomp-0.1.71-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #806 Haptic Feedback for On-screen controls (mobile)\n- #809 NPC Stuck in Rock when battle triggered and pushing rock towards it\n- #853 When selecting one of the two pokemon after defeating the Karate Master it should show the Pokedex entry\n- #854 Textbox disappears when the yes/no dialogue appears\n- #860 Disabled moves can still be used in the turn they were disabled\n- #862 Casino Poster Rocket Grunt walks into the poster and doesn't \"Dang!\"\n- #865 [Yellow] James doesn't move in multiple encounters\n- #866 [Yellow] Dialogue in wrong \"order\" after multiple encounters (J+J, Giovanni, probably more)\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.1.70",
           "date": "2026-08-05",
           "size": 9562731,

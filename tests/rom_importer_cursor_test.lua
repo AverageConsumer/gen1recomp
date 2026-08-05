@@ -45,4 +45,12 @@ ri:play("red")
 eq(booted, "red", "unsupported system cursors still allow boot")
 eq(currentCursor, "hand", "unsupported system cursors leave the existing cursor alone")
 
+-- #781: a host-forwarded real mouse press must win the pointer back from
+-- the pad cursor.  While it is active LauncherView.update refuses to mint
+-- mouse clicks, so a stuck motion yield (X11 multi-monitor polled coords)
+-- left the Linux launcher mouse-dead until this reclaim existed.
+ri._padCursorActive = true
+ri:mousepressed(10, 10, 1)
+eq(ri._padCursorActive, false, "mouse press yields the pad cursor (#781)")
+
 S.finish()

@@ -2410,10 +2410,18 @@ function RomImporter:runActions(queue)
 end
 
 -- Clicks are polled inside FlexLove (mouse + love.touch); host-forwarded
--- mousepressed stays inert so Android's synthesized mouse path cannot
--- double-fire a tap (#553).  Touch move/press/release must still reach
+-- mousepressed mints no click, so Android's synthesized mouse path cannot
+-- double-fire a tap (#553).  It DOES hand the pointer back from the pad
+-- cursor (#781): a Linux boot with a joystick present arms it (see the
+-- getJoystickCount block in new()), and while it is active
+-- LauncherView.update refuses to mint mouse clicks, so a real press must
+-- win the pointer back even when the polled motion yield misses (X11
+-- multi-monitor coords).  Same contract as PadCursor.yieldToPointer for
+-- the overlay hosts.  Touch move/press/release must still reach
 -- FlexLove.touch* or scroll containers never drag on phones.
-function RomImporter:mousepressed() end
+function RomImporter:mousepressed()
+  self._padCursorActive = false
+end
 
 function RomImporter:touchpressed(id, x, y, dx, dy, pressure)
   if not self._flex then return end

@@ -151,9 +151,27 @@ M.POKEMON_TOWER_6F = {
         -- trick, and the speedrun route this bot follows depends on it.
         if result == "win" or battle.pokeDollEscape then
           game.save.flags.EVENT_BEAT_GHOST_MAROWAK = true
-          game.stack:push(TextBox.new(game,
-            t._PokemonTower6FSoulWasCalmedText
-            or "The mother's soul\nwas calmed.\012It departed to\nthe afterlife!"))
+          -- PokemonTower6FMarowakDepartedText (scripts/PokemonTower6F.asm)
+          -- is two texts, not one: the CUBONE's-mother line first, then
+          -- PlayCry RESTLESS_SOUL (EQU MAROWAK, constants/pokemon_constants
+          -- .asm:209) + WaitForSoundToFinish + DelayFrames 30 before the
+          -- calmed line; the port dropped the first text and the cry
+          -- (#867).  play_cry arms the next show_text, so the cry rides
+          -- the calmed box's open with the button prompt kept, and the
+          -- wait row stands in for the asm's 30-frame gap.
+          local rows = {
+            { "show_text", t._PokemonTower6FGhostWasCubonesMotherText
+              or "The GHOST was the\nrestless soul of\vCUBONE's mother!" },
+            { "play_cry", "MAROWAK", true },
+            { "wait", 30 },
+            { "show_text", t._PokemonTower6FSoulWasCalmedText
+              or "The mother's soul\nwas calmed.\012It departed to\nthe afterlife!" },
+          }
+          if ow.runner then
+            ow.runner:run(rows)
+          elseif ow.queueScript then
+            ow:queueScript(rows)
+          end
         elseif result ~= "lose" then
           -- .did_not_defeat: one simulated step right, off the trigger,
           -- so fleeing does not leave you standing on a cell that

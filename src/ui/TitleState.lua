@@ -68,7 +68,14 @@ function TitleState:sgbPalettes(game)
   local top = game.stack and game.stack:top()
   local box = top and top.titleUiBox
   if box then
-    z[#z + 1] = P.trueColorZone(box[1], box[2], box[3], box[4])
+    -- A DMG-grays zone, not the trueColor opt-out: through the shade-remap
+    -- shader GRAYS is the identity for the box's four shades, so SGB /
+    -- ADVANCED / OG modes keep #133's white paper and black ink exactly,
+    -- while effectiveColors still substitutes the mono and inverted display
+    -- modes -- a trueColor rect skipped the shader entirely, leaving the
+    -- main menu and CONTINUE info box a raw white hole over a CLASSIC
+    -- pea-green title instead of matching it like the START menu does (#870).
+    z[#z + 1] = P.zone(P.GRAYS, box[1], box[2], box[3], box[4])
   end
   return z[3] and z or nil
 end

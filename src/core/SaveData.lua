@@ -417,6 +417,18 @@ function SaveData.saveOptions(opts, fs)
       #encoded, type(wrote) == "string" and tostring(#wrote) or "nothing")
     return nil
   end
+  -- #828: roll the backup FORWARD to the bytes just verified.  The
+  -- pre-write roll above only preserves the previous file for a death
+  -- during this rewrite; at rest the backup must hold the newest verified
+  -- state, because the hard teardown out of a game session (HostShell's
+  -- restartApp kill on Android, execv on a SteamOS AppImage) can eat the
+  -- main file outright and loadOptions then promotes this copy.  The
+  -- encoder is key-sorted, so the follow-up rewrites a play session makes
+  -- (play()'s lastVersion stamp, the in-game save flush) are byte-identical
+  -- and skip the conditional roll -- without this line the backup still
+  -- held the file from BEFORE the launcher's change, and recovery reverted
+  -- the just-changed setting (BATTLE LAYOUT back to OG).
+  fs.write(OPTIONS_BACKUP_FILENAME, encoded)
   -- the staged witness has served its purpose; the main file is verified
   remove(fs, OPTIONS_TMP_FILENAME)
   return opts

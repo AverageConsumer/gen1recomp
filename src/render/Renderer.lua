@@ -820,8 +820,13 @@ function Renderer:endFrame(zones, worldZones)
     -- non-battle state that opts in) uses the paper shade.  "world" never
     -- reaches here -- it makes the battle non-opaque, so the world pass is
     -- active and this whole branch is skipped.
+    -- FAITHFUL RATIO's mobile lock promises the display outside the GB
+    -- screen stays black (src/core/FaithfulRes.lua); the paper surround
+    -- painted the whole phone white on New Game and in battle (#864), so
+    -- the lock keeps the default black bars.
     if state and state.letterboxWhite
-       and not (state.bgMode and state:bgMode() == "black") then
+       and not (state.bgMode and state:bgMode() == "black")
+       and not FaithfulRes.scaleCap() then
       clearR, clearG, clearB = PaletteFX.paperShade(Game and Game.data)
     end
   end
@@ -1029,7 +1034,17 @@ function Renderer:endFrame(zones, worldZones)
   local veil = self.screenVeil
   if veil and veil[2] > 0 then
     love.graphics.setColor(veil[1], veil[1], veil[1], veil[2])
-    love.graphics.rectangle("fill", 0, 0, ww, wh)
+    -- FAITHFUL RATIO's mobile lock: the surface the player sees is the
+    -- locked viewport and the bars around it are dead display, not screen
+    -- (src/core/FaithfulRes.lua).  A whole-window veil lit the entire phone
+    -- for the battle flash and the post-battle fade (#864), so under the
+    -- lock the veil stops at the letterbox.  The desktop lock is unaffected:
+    -- there the window IS the viewport.
+    if FaithfulRes.scaleCap() then
+      love.graphics.rectangle("fill", ox, oy, vpw, vph)
+    else
+      love.graphics.rectangle("fill", 0, 0, ww, wh)
+    end
     love.graphics.setColor(1, 1, 1, 1)
   end
 

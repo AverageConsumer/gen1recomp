@@ -44,6 +44,19 @@ local DATA_MODULES = {
   maps       = { "data.generated.maps",             "data/generated/maps.lua" },
   charmap    = { "src.save_convert.data.charmap",   "src/save_convert/data/charmap.lua" },
   eventFlags = { "src.save_convert.data.event_flags", "src/save_convert/data/event_flags.lua" },
+  toggleObjects = { "src.save_convert.data.toggle_objects", "src/save_convert/data/toggle_objects.lua" },
+}
+
+-- Yellow renumbers wEventFlags bits: pokeyellow's constants/event_constants.asm
+-- inserts events pokered does not have (the Jessie & James fights, catch
+-- training, the Officer Jenny Squirtle) and shifts the Mt Moon 3 / Silph Co
+-- 11F block, so writing a Yellow save through the Red table lands bits on the
+-- wrong events and drops every Yellow-only flag.  Kept outside DATA_MODULES so
+-- the ensureData loop never loads it as a crosswalk of its own -- it
+-- substitutes for `eventFlags` when the caller names Yellow (#838).
+local YELLOW_EVENT_FLAGS = {
+  "src.save_convert.data.event_flags_yellow",
+  "src/save_convert/data/event_flags_yellow.lua",
 }
 
 local function loadTable(requirePath, filePath)
@@ -112,6 +125,9 @@ local function ensureData(gameVersion)
     local data = {}
     for name, spec in pairs(DATA_MODULES) do
       if name ~= "charmap" then
+        if name == "eventFlags" and gameVersion == "yellow" then
+          spec = YELLOW_EVENT_FLAGS -- Yellow's bit numbering differs (#838)
+        end
         local mod = loadCacheTable(gameVersion, spec[2])
         if not mod then
           local e
@@ -121,6 +137,10 @@ local function ensureData(gameVersion)
         data[name] = mod
       end
     end
+    -- record which game's tables these are: the codec gates Yellow-only
+    -- bytes (wPikachuFriendship) on it, since those offsets are map
+    -- scratch in Red/Blue (#763, #838)
+    data.gameVersion = gameVersion
     crosswalks[key] = data
   end
   if not charmapReady then

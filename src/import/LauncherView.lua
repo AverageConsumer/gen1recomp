@@ -2200,7 +2200,15 @@ end
 -- pinned Play block used to walk up over the cards on a short window, which
 -- is unusable, and the footer simply lives below the fold until scrolled to.
 local function minPanelHeight(m)
-  return math.floor(460 * m.s)
+  -- One column stacks the actions card, the slot card and the pinned Play
+  -- block in a single pile, so it needs more room than the side-by-side
+  -- layout: 460 was tuned for two columns, and on a squat one-column window
+  -- (a 4:3 device, a phone held upright) it left the slot card clipped
+  -- inert against the pinned buttons -- Kit's clip bounds hit-testing, so
+  -- no slot could be picked at all (#852).  660 fits the actions card, one
+  -- slot row with its pager and New button, and the pinned block; whatever
+  -- the window cannot show, the page scroll above reaches.
+  return math.floor((m.twoCol and 460 or 660) * m.s)
 end
 
 function LauncherView.draw(imp)
