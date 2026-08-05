@@ -13,6 +13,20 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.70",
+          "date": "2026-08-05",
+          "size": 9562731,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.70/gen1recomp-0.1.70-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #590 Launcher/Save Editor/Dex\n- #788 Fly to the Pokemon Centers in the Routes is not available in original\n- #795 Fly logic is drastically different from the originals.\n- #796 Using Rare Candy from the menu closes it out.\n- #797 Gym Leaders giving items when your bag is full / Bypassing bag limit.\n- #805 Escape Rope Moltres Tower\n- #826 \"Super effective\" and \"not very effective\" SFX are reversed\n- #833 Cancelling nickname entry results in \"A\" as the nickname\n- #835 Restarting the launcher forgets the last rom used\n- #837 Wrong sound effect for Pikachu when entering battle\n- #844 Blizzard sound effect.\n- #845 Moderate issue: Fuchsia City binoculars.\n- #846 Surfing speed after using the bicycle.\n- #847 Minor issues related to the endgame.\n\n## Contributors\n\n- @bryanthaboi\n- @dburton95\n- @johnjohto\n- @KikiManjaro"
+        },
+        {
+          "version": "0.1.69",
+          "date": "2026-08-04",
+          "size": 9552851,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.69/gen1recomp-0.1.69-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #768 Menu behaviour for Pokemon and HM moves\n- #785 Back to launcher\n- #792 HM moves in the wrong position in the menu.\n- #807 Expose gameplay pointer events and source-safe mod input injection\n- #811 Untranslatables\n- #814 [minor thing] bold arrow on move swap (select)\n\n## Contributors\n\n- @bryanthaboi\n- @johnjohto"
+        },
+        {
           "version": "0.1.68",
           "date": "2026-08-04",
           "size": 9768011,

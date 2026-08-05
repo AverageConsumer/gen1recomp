@@ -3,7 +3,8 @@
 --   BUG1 gate       -- the master stops the player on the tile to his left
 --   BUG2 no speech  -- no won text + no prize dialogue after the win
 --   BUG3 wrong re-talk -- shows the pre-battle challenge, not the after line
---   BUG4 (verify)   -- the ball ask() is the Gen1 descriptor, not a dex entry
+--   BUG4 (verify)   -- the ball ask() is the Gen1 descriptor, shown after
+--                      the species' dex entry (DisplayPokedex)
 --   BUG5 both balls -- the chosen ball AND the other one both vanish; the
 --                      other should stay and give the "greedy" refusal
 --   BUG6 poster     -- the north-wall posters ("Enemies on every side!") are
@@ -163,8 +164,9 @@ return function(game)
   mashUntil(function() return game.stack:top() == ow end)
 
   ------------------------------------------------------------------
-  -- BUG4 (verify-only): the Hitmonlee ball prompt is the Gen1 descriptor
-  -- ("You want the hard kicking HITMONLEE?"), not a Pokedex entry screen.
+  -- BUG4 (verify-only): the Hitmonlee ball shows the species' Pokedex
+  -- entry first (DisplayPokedex, #853), then the Gen1 descriptor prompt
+  -- ("You want the hard kicking HITMONLEE?").
   ------------------------------------------------------------------
   ow = resetDojo(4, 2, "up", { EVENT_BEAT_KARATE_MASTER = true })
   local leeBall = npcByName(ow, "FIGHTINGDOJO_HITMONLEE_POKE_BALL")
@@ -173,7 +175,7 @@ return function(game)
   if leeBall then
     ow:talkTo(leeBall)
     check(sawText("hard kicking") or sawText("HITMONLEE"),
-      "BUG4: ball asks the Gen1 descriptor prompt (no dex entry)")
+      "BUG4: ball asks the Gen1 descriptor prompt after the dex entry")
     U.shot(game, DIR .. "/dojo_4_prompt.png")
     ------------------------------------------------------------------
     -- BUG5: choose YES -> only the chosen ball vanishes; the other stays

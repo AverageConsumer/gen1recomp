@@ -190,6 +190,18 @@ local function checksum(bytes, from, to)
   return bit.band(bit.bnot(sum), 0xFF)
 end
 
+-- Main-data checksum gate used before an import policy is decided.  Returns
+-- nil when the buffer is too short to even carry the stored checksum byte
+-- (offset O.mainChecksum, the last byte of wMainData), false on a mismatch,
+-- true when it matches.  Works on any length >= O.mainChecksum + 1, so a
+-- caller can classify a truncated or footer-padded file without a full
+-- decode -- the checksummed region (0x2598..0x3522) always sits entirely
+-- inside the first 0x3524 bytes of a save.
+function GenSave.mainChecksumValid(bytes)
+  if #bytes < O.mainChecksum + 1 then return nil end
+  return checksum(bytes, O.checksumStart, O.checksumEnd) == u8(bytes, O.mainChecksum)
+end
+
 -- flag_array packs LSB-first within each byte (bit 0 of byte 0 = index 0).
 -- This is pokered's runtime FlagAction convention (home/predef macros): it
 -- takes flag number N, addresses byte N/8, and builds the mask by rotating

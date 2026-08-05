@@ -517,6 +517,14 @@ M.GAME_CORNER = {
         done()
         return
       end
+      -- GameCornerRocketText hands the battle its own loss line through
+      -- SaveEndBattleTextPointers (.BattleEndText ->
+      -- _GameCornerRocketBattleEndText, "Dang!"), and PrintEndBattleText
+      -- prints it ON the battle screen between TrainerDefeatedText and
+      -- MoneyForWinningText (engine/battle/core.asm TrainerBattleVictory).
+      -- He is a text_asm trainer with no def_trainers header, so there is no
+      -- header.won for engageTrainer to find and the line has to be handed
+      -- over here or it never shows at all (#862).
       ow:engageTrainer(npc, function()
         if not ow:trainerDefeated(npc) then
           done()
@@ -527,19 +535,44 @@ M.GAME_CORNER = {
           game.data.text._GameCornerRocketAfterBattleText
           or "Our hideout might\nbe discovered! I\nbetter tell BOSS!",
           function()
-            -- #198: GameCornerRocketExitScript (scripts/GameCorner.asm)
-            -- ApplyMovementData walks the grunt one tile UP into the poster
-            -- (the hideout's secret entrance at 9,4) before HideObject, so
-            -- he leaves the floor rather than popping out of existence on
-            -- (9,5).  scriptMove locks player input (#scriptMoves>0) and
-            -- ignores collision, so we despawn + unfreeze (done) only once
-            -- the step lands.
-            ow:scriptMove(npc, "up", 1, function()
-              hideRocket()
-              done()
-            end)
+            -- #198/#862: GameCornerRocketBattleScript (scripts/GameCorner.asm)
+            -- picks the exit walk from where the player is standing, because
+            -- the grunt on (9,5) has to get past him: wYCoord == 6 (talked to
+            -- from the south) or wXCoord == 8 (from the west) leaves the row
+            -- clear and takes GameCornerMovement_Rocket_WalkDirect, five steps
+            -- RIGHT; otherwise the player is east of him on (10,5) and
+            -- GameCornerMovement_Rocket_WalkAroundPlayer steps DOWN, right, UP
+            -- and right again to go AROUND him.  pokeyellow's copy of the
+            -- around-path takes one extra RIGHT on the lower row before coming
+            -- back up (it also has to clear Pikachu); both versions end on
+            -- (15,5).  He never steps UP: (9,4) is the poster wall, which is
+            -- where the old single UP step sent him.
+            local px = ow.player and ow.player.cellX
+            local py = ow.player and ow.player.cellY
+            local path
+            if py == 6 or px == 8 then
+              path = { { "right", 5 } }
+            elseif require("src.core.GameVersion").isYellow() then
+              path = { { "down", 1 }, { "right", 3 }, { "up", 1 }, { "right", 3 } }
+            else
+              path = { { "down", 1 }, { "right", 2 }, { "up", 1 }, { "right", 4 } }
+            end
+            -- GameCornerRocketExitScript only HideObjects him once
+            -- BIT_SCRIPTED_NPC_MOVEMENT clears, i.e. after the last step.
+            -- scriptMove locks player input (#scriptMoves>0) and ignores
+            -- collision, so the despawn + unfreeze (done) ride the final step.
+            local function step(i)
+              if i > #path then
+                hideRocket()
+                done()
+                return
+              end
+              ow:scriptMove(npc, path[i][1], path[i][2],
+                            function() step(i + 1) end)
+            end
+            step(1)
           end))
-      end)
+      end, game.data.text._GameCornerRocketBattleEndText or "Dang!")
     end,
     -- GameCornerClerk1Text (scripts/GameCorner.asm): the offer, a
     -- YesNoChoice, then ¥1000 for 50 coins.  Yellow drops the "1" from the

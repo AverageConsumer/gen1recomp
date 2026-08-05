@@ -1,6 +1,7 @@
 -- Hall of Fame induction (engine/movie/hall_of_fame.asm): each party
--- member's front sprite scrolls onto the right side of the screen
--- (HoFShowMonOrPlayer's .ScrollPic), then HoFDisplayMonInfo draws the
+-- member's back sprite sweeps across the screen and its front sprite then
+-- scrolls onto the right side (HoFShowMonOrPlayer's two .ScrollPic passes,
+-- #847), then HoFDisplayMonInfo draws the
 -- left-side LEVEL/TYPE box, plays the cry, holds, and pops the bottom
 -- "HALL OF FAME" text box before fading to the next mon.  After the
 -- party, the player pic scrolls in and HoFDisplayPlayerStats shows the
@@ -41,6 +42,25 @@ end
 local SCROLL_SPEED = 4 -- px/frame @ 60fps
 local PIC_X, PIC_Y = 12 * 8, 5 * 8
 
+-- The BACK pic pass that runs in front of every front pic (#847).
+-- HoFShowMonOrPlayer loads the back pic (predef LoadMonBackPic, or
+-- RedPicBack through HoFLoadPlayerPics) into the same 7x7 window at
+-- hlcoord 12,5, points the tilemap at base tile $31, and sweeps hSCX from
+-- $c0 to $a0 at e = 4 -- in screen pixels the pic enters at x = 160 and
+-- leaves at x = -64, 56 frames.  Only then is the window re-pointed at the
+-- front pic (base tile 0) with hSCY back to 0 and e = -4, so the front pic
+-- starts at x = -64 rather than at its own width.
+-- hSCY = $d0 during the back pass puts the window's top row at y = 88, so
+-- its 7 tiles sit flush with the bottom of the screen.  ScaleSpriteByTwo
+-- (engine/battle/scale_sprites.asm) doubles the 32x32 back sprite into that
+-- 7x7 = 56x56 buffer with the last 4 source rows and the last source column
+-- dropped, so what shows is the sprite's top-left 28x28 at 2x.
+local BACK_START_X, BACK_END_X = 160, -64
+local BACK_Y = 88
+local BACK_SCALE = 2
+local BACK_CROP = 28
+local FRONT_START_X = -64
+
 -- After HoFDisplayAndRecordMonInfo: 80 DelayFrames, then the bottom
 -- HALL OF FAME box for 180 DelayFrames, then GBFadeOutToWhite.
 local INFO_HOLD = 80
@@ -74,6 +94,8 @@ function HallOfFame.new(game, onDone)
   self.phase = "mons"
   self.sprites = {} -- species -> image or false
   self.spriteTrueColor = {} -- species -> full-color art flag (#637)
+  self.backs = {} -- species (or "@player") -> back image or false (#847)
+  self.backTrueColor = {}
   local playerPath, playerTrueColor =
     require("src.pokemon.Sprites").playerPath(
       game.data, "front", { kind = "hof" })
@@ -98,20 +120,14 @@ function HallOfFame:nextMon()
   local mon = self.game.save.party[self.index]
   self.showHofBanner = false
   self.fade = 0
-  if mon then
-    self.phase = "mons"
-    self.timer = INFO_HOLD
-    Sound.playCry(self.game.data, mon.species)
-    local sprite = self:spriteFor(mon.species)
-    local w = sprite and sprite:getWidth() or 56
-    self.scrollX = -w
-  else
-    -- HoFShowMonOrPlayer with wHoFMonOrPlayer = player
-    self.phase = "player"
-    self.timer = 0
-    local w = self.playerPic and self.playerPic:getWidth() or 56
-    self.scrollX = -w
-  end
+  self.backQuad = nil
+  -- HoFShowMonOrPlayer runs the back pic sweep for a party member and for
+  -- the player alike (wHoFMonOrPlayer only picks which pics get loaded), so
+  -- both enter through the "back" phase and the front pic follows it (#847)
+  self.phase = "back"
+  self.afterBack = mon and "mons" or "player"
+  self.timer = 0
+  self.scrollX = BACK_START_X
 end
 
 function HallOfFame:spriteFor(species)
@@ -124,6 +140,30 @@ function HallOfFame:spriteFor(species)
     self.spriteTrueColor[species] = cached and trueColor or false
   end
   return cached or nil
+end
+
+-- The back pic for the pass ahead of the current front pic: the party
+-- member's own back sprite (predef LoadMonBackPic), or RedPicBack once the
+-- party is done (HoFLoadPlayerPics).  Cached like spriteFor (#847).
+function HallOfFame:backPicFor()
+  local mon = self.game.save.party[self.index]
+  local key = mon and mon.species or "@player"
+  local cached = self.backs[key]
+  if cached == nil then
+    local Sprites = require("src.pokemon.Sprites")
+    local path, trueColor
+    if mon then
+      path, trueColor = Sprites.path(self.game.data, mon.species, "back",
+                                     { kind = "hof" })
+    else
+      path, trueColor = Sprites.playerPath(self.game.data, "back",
+                                           { kind = "hof" })
+    end
+    cached = tryImage(path) or false
+    self.backs[key] = cached
+    self.backTrueColor[key] = cached and trueColor or false
+  end
+  return cached or nil, self.backTrueColor[key]
 end
 
 -- HoFDisplayPlayerStats' DisplayDexRating tally (also
@@ -154,9 +194,28 @@ function HallOfFame:update(dt)
   local input = self.game.input
   local skip = input:wasPressed("a")
 
+  -- .ScrollPic with d = $a0, e = 4: the back pic crosses the screen right to
+  -- left and is gone before the front pic starts.  Both scrolls are plain
+  -- DelayFrame loops in the ROM, so neither takes a button (#847).
+  if self.phase == "back" then
+    self.scrollX = self.scrollX - SCROLL_SPEED
+    if self.scrollX <= BACK_END_X then
+      self.phase = self.afterBack
+      self.timer = self.phase == "mons" and INFO_HOLD or 0
+      self.scrollX = FRONT_START_X
+    end
+    return
+  end
+
   if self.phase == "mons" or self.phase == "fade" then
     if self.phase == "mons" and self.scrollX < PIC_X then
       self.scrollX = math.min(PIC_X, self.scrollX + SCROLL_SPEED)
+      -- PlayCry is the tail of HoFDisplayMonInfo, which runs only after
+      -- HoFShowMonOrPlayer's two scrolls have both settled (#847)
+      if self.scrollX >= PIC_X then
+        local mon = self.game.save.party[self.index]
+        if mon then Sound.playCry(self.game.data, mon.species) end
+      end
       return
     end
     if self.phase == "fade" then
@@ -277,6 +336,27 @@ function HallOfFame:drawPic(img, trueColor)
   end
 end
 
+-- The back pic sweep (see the BACK_* constants): the same 7x7 window as the
+-- front pic, one screen lower, cropped to the 28x28 ScaleSpriteByTwo keeps.
+function HallOfFame:drawBackPic()
+  local img, trueColor = self:backPicFor()
+  if not img then return end
+  local w = math.min(img:getWidth(), BACK_CROP)
+  local h = math.min(img:getHeight(), BACK_CROP)
+  if not self.backQuad then
+    self.backQuad = love.graphics.newQuad(0, 0, w, h, img:getDimensions())
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(img, self.backQuad, self.scrollX, BACK_Y, 0,
+                     BACK_SCALE, BACK_SCALE)
+  -- same whole-screen palette exemption the front pic takes (#637)
+  if trueColor then
+    require("src.render.PaletteFX").markTrueColor(self.scrollX, BACK_Y,
+                                                 w * BACK_SCALE,
+                                                 h * BACK_SCALE)
+  end
+end
+
 -- HoFDisplayPlayerStats boxes + labels (player pic already on the right)
 function HallOfFame:drawPlayerStats()
   local save = self.game.save
@@ -301,7 +381,9 @@ function HallOfFame:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
 
-  if self.phase == "mons" or self.phase == "fade" then
+  if self.phase == "back" then
+    self:drawBackPic()
+  elseif self.phase == "mons" or self.phase == "fade" then
     local mon = self.game.save.party[self.index]
     if mon then
       self:drawPic(self:spriteFor(mon.species),

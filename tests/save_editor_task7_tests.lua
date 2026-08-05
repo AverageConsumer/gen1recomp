@@ -39,6 +39,7 @@ print("== save editor task 7 tests (Events + Dex) ==")
 
 local Ops = require("Ops")
 local State = require("State")
+local Catalog = require("Catalog")
 
 local function newState()
   local S = State.new()
@@ -207,6 +208,119 @@ do
   eq(S.armed, nil, "an unrelated mutation disarms the pending confirmation")
   local _, owned = Ops.dexCounts(S)
   check(owned > 0, "the dex was not wiped by the unrelated click")
+end
+
+-- Dex sort -----------------------------------------------------------
+
+do
+  -- Ops.dexList orders the grid by the active mode.  This block drives the
+  -- real generated data (State.new alone carries no Data), so the vanilla
+  -- 1-151 numbering is what the "dex" mode asserts against.
+  local Data = require("src.core.Data")
+  Data:load()
+  local S = State.new()
+  S.data = Data
+  S.cat = Catalog.build(Data)
+  S.save = require("src.core.SaveData").newGame()
+
+  -- default mode is "dex": number order
+  eq(S.dexSort, "dex", "a fresh state sorts the dex by number by default")
+  local byDex = Ops.dexList(S)
+  eq(#byDex, #S.cat.species, "dexList covers every species")
+  eq(byDex[1], "BULBASAUR", "dex order starts at #1")
+  eq(byDex[4], "CHARMANDER", "dex order puts Charmander fourth")
+  eq(byDex[25], "PIKACHU", "dex order puts Pikachu at #25")
+  eq(byDex[151], "MEW", "dex order ends at #151")
+
+  -- "name" mode: alphabetical by display name
+  Ops.dexSort(S, "name")
+  eq(S.dexSort, "name", "dexSort switches the mode")
+  local byName = Ops.dexList(S)
+  eq(#byName, #S.cat.species, "the name sort covers every species too")
+  eq(byName[1], "ABRA", "the name sort leads with ABRA")
+  local sorted = true
+  for i = 2, #byName do
+    local a = S.data.pokemon[byName[i - 1]]
+    local b = S.data.pokemon[byName[i]]
+    local an = (a and a.name or byName[i - 1]):lower()
+    local bn = (b and b.name or byName[i]):lower()
+    if an > bn then sorted = false break end
+  end
+  check(sorted, "the name sort is alphabetical over display names")
+  local mi = nil
+  for i, id in ipairs(byName) do
+    if id == "MEW" then mi = i
+    elseif id == "MR_MIME" and mi then
+      check(i > mi, "MEW sorts before MR.MIME in the name sort")
+    end
+  end
+  local fIdx, mIdx = nil, nil
+  for i, id in ipairs(byName) do
+    if id == "NIDORAN_F" then fIdx = i elseif id == "NIDORAN_M" then mIdx = i end
+  end
+  check(fIdx and mIdx and fIdx < mIdx, "NIDORAN_F sorts before NIDORAN_M")
+
+  -- switching back to the number order restores the original sequence
+  Ops.dexSort(S, "dex")
+  local back = Ops.dexList(S)
+  eq(back[1], "BULBASAUR", "switching back restores number order")
+end
+
+do
+  -- the switch is view-only: it resets the grid scroll but never dirties the
+  -- save, and a re-click on the active mode is a narrated no-op
+  local S = newState()
+  S.data = { pokemon = { BULBASAUR = { dex = 1, name = "BULBASAUR" },
+                         CHARMANDER = { dex = 4, name = "CHARMANDER" },
+                         PIKACHU = { dex = 25, name = "PIKACHU" },
+                         SQUIRTLE = { dex = 7, name = "SQUIRTLE" } } }
+  S.cat = { species = { "BULBASAUR", "CHARMANDER", "SQUIRTLE", "PIKACHU" },
+            items = {}, moves = {} }
+  S.dexOffset = 9
+  S.dirty = false
+
+  check(Ops.dexSort(S, "name") == true, "dexSort switches the mode without dirtying")
+  eq(S.dirty, false, "a sort never dirties the save")
+  eq(S.dexOffset, 0, "changing the sort resets the grid scroll")
+  eq(S.status, "", "a sort leaves the status bar alone")
+
+  S.dexOffset = 4
+  check(Ops.dexSort(S, "name") == false, "re-clicking the active mode is a no-op")
+  eq(S.dexOffset, 4, "a no-op sort leaves the scroll alone")
+  eq(S.dirty, false, "a no-op sort does not dirty either")
+  eq(S.status, "", "a no-op sort does not narrate either")
+
+  check(Ops.dexSort(S, "bogus") == false, "an unknown mode is refused")
+  eq(S.dexSort, "name", "a refused mode leaves the sort unchanged")
+
+  -- the keyed list sorts against this mini dataset too
+  local byDex = Ops.dexList(S)
+  eq(byDex[1], "BULBASAUR", "mini-catalog dex order is #1 first")
+  eq(byDex[2], "CHARMANDER", "mini-catalog dex order is #4 second")
+  Ops.dexSort(S, "name")
+  eq(Ops.dexList(S)[1], "BULBASAUR", "mini-catalog name order leads with BULBASAUR")
+end
+
+do
+  -- robustness: a mod-shaped partial record (no name, no dex) must not crash
+  -- the sort or disappear from the grid -- it just sorts last
+  local S = newState()
+  S.data = { pokemon = { BULBASAUR = { dex = 1, name = "BULBASAUR" },
+                         PARTIAL = { baseStats = { hp = 40 } } } }
+  S.cat = { species = { "BULBASAUR", "PARTIAL" }, items = {}, moves = {} }
+
+  local byDex = Ops.dexList(S)
+  eq(#byDex, 2, "a partial record still appears in the dex order")
+  eq(byDex[2], "PARTIAL", "a record without a dex number sorts last")
+
+  Ops.dexSort(S, "name")
+  local byName = Ops.dexList(S)
+  eq(#byName, 2, "a partial record still appears in the name order")
+  eq(byName[2], "PARTIAL", "a record without a name sorts last, by its id")
+
+  -- and with no data/catalog at all, the list degrades to empty, not nil
+  local bare = State.new()
+  eq(#Ops.dexList(bare), 0, "a state with no catalog yields an empty list")
 end
 
 print(string.format("save editor task 7 tests: %d passed, %d failed", passed, failed))

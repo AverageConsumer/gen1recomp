@@ -332,6 +332,26 @@ one used sideways. An `options.lua` from before this split keeps its single
 layout in both orientations until one of them is edited. In-game, Options →
 **TOUCH PAD** toggles the same on/off flag without leaving a play session.
 
+## Haptic feedback (mobile)
+
+Options → **VIBRATION** (also in the launcher's gear menu) buzzes the device
+the instant an on-screen control takes a button (#806). A glass pad has no
+edges under a thumb, so the pulse is what tells you the press landed:
+sliding the d-pad from one direction to the next buzzes again, a second
+finger landing on a button that is already held does not, and releasing
+never does.
+
+Four levels: **OFF**, **LIGHT** (the default), **MEDIUM**, **HEAVY**.
+"Intensity" is really a pulse length -- the platform call takes a duration
+and nothing else -- so LIGHT is a 12 ms tick, MEDIUM 25 ms, HEAVY 45 ms.
+Stepping the row fires one sample pulse at the level you land on, so the
+three can be compared without leaving the menu. On iOS the system
+vibration has one fixed length, so all three levels feel the same there and
+the row is effectively on/off. The setting lives in `options.lua` and the
+row only appears where the on-screen pad can (Android/iOS, or desktop with
+`POKEPORT_TOUCH=1`, where it does nothing since desktop LOVE has no
+vibrator).
+
 ## Screen orientation lock (Android)
 
 Options → **ORIENTATION** (also in the launcher's gear menu) locks the
@@ -584,6 +604,11 @@ short one does. The mouse wheel turns pages.
 settings gear and pulses when an update is waiting, instead of sitting in a
 banner at the bottom of the page that you had to scroll to notice. Checking
 for updates from there shows a loader like everything else.
+
+**A quit button.** An X sits to the right of the settings gear and closes
+the app cleanly, the same shutdown path as the window's close button. Mostly
+for platforms where reaching the window chrome is awkward (Android, Steam
+Deck, fullscreen desktops).
 
 **The look.** Black background, white outlines, no gradients or glows, and
 buttons that are solid colour-coded keys: green commits, blue navigates, red

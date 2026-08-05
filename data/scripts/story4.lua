@@ -13,9 +13,18 @@ local function push(game, s, done)
   game.stack:push(TextBox.new(game, s, done))
 end
 
+-- The question stays on screen under the YES/NO menu.  The dojo prize
+-- balls are the clearest case: FightingDojoHitmonleePokeBallText
+-- (scripts/FightingDojo.asm) is `call PrintText` on a text_end string --
+-- no prompt, so no WaitForTextScrollButtonPress -- immediately followed
+-- by `call YesNoChoice`, and InitYesNoTextBoxParameters
+-- (engine/menus/text_box.asm) puts the menu above the dialogue box
+-- rather than replacing it.  Ride TextBox's opts.choice, the same as
+-- Commands.ask, instead of popping the box with an A press and leaving a
+-- bare ChoiceBox over the overworld (#854).
 local function ask(game, s, cb)
-  local ChoiceBox = require("src.ui.ChoiceBox")
-  push(game, s, function() game.stack:push(ChoiceBox.new(game, cb)) end)
+  local TextBox = require("src.render.TextBox")
+  game.stack:push(TextBox.new(game, s, nil, { choice = cb }))
 end
 
 -- fill the extracted text placeholders ({NUM:...}, {RAM:...}, {PLAYER})
@@ -155,19 +164,26 @@ local function dojoBall(species, ownBall, otherBall, askKey)
       push(game, "You'll have to\nbeat the master\nfirst!", done)
       return
     end
-    ask(game, t[askKey] or ("You want\n" .. species .. "?"), function(yes)
-      if not yes then done() return end
-      flags["EVENT_GOT_" .. species] = true
-      flags.EVENT_DEFEATED_FIGHTING_DOJO = true
-      local Commands = require("src.script.Commands")
-      local ctx = { save = game.save, game = game, overworld = ow }
-      Commands.give_pokemon(ctx, species, 30)
-      -- Hide ONLY the chosen ball; the other stays (FightingDojo.asm hides
-      -- just the picked object's index) and routes to the greedy line above
-      -- when talked to (#197).
-      Commands.hide_object(ctx, "FIGHTING_DOJO", ownBall)
-      push(game, ("%s got\n%s!"):format(game.save.player.name, species), done)
-    end)
+    -- Examining a ball shows that species' POKéDEX entry first
+    -- (DisplayPokedex in FightingDojo.asm, which also marks it seen),
+    -- then the yes/no take-it prompt (#853).
+    local Commands = require("src.script.Commands")
+    local ctx = { save = game.save, game = game, overworld = ow }
+    Commands.mark_seen(ctx, species)
+    local DexEntryMenu = require("src.ui.DexEntryMenu")
+    game.stack:push(DexEntryMenu.new(game, species, function()
+      ask(game, t[askKey] or ("You want\n" .. species .. "?"), function(yes)
+        if not yes then done() return end
+        flags["EVENT_GOT_" .. species] = true
+        flags.EVENT_DEFEATED_FIGHTING_DOJO = true
+        Commands.give_pokemon(ctx, species, 30)
+        -- Hide ONLY the chosen ball; the other stays (FightingDojo.asm hides
+        -- just the picked object's index) and routes to the greedy line above
+        -- when talked to (#197).
+        Commands.hide_object(ctx, "FIGHTING_DOJO", ownBall)
+        push(game, ("%s got\n%s!"):format(game.save.player.name, species), done)
+      end)
+    end))
   end
 end
 

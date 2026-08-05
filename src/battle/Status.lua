@@ -168,7 +168,7 @@ end
 -- The active status record's beforeMove runs at its priority slot: above
 -- VOLATILE_PRIORITY before the held/disable/confusion block (sleep,
 -- freeze), at or below after it (paralysis) -- the original's order.
-function Status.beforeMove(battler, rng, battle)
+function Status.beforeMove(battler, rng, battle, selectedMoveId)
   local mon = battler.mon
   -- Haze curing this mon's sleep/freeze forfeits its pending move for
   -- the turn, silently (haze.asm writes $ff/CANNOT_MOVE to the selected
@@ -223,6 +223,28 @@ function Status.beforeMove(battler, rng, battle)
       if rng(0, 255) < 128 then
         return false, msgs, true -- hurt itself
       end
+    end
+  end
+  -- .TriedToUseDisabledMoveCheck (engine/battle/core.asm, and the enemy
+  -- copy .checkIfTriedToUseDisabledMove): the disabled-move test runs at
+  -- EXECUTION time, comparing wPlayerDisabledMoveNumber against the
+  -- already SELECTED move, so a Disable that lands earlier in the same
+  -- turn still blocks the slower mon's move (#860).  It sits after the
+  -- confusion block and before the paralysis roll, so a confusion self-hit
+  -- still pre-empts it and the paralysis roll is never spent on a turn the
+  -- disable eats.  PrintMoveIsDisabledText clears CHARGING_UP before
+  -- printing, so a disabled charge move drops its stored turn instead of
+  -- releasing later.
+  if selectedMoveId and battler.disabledSlot then
+    local disabled = (battler.curMoves or {})[battler.disabledSlot]
+    if disabled and disabled.id == selectedMoveId then
+      battler.charging, battler.chargeReady = nil, nil
+      local moves = battle and battle.data and battle.data.moves
+      local shown = moves and moves[selectedMoveId] and moves[selectedMoveId].name
+                    or tostring(selectedMoveId)
+      table.insert(msgs, romText(battle and battle.data, "_MoveIsDisabledText",
+        "%s's\n%s is\ndisabled!", name(battler), shown))
+      return false, msgs
     end
   end
   if handler then

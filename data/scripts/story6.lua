@@ -12,9 +12,13 @@ local function push(game, s, done)
   game.stack:push(TextBox.new(game, s, done))
 end
 
+-- PrintText on a text_end string returns with the box still drawn and
+-- YesNoChoice then draws the menu above it (InitYesNoTextBoxParameters,
+-- engine/menus/text_box.asm); no A press clears the question first.  Ride
+-- TextBox's opts.choice, the same as Commands.ask (#854).
 local function ask(game, s, cb)
-  local ChoiceBox = require("src.ui.ChoiceBox")
-  push(game, s, function() game.stack:push(ChoiceBox.new(game, cb)) end)
+  local TextBox = require("src.render.TextBox")
+  game.stack:push(TextBox.new(game, s, nil, { choice = cb }))
 end
 
 -- -------------------------------------------------------------------

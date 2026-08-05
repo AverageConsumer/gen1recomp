@@ -25,6 +25,7 @@ local GenSave = require("src.save_convert.GenSave")
 local SaveConvert = {}
 
 SaveConvert.SAVE_SIZE = GenSave.SAVE_SIZE
+SaveConvert.mainChecksumValid = GenSave.mainChecksumValid
 
 -- ------------------------------------------------------------------
 -- Crosswalk data loading (cached).  Mirrors src/core/Data.lua: prefer

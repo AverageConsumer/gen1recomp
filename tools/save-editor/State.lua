@@ -77,6 +77,7 @@ function State.new()
     eventsOffset = 0,
 
     -- dex
+    dexSort = "dex",  -- how the DEX grid is ordered: "dex" (by number) | "name" (A-Z)
     dexOffset = 0,
 
     -- map

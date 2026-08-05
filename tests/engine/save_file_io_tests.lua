@@ -204,6 +204,112 @@ do
   check(type(erre) == "string", "the empty-export failure carries a message")
 end
 
+-- ---------------------------------------------- oversize / truncated policy
+-- A .sav LARGER than 32768 bytes whose first 32768 bytes carry a valid
+-- main-data checksum is a cartridge save with a trailing emulator RTC footer
+-- (VBA appends 44/48 bytes -- bgb.bircd.org/rtcsave.html).  Without force the
+-- import must NOT happen silently: it returns (false, nil, {needsConfirm})
+-- so the launcher can ask.  With force the surplus is dropped.  A file
+-- SHORTER than 32768 is refused unless its checksum region is intact, in
+-- which case it imports zero-padded (a truncated box region, not a loss).
+
+-- DroppedFile-shaped source for arbitrary bytes (readSource disambiguates a
+-- raw string of length != 32768 as a path, so tests hand a file object).
+local function fileSource(bytes)
+  return {
+    _bytes = bytes,
+    open = function() return true end,
+    getSize = function(self) return #self._bytes end,
+    read = function(self) return self._bytes end,
+    close = function() return true end,
+  }
+end
+
+-- A realistic 44-byte VBA MBC3 RTC footer (4 dwords, 16-byte latched copies,
+-- 8-byte unix timestamp, 4-byte unix timestamp -- bgb.bircd.org/rtcsave.html).
+local function rtcFooter()
+  local parts = {}
+  local function pushLe(v)
+    parts[#parts + 1] = string.char(v % 256, math.floor(v / 256) % 256,
+      math.floor(v / 65536) % 256, math.floor(v / 16777216) % 256)
+  end
+  pushLe(27)            -- days
+  pushLe(29)            -- hours
+  pushLe(11)            -- minutes
+  pushLe(200)           -- seconds
+  parts[#parts + 1] = string.rep("\0", 16)  -- latched RTC copies
+  parts[#parts + 1] = string.rep("\0", 8)   -- 64-bit unix timestamp
+  pushLe(0x669A00BF)    -- 32-bit unix timestamp (2024-07-09)
+  return table.concat(parts)
+end
+
+do
+  local oversize = syntheticSave("OVS") .. rtcFooter()
+  eq(#oversize, 32768 + 44, "the oversize fixture is 32812 bytes like the real VBA save")
+
+  local files = fresh()
+  local ok, res, info = SaveFileIO.importToSlot(fileSource(oversize), "red")
+  eq(ok, false, "an oversize valid save is not imported without confirmation")
+  eq(res, nil, "the oversize result carries no error string")
+  check(info ~= nil and info.needsConfirm == true, "the oversize result requests confirmation")
+  eq(info and info.size, #oversize, "the confirmation carries the actual file size")
+  eq(#SaveData.listSlots("red"), 0, "no slot is created before confirmation")
+
+  -- forcing the import truncates the footer away
+  local fok, slotId = SaveFileIO.importToSlot(fileSource(oversize), "red", true)
+  eq(fok, true, "force imports the truncated save")
+  local loaded = SaveData.load("red")
+  eq(loaded and loaded.player.name, "OVS", "the forced import keeps the player name")
+  eq(SaveData.activeSlot("red"), slotId, "the forced import becomes active")
+
+  local eok, path = SaveFileIO.exportActiveSlot("red")
+  eq(eok, true, "the forced import exports")
+  local rel = path:gsub("^/fake/save/", "")
+  local outBytes = files[rel]
+  eq(outBytes and #outBytes, GenSave.SAVE_SIZE,
+    "the export of a forced import is exactly 32768 bytes (footer dropped)")
+  check(outBytes and mainChecksumValid(outBytes),
+    "the forced-import export carries a valid main-data checksum")
+end
+
+do
+  -- oversize but corrupt: flip a byte inside the checksummed region
+  local bad = syntheticSave("BAD") .. rtcFooter()
+  bad = bad:sub(1, OFF.money)
+    .. string.char((bad:byte(OFF.money + 1) + 1) % 256)
+    .. bad:sub(OFF.money + 2)
+  fresh()
+  local ok, res = SaveFileIO.importToSlot(fileSource(bad), "red")
+  eq(ok, false, "an oversize file with a bad checksum is rejected")
+  check(type(res) == "string" and res:find("checksum", 1, true) ~= nil,
+    "the oversize bad-checksum error mentions the checksum")
+  eq(#SaveData.listSlots("red"), 0, "no slot is created for a bad oversize file")
+end
+
+do
+  -- truncated to 14000 bytes: >= 13572 keeps the whole checksum region and the
+  -- stored checksum byte intact, so the checksum validates and the save imports
+  -- with the missing tail (box banks) zero-filled.
+  local truncated = syntheticSave("SHORT"):sub(1, 14000)
+  check(truncated:len() >= OFF.mainChecksum + 1,
+    "the truncated fixture still carries the stored checksum byte")
+  fresh()
+  local ok, slotId = SaveFileIO.importToSlot(fileSource(truncated), "red")
+  eq(ok, true, "a truncated file with a valid checksum imports zero-padded")
+  local loaded = SaveData.load("red")
+  eq(loaded and loaded.player.name, "SHORT", "the truncated import keeps the player name")
+  eq(#SaveData.listSlots("red"), 1, "the truncated import creates a slot")
+  eq(SaveData.activeSlot("red"), slotId, "the truncated import becomes active")
+
+  -- truncated but too short to even carry the checksum byte -> refused
+  local short = truncated:sub(1, OFF.mainChecksum)
+  local sok, serr = SaveFileIO.importToSlot(fileSource(short), "red")
+  eq(sok, false, "a file too short to hold a checksum byte is refused")
+  check(type(serr) == "string" and serr:find("32", 1, true) ~= nil,
+    "the too-short error names the required size")
+  eq(#SaveData.listSlots("red"), 1, "the too-short refusal creates no new slot")
+end
+
 -- ---------------------------------------------- fixture-gated real save
 
 do

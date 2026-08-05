@@ -998,6 +998,25 @@ local function updaterAllowed()
   return true
 end
 
+-- #835: which column the launcher opens on.  `tab` starts at the --game
+-- shortcut's version (LaunchOptions.pendingTab) or Red; this then prefers the
+-- game play() last handed off, so relaunching lands on the game that was last
+-- played instead of always Red.  An explicit --game still wins, and a
+-- remembered version whose cache is gone or stale is ignored, since opening a
+-- column with no Play button would read as the launcher losing the import.
+-- Called from new() once self.ready is filled, which is what that check needs.
+function RomImporter:_applyLastVersionTab()
+  local okLO, LO = pcall(require, "src.core.LaunchOptions")
+  if okLO and LO.pendingTab then return end
+  local okOpt, opts = pcall(function()
+    return require("src.core.SaveData").loadOptions()
+  end)
+  local last = okOpt and opts and opts.lastVersion
+  if last and GameVersion.VERSIONS[last] and self.ready[last] then
+    self.tab = last
+  end
+end
+
 -- The launcher runs each GameVersion as an independent tab.  Each dropped or
 -- chosen ROM is routed to its version by SHA-1, extracted into that version's
 -- own cache (Red at the root, Blue under blue/, Yellow under yellow/), so all
@@ -1129,6 +1148,7 @@ function RomImporter.new(onComplete, opts)
     self.romName[version] = "pokemon_" .. info.id
       .. (info.id == "yellow" and ".gbc" or ".gb")
   end
+  self:_applyLastVersionTab()
 
   -- Android: import a save-dir .gb/.gbc that is not yet ready (USB drop or a
   -- leftover SAF pick), routed by SHA-1.  Already-imported carts are skipped
@@ -1565,7 +1585,7 @@ end
 -- the target tab forward so the notice (and, on success, the new active slot)
 -- is visible.  Requires the ROM to be imported first, since a save is only
 -- playable with its game's data present.
-function RomImporter:_importSave(version, source)
+function RomImporter:_importSave(version, source, force)
   if self.workState == "working" then return end
   if GameVersion.VERSIONS[self.tab] or self.tab == "mods" then
     self.tab = version
@@ -1575,15 +1595,35 @@ function RomImporter:_importSave(version, source)
       .. GameVersion.info(version).displayName .. " ROM before importing a save." }
     return
   end
-  local ok, res = require("src.import.SaveFileIO").importToSlot(source, version)
+  local ok, res, info = require("src.import.SaveFileIO").importToSlot(source, version, force)
   if ok then
     self:_refreshSlots(version)
     self.activeSlot[version] = res
     self.slotScroll[version] = math.huge   -- pin the new row on screen (clamped in draw)
     self.saveNotice[version] = { ok = true, text = "Imported save into " .. tostring(res) .. "." }
-  else
-    self.saveNotice[version] = { ok = false, text = tostring(res) }
+    return
   end
+  if res == nil and info and info.needsConfirm then
+    -- A .sav larger than 32 KB whose first 32768 bytes checksum: the surplus
+    -- is almost certainly an emulator RTC footer, so ask before truncating.
+    -- The yes arm re-enters with force=true; cancel leaves the file untouched.
+    self._modConfirm = {
+      kind = "importOversize",
+      version = version,
+      source = source,
+      title = "Oversized save file",
+      lines = {
+        ("This save is %d bytes; a cartridge save is exactly %d bytes (32 KB).")
+          :format(info.size, 32768),
+        "It may come from a ROM that saved the battery image with an emulator.",
+        "The extra bytes would be discarded.",
+        "Import it anyway?",
+      },
+      yesLabel = "Import anyway",
+    }
+    return
+  end
+  self.saveNotice[version] = { ok = false, text = tostring(res) }
 end
 
 -- "Import save" button: open a native .sav picker and import the pick.
@@ -2221,6 +2261,17 @@ function RomImporter:play(version)
   if self.workState == "working" then return end
   if not self.ready[version] then return end
   self._handedOff = true
+  -- #835: remember the game being launched so the next launcher start opens on
+  -- its column (_applyLastVersionTab).  It rides options.lua rather than a file
+  -- of its own, so portable installs and POKEPORT_IDENTITY sandboxes keep it
+  -- with the rest of the launcher's persisted state.  A failed write only
+  -- costs the memory of the choice, so it must never block the boot.
+  pcall(function()
+    local SaveData = require("src.core.SaveData")
+    local opts = SaveData.loadOptions()
+    opts.lastVersion = version
+    SaveData.saveOptions(opts)
+  end)
   resetPointerCursor(self)
   -- The game draws with raw love.graphics from here on; drop the view's
   -- element tree and canvases before the handoff.
@@ -2407,6 +2458,13 @@ function RomImporter:_openSettings()
     return require("src.import.LauncherSettings").open()
   end)
   if ok and model then self._settings = model end
+end
+
+-- Quit from the launcher's own X.  It goes through love.event.quit so main.lua's
+-- love.quit hook still runs: that is where the worker threads are shut down
+-- (#339) and where a launcher close is told apart from a running game's (#785).
+function RomImporter:_quitApp()
+  if love.event and love.event.quit then love.event.quit() end
 end
 
 function RomImporter:_closeSettings()

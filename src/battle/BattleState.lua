@@ -1405,6 +1405,23 @@ function BattleState:sendOutText(name)
   return self:romText("_EnemysWeakText", "The enemy's weak!\nGet'm! %s!", name)
 end
 
+-- The cry a mon makes as it takes the field.  Yellow does not run its
+-- starter Pikachu through PlayCry at all: SendOutMon branches to
+-- .starterPikachu (engine/battle/core.asm:1807-1817) and voices PCM
+-- PikachuCry11, the short "Pika!", or PikachuCry37 when the Pikachu is
+-- asleep (IsPlayerPikachuAsleepInParty); PrintBeginningBattleText does the
+-- same for the BATTLE_TYPE_PIKACHU intro (engine/battle/common_text.asm:
+-- 12-19).  Without a clip the bare playCry reached for clip 1, the long
+-- title-screen "Pikachuuu" (#837).  Every PIKACHU gets it here, the same
+-- starter approximation the rest of the port makes
+-- (PikachuFollower.starterInParty).
+function BattleState:playEntranceCry(battler)
+  local mon = battler and battler.mon
+  if not mon then return end
+  require("src.core.Sound").playCry(self.data, mon.species,
+    mon.status == "SLP" and 37 or 11)
+end
+
 -- audio/play_battle_music.asm: gym leaders (wGymLeaderNo) get the
 -- gym-leader theme, Lance does too, and the Champion (OPP_RIVAL3)
 -- gets the final-battle theme
@@ -1538,7 +1555,7 @@ function BattleState:enter()
   -- a different point in each battle kind, so queue it per branch
   local function queueEnemyCry()
     self:act(function()
-      require("src.core.Sound").playCry(self.data, self.enemy.mon.species)
+      self:playEntranceCry(self.enemy)
     end)
   end
   -- PrintBeginningBattleText (engine/battle/common_text.asm:10-19): a wild
@@ -1649,7 +1666,7 @@ function BattleState:enter()
       -- SendOutMon (core.asm:1757-1762): after the poof the mon grows
       -- out of the ball (AnimateSendingOutMon at hlcoord 4,11)
       self:startGrowIn(self.player)
-      require("src.core.Sound").playCry(self.data, self.player.mon.species)
+      self:playEntranceCry(self.player)
     end)
     self:markParticipant()
   end
@@ -2435,7 +2452,7 @@ function BattleState:resolveSwitch(newMon)
       self.sendingOut = false
       -- SendOutMon (core.asm:1757-1762): poof, then the grow-in
       self:startGrowIn(self.player)
-      require("src.core.Sound").playCry(self.data, self.player.mon.species)
+      self:playEntranceCry(self.player)
     end)
   end)
   self:act(function()
@@ -2903,7 +2920,16 @@ function BattleState:applyHitFx(hit)
   local t = hit.animType
   if not t and hit.blink then t = hit.blink.isPlayer and 1 or 4 end
   if hit.sfx then
-    require("src.core.Sound").play(self.data, hit.sfx)
+    local Sound = require("src.core.Sound")
+    -- EffectRegistry hands the row the PlayApplyingAttackSound sound WITH its
+    -- wFrequencyModifier byte, so it goes through the same pitch/tempo path
+    -- move sounds use (#826).  A bare string -- an older row, or a mod that
+    -- built its own hit fx -- still plays unmodified.
+    if type(hit.sfx) == "table" then
+      Sound.playMove(self.data, hit.sfx)
+    else
+      Sound.play(self.data, hit.sfx)
+    end
   end
   if not t or not self:animationsOn() then return end
   if t == 1 then
@@ -3242,6 +3268,16 @@ function BattleState:executeAction(user, target, action)
     user.boundTurns = target.trappingTurns
                       and math.max(1, target.trappingTurns) or nil
 
+    -- wPlayerSelectedMove / wEnemySelectedMove as the status gauntlet
+    -- reads it: the locked specials keep continuing the move they
+    -- started, so they carry a move id too.  Resolved once here and
+    -- handed to every statusInterrupt below, which is where
+    -- .TriedToUseDisabledMoveCheck lives (#860).
+    local selectedId = action.id
+                       or (action.special == "trapping" and user.trapMove)
+                       or (action.special == "bide" and "BIDE")
+                       or nil
+
     -- trainer class AI actions (engine/battle/trainer_ai.asm)
     if action.special == "aiItem" then
       self.aiUses = (self.aiUses or 1) - 1
@@ -3299,17 +3335,17 @@ function BattleState:executeAction(user, target, action)
       return
     end
     if action.special == "trapping" then
-      if self:statusInterrupt(user, target) then return end
+      if self:statusInterrupt(user, target, selectedId) then return end
       self:continueTrapping(user, target)
       return
     end
     if action.special == "bide" then
-      if self:statusInterrupt(user, target) then return end
+      if self:statusInterrupt(user, target, selectedId) then return end
       self:continueBide(user, target)
       return
     end
 
-    if self:statusInterrupt(user, target) then return end
+    if self:statusInterrupt(user, target, selectedId) then return end
     self:performMove(user, target, action, false)
   end
   run()
@@ -3403,8 +3439,8 @@ end
 
 -- Runs Status.beforeMove plus the shared interruption bookkeeping;
 -- returns true when the user's action is interrupted.
-function BattleState:statusInterrupt(user, target)
-  local canMove, msgs, selfHit = Status.beforeMove(user, self.rng, self)
+function BattleState:statusInterrupt(user, target, selectedId)
+  local canMove, msgs, selfHit = Status.beforeMove(user, self.rng, self, selectedId)
   for _, m in ipairs(msgs) do self:sayStatusMsg(user, m) end
   if selfHit then
     -- confusion self-hit (core.asm:3428-3434): clears everything in
@@ -3974,7 +4010,7 @@ function BattleState:enemyMonFainted()
           self.enemySendingOut = false
           self:startGrowIn(self.enemy)
           self:actNext(function()
-            require("src.core.Sound").playCry(self.data, self.enemy.mon.species)
+            self:playEntranceCry(self.enemy)
           end)
         end)
       end)
@@ -4013,7 +4049,7 @@ function BattleState:enemyMonFainted()
         self:actNext(function()
           self.sendingOut = false
           self:startGrowIn(self.player)
-          require("src.core.Sound").playCry(self.data, self.player.mon.species)
+          self:playEntranceCry(self.player)
         end)
       end)
       return
@@ -4207,7 +4243,7 @@ function BattleState:openReplacementMenu()
           self.sendingOut = false
           -- SendOutMon (core.asm:1757-1762): poof, then the grow-in
           self:startGrowIn(self.player)
-          require("src.core.Sound").playCry(self.data, self.player.mon.species)
+          self:playEntranceCry(self.player)
         end)
       end,
     })
@@ -5208,11 +5244,32 @@ function BattleState:drawZonePass(src, sx, sy)
   local shader = PaletteFX.shader()
   local pals = self:sgbBattlePals()
   local bgp = self:activeBgp()
+  -- #822: OG / OG INV / CLASSIC are forced-mono modes, so sgbPalettes() being
+  -- nil here makes PaletteFX.ensureZones invent a whole-screen zone and the
+  -- WHOLE finished frame is re-thresholded through the shade shader at blit
+  -- time -- which is why picImage already hands those modes raw DMG grays.
+  -- This pass has to leave DMG shades behind for the same reason: sendColors
+  -- runs the mode substitution HERE too, and the frame-level pass then
+  -- substitutes a second time.  OG INV inverts twice and comes out upright;
+  -- CLASSIC's color 0 (155,188,15) has red 0.61, which falls in the shader's
+  -- c1 bucket, so the paper darkens one shade.  Either way the battle stops
+  -- matching the YES/NO box an overlay state draws over it, since that box
+  -- only ever sees the frame-level pass.  OG is the identity, which is why
+  -- only the other two showed it.  Keep this mode set in sync with picImage /
+  -- PaletteFX.ensureZones / WideBattle.monoMode.
+  local mono = PaletteFX.mode == "og" or PaletteFX.mode == "og_inv"
+               or PaletteFX.mode == "classic"
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setShader(shader)
   local shaking = sx ~= 0 or sy ~= 0
   for _, z in ipairs(BATTLE_ZONES) do
-    PaletteFX.sendColors(shader, PaletteFX.permute(pals[z.pal], bgp))
+    if mono then
+      -- the BGP fade still runs, just in gray: the frame-level pass colors
+      -- whatever DMG shade this leaves behind
+      PaletteFX.sendShades(shader, PaletteFX.permute(PaletteFX.GRAYS, bgp))
+    else
+      PaletteFX.sendColors(shader, PaletteFX.permute(pals[z.pal], bgp))
+    end
     local zx, zy = z[1] * 8, z[2] * 8
     local zw, zh = (z[3] - z[1] + 1) * 8, (z[4] - z[2] + 1) * 8
     love.graphics.setScissor(zx, zy, zw, zh)

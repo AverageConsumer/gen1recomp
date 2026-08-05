@@ -90,7 +90,14 @@ end
 -- type-4 turn can still use it
 do
   local _, _, rows = typeOf("BUBBLEBEAM", true)
-  eq(rows[1].sfx, "Damage", "the row carries the damage sound")
+  -- PlayApplyingAttackSound sets wFrequencyModifier alongside the sound
+  -- ($20 for SFX_DAMAGE), and the noise channel's polynomial counter IS
+  -- that modifier, so the row carries both now (#826)
+  eq(type(rows[1].sfx) == "table" and rows[1].sfx.sound, "Damage",
+     "the row carries the damage sound")
+  eq(rows[1].sfx.pitch, 0x20, "with its PlayApplyingAttackSound pitch byte")
+  eq(rows[1].sfx.tempo, nil,
+     "and no tempo byte: Audio2_note_length skips the sfx tempo on CHAN8")
   local _, _, plain = typeOf("TACKLE", true)
   check(plain[1].blink ~= nil, "a type-4 row carries the pic to blink")
 end

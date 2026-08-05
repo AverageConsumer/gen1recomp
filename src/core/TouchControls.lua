@@ -85,6 +85,55 @@ local function clampScale(v)
   return v
 end
 
+-- Haptic feedback (#806): a short vibration the instant a control takes a GB
+-- button, the way every mobile emulator front-end does it -- the pad has no
+-- edges under a thumb, so the buzz is the only confirmation a press landed.
+-- Persisted as options.haptics (src/core/SaveData.lua defaultOptions), NOT
+-- under options.touchControls: TouchControls:config() is the launcher
+-- editor's save snapshot and only emits enabled + layouts, so a nested key
+-- would be dropped on every editor save.
+-- love.system.vibrate takes a duration and nothing else, so "intensity" is a
+-- duration preset: Android runs the platform vibrator for exactly that long,
+-- while iOS ignores the duration and fires the fixed system vibration, so
+-- there the three levels all read as simply on.
+TouchControls.HAPTICS = { "off", "light", "medium", "heavy" }
+TouchControls.HAPTIC_DEFAULT = "light"
+
+local HAPTIC_SECONDS = { off = 0, light = 0.012, medium = 0.025, heavy = 0.045 }
+local HAPTIC_LABELS = {
+  off = "OFF", light = "LIGHT", medium = "MEDIUM", heavy = "HEAVY",
+}
+
+function TouchControls.normalizeHaptics(level)
+  if HAPTIC_SECONDS[level] then return level end
+  return TouchControls.HAPTIC_DEFAULT
+end
+
+function TouchControls.hapticLabel(level)
+  return HAPTIC_LABELS[TouchControls.normalizeHaptics(level)]
+end
+
+function TouchControls.cycleHaptics(level, dir)
+  local cur, idx = TouchControls.normalizeHaptics(level), 1
+  for i, m in ipairs(TouchControls.HAPTICS) do
+    if m == cur then idx = i break end
+  end
+  local n = #TouchControls.HAPTICS
+  return TouchControls.HAPTICS[(idx - 1 + (dir or 1)) % n + 1]
+end
+
+-- One pulse at the given level.  Feature-guarded rather than platform-gated:
+-- love.system.vibrate is a no-op on desktop and absent from the headless love
+-- stubs, so the press path below stays identical everywhere and the tests
+-- never reach a vibrator.
+function TouchControls.buzz(level)
+  local secs = HAPTIC_SECONDS[TouchControls.normalizeHaptics(level)]
+  if not secs or secs <= 0 then return false end
+  if not (love and love.system and love.system.vibrate) then return false end
+  pcall(love.system.vibrate, secs)
+  return true
+end
+
 -- Copy a persisted positions table, dropping unknown / non-numeric entries.
 -- Always a fresh table: two orientations seeded from the same pre-#633
 -- layout must not alias, or dragging one would still move the other.
@@ -174,6 +223,10 @@ end
 function TouchControls:init()
   self.active = wantsOverlay()
   self.enabled = true
+  -- vibration level for presses (#806); applyOptions overwrites it from
+  -- options.haptics, this is the value a harness that never applies options
+  -- runs with
+  self.haptics = TouchControls.HAPTIC_DEFAULT
   -- per-orientation buckets (#633); self.positions / self.scale mirror the
   -- one currently on screen so layout(), the editor and the tests keep a
   -- single lookup
@@ -210,6 +263,9 @@ end
 function TouchControls:applyOptions(opts)
   local cfg = TouchControls.normalizeConfig(opts and opts.touchControls)
   self.enabled = cfg.enabled
+  -- haptics is a plain top-level option, not part of the layout config the
+  -- launcher editor round-trips through config() (#806)
+  self.haptics = TouchControls.normalizeHaptics(opts and opts.haptics)
   self.layouts = cfg.layouts
   self.layoutW, self.layoutH = nil, nil
   self.layoutOx, self.layoutOy = nil, nil
@@ -401,7 +457,14 @@ end
 local function pressBtn(self, btn)
   local n = (self.held[btn] or 0) + 1
   self.held[btn] = n
-  if n == 1 then Input:overlayPressed(btn) end
+  -- Buzz only on the 0 -> 1 edge, the same edge that presses the GB button:
+  -- a second finger landing on a button that is already held, and a d-pad
+  -- finger resting inside one direction, must not retrigger it.  Sliding the
+  -- d-pad to a new direction does, which is the point (#806).
+  if n == 1 then
+    Input:overlayPressed(btn)
+    TouchControls.buzz(self.haptics)
+  end
 end
 
 local function releaseBtn(self, btn)

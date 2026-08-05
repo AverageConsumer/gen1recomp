@@ -64,18 +64,34 @@ local function readSource(source)
   return nil, "could not read the save file: " .. tostring(openErr)
 end
 
--- importToSlot(source, version) -> ok, slotIdOrErr
--- source: an absolute path, a LOVE DroppedFile, or raw 32768 bytes.  On success
+-- importToSlot(source, version, force) -> ok, slotIdOrErr | (false, nil, info)
+-- source: an absolute path, a LOVE DroppedFile, or raw bytes.  On success
 -- registers a new slot for the version, writes the imported save into it, makes
 -- it the active slot, and returns true + the new slot id.  On any failure
--- returns false + a friendly message.
-function SaveFileIO.importToSlot(source, version)
+-- returns false + a friendly message.  force only matters for a file LARGER
+-- than 32768 bytes whose first 32768 bytes carry a valid main-data checksum
+-- (i.e. a cartridge save padded with an emulator RTC footer): without force
+-- this returns false, nil, { needsConfirm = true, size = #bytes } so the
+-- launcher can ask the player before truncating; with force the extra bytes
+-- are dropped and the 32768-byte save imports.
+function SaveFileIO.importToSlot(source, version, force)
   version = version or GameVersion.get()
   local bytes, readErr = readSource(source)
   if not bytes then return false, readErr end
   if #bytes ~= SAVE_SIZE then
-    return false, ("A save file must be %d bytes (32 KB); this one is %d.")
-      :format(SAVE_SIZE, #bytes)
+    local check = SaveConvert.mainChecksumValid(bytes)
+    if check == nil then
+      return false, ("A save file must be %d bytes (32 KB); this one is %d.")
+        :format(SAVE_SIZE, #bytes)
+    end
+    if check == false then
+      return false, "save data checksum invalid (main data checksum mismatch)"
+    end
+    if #bytes > SAVE_SIZE and not force then
+      return false, nil, { needsConfirm = true, size = #bytes }
+    end
+    bytes = #bytes > SAVE_SIZE and bytes:sub(1, SAVE_SIZE)
+      or (bytes .. string.rep("\0", SAVE_SIZE - #bytes))
   end
   -- 3rd arg: the crosswalk has to come from THIS game's ROM cache.  The
   -- launcher imports before the cache is mounted on the un-prefixed paths, so

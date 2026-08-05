@@ -242,6 +242,18 @@ local function coreRows(opts)
           opts.touchControls = tc
           return true
         end)
+      -- VIBRATION sits with it (#806): same gate, same subsystem.  Stepping
+      -- the row buzzes once at the level being selected.
+      local okTC, TC = pcall(require, "src.core.TouchControls")
+      if okTC then
+        add(Strings("VIBRATION"),
+          function() return Strings(TC.hapticLabel(opts.haptics)) end,
+          function(dir)
+            opts.haptics = TC.cycleHaptics(opts.haptics, dir)
+            TC.buzz(opts.haptics)
+            return true
+          end)
+      end
     end
   end
 

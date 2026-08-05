@@ -6,6 +6,11 @@
 -- StarterDex (engine/events/starter_dex.asm), which temporarily sets the
 -- owned bit so Oak's lab ball previews show height/weight/description
 -- without permanently marking the mon owned.
+--
+-- `onDone` (optional) runs right after the page pops itself, the way a
+-- TextBox onDone does; map scripts use it to continue once the player
+-- closes the entry (the Fighting Dojo prize balls chain their take-it
+-- prompt off it).
 
 local Font = require("src.render.Font")
 local Strings = require("src.core.Strings")
@@ -31,9 +36,10 @@ local function resolveArgs(speciesOrOpts)
   return speciesOrOpts, false
 end
 
-function DexEntryMenu.new(game, speciesOrOpts)
+function DexEntryMenu.new(game, speciesOrOpts, onDone)
   local species, forceOwned = resolveArgs(speciesOrOpts)
-  local self = setmetatable({ game = game, forceOwned = forceOwned }, DexEntryMenu)
+  local self = setmetatable({ game = game, forceOwned = forceOwned,
+                              onDone = onDone }, DexEntryMenu)
   self.def = game.data.pokemon[species]
   local path, trueColor = require("src.pokemon.Sprites").path(
     game.data, species, "front", { kind = "dex" })
@@ -52,6 +58,7 @@ function DexEntryMenu:update(dt)
   local input = self.game.input
   if input:wasPressed("a") or input:wasPressed("b") then
     self.game.stack:pop()
+    if self.onDone then self.onDone() end
   end
 end
 

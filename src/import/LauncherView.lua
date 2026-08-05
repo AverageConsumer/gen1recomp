@@ -311,8 +311,20 @@ local function setPage(imp, key, v)
   imp._pages[key] = v
 end
 
+-- A hand-drawn X, for the same reason drawCheck exists below: the UI font has
+-- no guaranteed glyph, and the launcher ships no icon asset for it.
+local function drawCross(x, y, size, color)
+  love.graphics.push("all")
+  love.graphics.setColor(color)
+  love.graphics.setLineWidth(math.max(2, size * 0.16))
+  love.graphics.setLineJoin("bevel")
+  love.graphics.line(x, y, x + size, y + size)
+  love.graphics.line(x + size, y, x, y + size)
+  love.graphics.pop()
+end
+
 -- ------------------------------------------------------------- header
--- Rail, logo row (settings on the right), tab bar.
+-- Rail, logo row (settings and quit on the right), tab bar.
 -- Returns the y at which content may start.  Its vertical arithmetic is
 -- mirrored by headerHeight() at the bottom of this file (the short-window
 -- scroll decision needs the height before anything draws) -- keep in sync.
@@ -340,7 +352,14 @@ local function buildHeader(imp, m)
   local rx = m.x + m.w - m.pad
   local by = y + (rowH - gear) / 2
 
-  -- Settings gear, top-right corner.
+  -- The right cluster is laid out right to left -- Quit outermost, the gear
+  -- inboard of it -- but the two are REGISTERED gear first, because the first
+  -- focusable of the first frame adopts the keyboard ring and that must not be
+  -- the button that exits the app.
+  local quitX = rx - gear
+  rx = quitX - math.floor(6 * m.s)
+
+  -- Settings gear.
   imp._gearIcon = imp._gearIcon
     or love.graphics.newImage("assets/launcher/gear.png")
   rx = rx - gear
@@ -362,6 +381,23 @@ local function buildHeader(imp, m)
     love.graphics.setColor(1, 1, 1, 1)
     if Kit.press(x, by, gear, gear) or Kit._activateId == "gear" then
       queueAction(imp, "gear", function() imp:_openSettings() end)
+    end
+  end
+
+  -- Quit, top-right corner.
+  do
+    local x = quitX
+    Kit._audit("control", x, by, gear, gear, "quit")
+    local focused = Kit.focusable("quit", x, by, gear, gear)
+    local hot = focused or Kit.hover(x, by, gear, gear)
+    Theme.fill(x, by, gear, gear, hot and PAL.ink or PAL.bg, 1)
+    Theme.stroke(x, by, gear, gear, PAL.line,
+      hot and Theme.A.focus or Theme.A.hairline, 1)
+    local pad = math.floor(gear * 0.32)
+    drawCross(x + pad, by + pad, gear - 2 * pad,
+      hot and { 0, 0, 0, 1 } or { 1, 1, 1, 0.85 })
+    if Kit.press(x, by, gear, gear) or Kit._activateId == "quit" then
+      queueAction(imp, "quit", function() imp:_quitApp() end)
     end
   end
 
@@ -1505,6 +1541,8 @@ local function buildConfirmModal(imp, m)
           imp:_confirmModUpdate(c.id, c.release)
         elseif c.kind == "enableAll" then
           imp:_setAllMods(true, true)
+        elseif c.kind == "importOversize" then
+          imp:_importSave(c.version, c.source, true)
         else
           imp:_toggleMod(c.id, true)
         end

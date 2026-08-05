@@ -208,29 +208,91 @@ end
 -- sfx table; older audio.lua builds without the variants fall back to
 -- the unmodified sound.
 -- anim: a moves.lua anim table { sound, pitch, tempo }.
+--
+-- Whether a row sound is heard at all is Audio2_PlaySound's channel gate
+-- (audio/engine_2.asm .playSfx/.sfxChannelLoop): for every channel the new
+-- sfx wants, a channel still busy with a LOWER sound id aborts the whole
+-- request (`cp [hl] / jr z,.playChannel / jr c,.playChannel / ret`), while
+-- an equal or lower id takes those channels over.  A sound id is
+-- (header address - SFX_Headers_1) / 3 (constants/music_constants.asm
+-- music_const), so a def's header address orders ids inside one engine
+-- bank.  Blizzard's animation is two rows, BLIZZARD then HYDRO_PUMP
+-- (data/moves/animations.asm BlizzardAnim), and SFX_BATTLE_29 (CHAN5+8) is
+-- still sounding when the second row starts, so the original never plays
+-- SFX_BATTLE_2A (CHAN5+6+8) at all -- unguarded, its tail is heard running
+-- past the end of the animation (#844).
+local lastMoveSfx -- { src, rank, engine, channels } of the last row sound
+
+local function channelsOverlap(a, b)
+  if not (a and b) then return false end
+  for _, x in ipairs(a) do
+    for _, y in ipairs(b) do
+      if x == y then return true end
+    end
+  end
+  return false
+end
+
+-- would PlaySound start this def now?  Taking a channel over also stops the
+-- sound that held it, the way .playChannel resets the channel.
+local function sfxChannelGate(data, def)
+  local cur = lastMoveSfx
+  if not cur then return true end
+  local ok, playing = pcall(cur.src.isPlaying, cur.src)
+  if not (ok and playing) then
+    lastMoveSfx = nil
+    return true
+  end
+  -- an unrankable def (file asset, or another engine's bank) has no
+  -- comparable sound id: leave it to the mixer, as before
+  if type(def) ~= "table" or not def.address or def.engine ~= cur.engine then
+    return true
+  end
+  local channels = require("src.core.ChipSynth").effectChannels(data, def)
+  if not channelsOverlap(channels, cur.channels) then return true end
+  if def.address > cur.rank then return false end
+  pcall(cur.src.stop, cur.src)
+  lastMoveSfx = nil
+  return true
+end
+
+local function noteMoveSfx(data, def, src)
+  if not src or type(def) ~= "table" or not def.address then
+    lastMoveSfx = nil
+    return
+  end
+  lastMoveSfx = {
+    src = src, rank = def.address, engine = def.engine,
+    channels = require("src.core.ChipSynth").effectChannels(data, def),
+  }
+end
+
 function Sound.playMove(data, anim)
   if not anim or not anim.sound then return end
   local sfx = data.audio and data.audio.sfx
   if not sfx then return end
   local name = anim.sound
   local pitch, tempo = anim.pitch or 0, anim.tempo or 0x80
+  local def = sfx[name]
+  if not sfxChannelGate(data, def) then return end
+  local src
   -- a chip program synthesizes the modified variant on demand; a file def
   -- can only reach for a pre-rendered one
-  if isChipDef(sfx[name]) then
-    if playPath(data, ("%s@%02x%02x"):format(name, pitch, tempo),
-        sfx[name], pitch, tempo) then
-      played("move", name)
-    end
-    return
-  end
-  if pitch ~= 0 or tempo ~= 0x80 then
+  if isChipDef(def) then
+    src = playPath(data, ("%s@%02x%02x"):format(name, pitch, tempo),
+                   def, pitch, tempo)
+  else
     local key = ("%s@%02x%02x"):format(name, pitch, tempo)
-    if sfx[key] then
-      if playPath(data, key, sfx[key]) then played("move", name) end
-      return
+    if (pitch ~= 0 or tempo ~= 0x80) and sfx[key] then
+      src = playPath(data, key, sfx[key])
+    else
+      src = playPath(data, name, def)
     end
   end
-  if playPath(data, name, sfx[name]) then played("move", name) end
+  if src then
+    played("move", name)
+    noteMoveSfx(data, def, src)
+  end
 end
 
 -- A derived cry ({ base = "RHYDON", pitch, length }) borrows another
@@ -304,12 +366,18 @@ end
 
 -- returns the source (nil headless) so callers that block on the cry
 -- like the original's PlayCry -> WaitForSoundToFinish can poll it
-function Sound.playCry(data, species)
+function Sound.playCry(data, species, pikaClip)
   if not love.audio then return nil end
   -- Yellow voices every Pikachu cry with the PCM clips (the chip cry is
-  -- never used for the species there); clip 1 is the everyday "Pika!"
+  -- never used for the species there).  Which clip is a property of the
+  -- call site in the original -- every caller of PlayPikachuSoundClip sets
+  -- its own `ldpikacry e, PikachuCryN` -- so pikaClip carries that choice
+  -- in; it is ignored for every other species.  Clip 1 is the LONG
+  -- title-screen "Pikachuuu" (engine/movie/title.asm:146), kept as the
+  -- default only for the sites that have not been given their own clip
+  -- yet; battle entrances pass 11/37 (#837).
   if species == "PIKACHU" then
-    local src = Sound.playPikaCry(data, 1)
+    local src = Sound.playPikaCry(data, pikaClip or 1)
     if src then return src end
   end
   local cries = data.audio and data.audio.cries
@@ -451,6 +519,7 @@ end
 -- hot reload / jukebox A-B: drop one key's sources (its pitch-tempo
 -- variants included) or all of them, so the next play re-resolves the def
 function Sound.invalidate(name)
+  lastMoveSfx = nil -- its source is about to be dropped or stopped
   local function evict(store, key)
     local src = store[key]
     if src then pcall(src.stop, src) end

@@ -99,7 +99,20 @@ end
 function NamingScreen:confirm()
   local name = table.concat(self.glyphs)
   if name == "" then
-    name = (self.presets and self.presets[1]) or self.default or "A"
+    -- An empty confirm (START, or the ED cell with nothing typed) must not
+    -- invent a letter (#833).  DisplayNamingScreen seeds wStringBuffer with
+    -- '@' (engine/menus/naming_screen.asm) and every caller checks that first
+    -- byte: AskName falls through to .declinedNickname, copying the species
+    -- name over the nick slot -- vanilla's "un-nicknamed", which this port
+    -- models as mon.nickname == nil (src/save_convert/GenSave.lua), so
+    -- evolution can still rename the mon.  DisplayNameRaterScreen takes
+    -- .playerCancelled and keeps the old nick, which is why an explicit
+    -- opts.default still wins here.  Player/rival naming
+    -- (oak_speech2.asm ChoosePlayerName) re-opens on '@' and never accepts an
+    -- empty result; the port keeps its preset fallback for that.
+    -- Contract for callers: "" means NO name -- BattleState:askNicknameUI and
+    -- Commands.give_pokemon both guard on #name > 0 before setting nickname.
+    name = (self.presets and self.presets[1]) or self.default or ""
   end
   Sound.play(self.game.data, "Press_AB")
   self.game.stack:pop()

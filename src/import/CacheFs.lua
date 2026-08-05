@@ -294,6 +294,9 @@ function CacheFs.read(rel)
     f:close()
     return data
   end
+  -- headless (plain luajit, e.g. the modkit validate/pack driver): there is
+  -- no save directory to read from, so a cache miss is nil, not a crash
+  if not (love and love.filesystem) then return nil end
   return love.filesystem.read(rel)
 end
 

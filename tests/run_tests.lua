@@ -3400,6 +3400,9 @@ runSuites({ "tests/input_hold_test.lua" })
 -- ---------------------------------------------- launcher cursor (#114)
 runSuites({ "tests/rom_importer_cursor_test.lua" })
 
+-- ---------------------------------------------- launcher last played tab (#835)
+runSuites({ "tests/rom_importer_last_version_test.lua" })
+
 -- ---------------------------------------------- Android second ROM pick (#167)
 runSuites({ "tests/rom_importer_android_pick_test.lua" })
 

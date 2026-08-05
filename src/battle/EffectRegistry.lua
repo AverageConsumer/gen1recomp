@@ -209,8 +209,28 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   -- announcement-time moveAnimRow, later hits queue fresh anim rows.
   -- Thrash/rage continuations have no announcement anim -- a bare
   -- hitRow carries the blink instead.
-  local hitSfx = info.typeMult > 10 and "Super_Effective"
-                 or info.typeMult < 10 and "Not_Very_Effective" or "Damage"
+  -- PlayApplyingAttackSound (engine/battle/animations.asm, the routine after
+  -- PlayApplyingAttackAnimation) picks the sound off wDamageMultipliers -- 10
+  -- is neutral, above it super effective, below it not very -- and sets
+  -- wFrequencyModifier/wTempoModifier alongside it: $20/$30 damage, $e0/$ff
+  -- super effective, $50/$01 not very.  All three programs live on the noise
+  -- channel (audio/sfx/{damage,super_effective,not_very_effective}.asm,
+  -- `channel 8`), where the frequency modifier is added to the polynomial
+  -- counter and so IS the pitch of the hit, while the tempo modifier is
+  -- skipped outright (audio/engine_2.asm Audio2_note_length: `cp CHAN8 /
+  -- jr z, .skip` keeps the noise channel at the default $100).  Playing them
+  -- bare made the super effective hit a dull thud and the not very effective
+  -- one a bright crack, which is why they sounded swapped (#826); the tempo
+  -- byte is deliberately not carried, since applying it would stretch notes
+  -- the hardware never stretches.
+  local hitSfx
+  if info.typeMult > 10 then
+    hitSfx = { sound = "Super_Effective", pitch = 0xe0 }
+  elseif info.typeMult < 10 then
+    hitSfx = { sound = "Not_Very_Effective", pitch = 0x50 }
+  else
+    hitSfx = { sound = "Damage", pitch = 0x20 }
+  end
   -- GetPlayerAnimationType / GetEnemyAnimationType (engine/battle/core.asm
   -- :3159 / :5555): wAnimationType is 4 (blink the enemy pic) or 1 (shake
   -- the screen vertically) for a damaging move with no added effect, and

@@ -202,6 +202,30 @@ local function headerChannels(banks, header)
   return channels
 end
 
+-- Which software channels (CHAN5-8) an sfx occupies: its header carries one
+-- 3-byte descriptor per channel.  Audio2_PlaySound walks exactly this list to
+-- decide whether a new sfx may start at all (audio/engine_2.asm
+-- .sfxChannelLoop), so Sound.playMove needs the set to reproduce that gate.
+-- nil = not knowable here (a file def, or the banks are not readable yet),
+-- which callers read as "no conflict".
+function ChipSynth.effectChannels(data, def)
+  if type(def) ~= "table" then return nil end
+  local chip = def.chip
+  local specs = chip and chip.channels
+  if not specs then
+    if not def.address then return nil end
+    local ok, banks = pcall(engineBanks, data, chip)
+    if not ok then return nil end
+    local read
+    ok, read = pcall(headerChannels, banks, def)
+    if not ok then return nil end
+    specs = read
+  end
+  local channels = {}
+  for _, spec in ipairs(specs) do channels[#channels + 1] = spec.number end
+  return channels
+end
+
 local function fadeValue(nibble)
   if bit.band(nibble, 8) ~= 0 then return -bit.band(nibble, 7) end
   return nibble
@@ -406,7 +430,15 @@ function Channel:nextEvent()
     elseif command == 0xEC then
       self.duty = bit.band(self:byte(), 3)
     elseif command == 0xED then
-      self.engine.tempo = self:byte() * 0x100 + self:byte()
+      local high = self:byte()
+      local low = self:byte()
+      -- a header carrying its own tempo is one of audio/alternate_tempo.asm's
+      -- Music_*AlternateTempo entry points, which re-point channel 1 at a
+      -- stub that sets the tempo and jumps into the normal body -- the body's
+      -- own tempo command never runs there, so ignore it here (#847)
+      if not self.engine.tempoLocked then
+        self.engine.tempo = high * 0x100 + low
+      end
     elseif command == 0xEE then
       self.engine.pan = self:byte()
     elseif command == 0xEF or command == 0xF0 then
@@ -458,7 +490,15 @@ function Channel:nextEvent()
       local volume = bit.rshift(packed, 4)
       local fade = fadeValue(bit.band(packed, 0x0F))
       if self.noise then
-        local parameter = self:byte()
+        -- Audio2_ApplyWavePatternAndFrequency adds wFrequencyModifier to the
+        -- frequency low byte for every channel at or past CHAN5, the noise
+        -- channel included (audio/engine_2.asm Audio2_ApplyFrequencyModifier).
+        -- On CHAN8 that byte is the polynomial counter, so the modifier moves
+        -- the noise pitch; it wraps at 8 bits, the carry landing in the high
+        -- byte that noise does not use for frequency.  Dropping it left the
+        -- battle hit sounds at their unmodified pitches, where super effective
+        -- reads as the duller of the two (#826).
+        local parameter = bit.band(self:byte() + self.frequencyOffset, 0xFF)
         return self:noiseEvent(
           self:durationTicks(length), volume, fade, parameter)
       end
@@ -753,6 +793,12 @@ function Engine.new(data, header, options)
     noiseInstruments = {},
     channels = {},
   }, Engine)
+  -- header.tempo: the Music_*AlternateTempo override Music.play stamps onto
+  -- a copy of the song def (audio/alternate_tempo.asm) (#847)
+  if header.tempo then
+    engine.tempo = header.tempo
+    engine.tempoLocked = true
+  end
   for _, spec in ipairs(chip and chip.channels
       or headerChannels(banks, header)) do
     local frameTicks = options.frameTicks

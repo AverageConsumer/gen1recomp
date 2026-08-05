@@ -868,4 +868,20 @@ function PaletteFX.sendColors(shader, c)
   shader:send("c3", { c[4][1] / 255, c[4][2] / 255, c[4][3] / 255 })
 end
 
+-- The same send with NO display-mode substitution and no shade map: the four
+-- colors reach the shader exactly as given.  Only for an INTERMEDIATE pass
+-- whose output is re-thresholded downstream -- the classic battle's zone pass
+-- under a forced-mono mode, where ensureZones' whole-screen zone already
+-- substitutes once at blit time and doing it again here applies the mode
+-- twice (#822).  Everything that draws a final pixel wants sendColors.
+function PaletteFX.sendShades(shader, c)
+  -- headless (no love.graphics) leaves shader() nil; sendColors reaches the
+  -- same no-op through effectiveColors returning nil for an absent palette
+  if not shader or not c then return end
+  shader:send("c0", { c[1][1] / 255, c[1][2] / 255, c[1][3] / 255 })
+  shader:send("c1", { c[2][1] / 255, c[2][2] / 255, c[2][3] / 255 })
+  shader:send("c2", { c[3][1] / 255, c[3][2] / 255, c[3][3] / 255 })
+  shader:send("c3", { c[4][1] / 255, c[4][2] / 255, c[4][3] / 255 })
+end
+
 return PaletteFX

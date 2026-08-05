@@ -82,6 +82,7 @@ state = {
   fanfare = nil,      -- fanfare SFX source; the song pauses while it plays
   fanfareResume = false, -- start/resume state.source when the fanfare ends
   fade = nil,         -- active volume-ramp fade-out (see Music.fadeOut)
+  tempo = nil,        -- alternate-tempo override in force for `current`
   failed = {},        -- labels whose def could not be started; logged once
 }
 
@@ -234,11 +235,23 @@ function Music.play(data, song, loop, ctx)
   if not song then return end
   if not love.audio then return end -- headless test stub
   song = selectSong(song, ctx)
+  -- ctx.tempo is a Music_*AlternateTempo cue (audio/alternate_tempo.asm):
+  -- the same song restarted with channel 1 re-pointed at a stub whose only
+  -- difference is its `tempo`, so the same label at a different tempo is a
+  -- different cue and must not be deduped away (#847)
+  local tempo = ctx and ctx.tempo or nil
   -- a hook may silence the cue outright, or swap in a label the dedupe
   -- below has to compare against
-  if not song or song == state.current then return end
+  if not song or (song == state.current and tempo == state.tempo) then return end
   local def = songDef(data, song)
   if not def or state.failed[song] then return end
+  if tempo then
+    -- shallow copy: the registry def is shared, only this playback is slowed
+    local slowed = {}
+    for key, value in pairs(def) do slowed[key] = value end
+    slowed.tempo = tempo
+    def = slowed
+  end
   local wantLoop = loop ~= false
   local src, loopSrc, isChip, err = startSong(data, def, wantLoop)
   if not src then
@@ -274,6 +287,7 @@ function Music.play(data, song, loop, ctx)
   local previous = state.current
   state.source, state.loopSource, state.chip = src, loopSrc, isChip
   state.current = song
+  state.tempo = tempo
   if Runtime.wants("music.started") then
     Runtime.emit("music.started", {
       song = song, previous = previous, chip = isChip,
@@ -288,6 +302,7 @@ function Music.stop()
   stopSource(state.loopSource)
   require("src.core.ChipAudio").stopMusic()
   state.current, state.source, state.loopSource, state.fade = nil, nil, nil, nil
+  state.tempo = nil
   state.chip = false
   state.pendingRestore = nil
   if previous and Runtime.wants("music.stopped") then

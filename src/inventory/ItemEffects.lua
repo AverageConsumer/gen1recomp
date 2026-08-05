@@ -497,6 +497,13 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     if battle then
       return "failed", { notTime(data, save) }
     end
+    -- ItemUseBicycle (engine/items/item_effects.asm) opens with
+    -- `cp 2 ; is the player surfing?` -> jp z, ItemUseNotTime, so the
+    -- BICYCLE refuses on the water with the same OAK text as the rods
+    -- above (#846)
+    if ow and ow.player and ow.player.surfing then
+      return "failed", { notTime(data, save) }
+    end
     return "bicycle"
   end
 

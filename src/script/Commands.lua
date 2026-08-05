@@ -260,6 +260,26 @@ function Commands.take_item(ctx, itemId, count)
   if inv[itemId] == 0 then inv[itemId] = nil end
 end
 
+-- save_end_battle_text <TEXT_KEY>: SaveEndBattleTextPointers
+-- (home/trainers.asm, called from e.g. RocketHideoutB4FScript10 just before
+-- wCurOpponent is set).  The armed line is the trainer's OWN loss line and
+-- belongs on the battle screen: PrintEndBattleText (home/trainers.asm) runs
+-- from TrainerBattleVictory (engine/battle/core.asm) after
+-- TrainerDefeatedText and the pic scroll but BEFORE MoneyForWinningText, and
+-- TrainerEndBattleText prints _TrainerNameText first so the line opens with
+-- the "CLASS: " tag.  Scripts that printed it with a plain show_text after
+-- start_battle got it a box too late -- after the payout -- and untagged
+-- (#866).  Arms exactly one battle; start_battle consumes it.
+function Commands.save_end_battle_text(ctx, textId)
+  local text = ctx.game.data.text[textId]
+  if not text and ctx.overworld then
+    text = ctx.game.data:resolveText(ctx.overworld.map.def.label, textId)
+  end
+  -- BattleState takes finished text, so expand {PLAYER}/{RIVAL} here the
+  -- way OverworldState:engageTrainer does for the sight/talk path
+  ctx.endBattleText = TextBox.substitute(ctx.game, text or textId)
+end
+
 -- start_battle "wild" species level | start_battle "trainer" OPP_CLASS partyIndex
 function Commands.start_battle(ctx, kind, a, b)
   local BattleState = require("src.battle.BattleState")
@@ -270,6 +290,9 @@ function Commands.start_battle(ctx, kind, a, b)
   else
     battle = BattleState.newTrainer(ctx.game, a, b)
   end
+  -- one SaveEndBattleTextPointers arms one battle; leaving it set would leak
+  -- the line into the next scripted fight
+  battle.endBattleText, ctx.endBattleText = ctx.endBattleText, nil
   battle.onFinish = function(result)
     ctx.lastBattleResult = result
     ctx.lastCheck = result == "win"
@@ -1075,9 +1098,13 @@ function Commands.march_in_place(ctx, objIndex, on)
 end
 
 -- play_music <songId> [opts]: switch map music now; opts.keep marks it
--- to survive the next warp (the story files' keepMusic idiom)
+-- to survive the next warp (the story files' keepMusic idiom).
+-- opts.tempo is the Music_*AlternateTempo override (audio/alternate_tempo.asm
+-- re-points channel 1 at a stub that only changes the song's `tempo`) (#847).
 function Commands.play_music(ctx, songId, opts)
-  require("src.core.Music").play(ctx.game.data, songId)
+  local tempo = opts and opts.tempo
+  require("src.core.Music").play(ctx.game.data, songId, nil,
+                                 tempo and { tempo = tempo } or nil)
   if opts and opts.keep and ctx.overworld then
     ctx.overworld.keepMusicOnce = true
   end
@@ -1085,6 +1112,15 @@ end
 
 function Commands.stop_music(ctx)
   require("src.core.Music").stop()
+end
+
+-- fade_music [control]: FadeOutAudio (home/fade_audio.asm) -- ramp the
+-- current song to silence over 7 * control frames and stop it, the way
+-- Music_Cities1AlternateTempo does before it restarts Cities1 (#847).
+-- Non-blocking, like the ROM's write to wAudioFadeOutControl: pair it with
+-- the `wait` that stands in for the following DelayFrames.
+function Commands.fade_music(ctx, control)
+  require("src.core.Music").fadeOut(control or 10)
 end
 
 -- play_default_music: PlayDefaultMusic -- resume the current map's own

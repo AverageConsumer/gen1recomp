@@ -437,6 +437,25 @@ local function buildRows(game)
         require("src.core.TouchControls"):applyOptions(o)
         return true
       end },
+    -- Haptic feedback for on-screen pad presses (#806): OFF / LIGHT /
+    -- MEDIUM / HEAVY, where the intensity is a vibration duration --
+    -- love.system.vibrate takes nothing else.  Hidden with TOUCH PAD below,
+    -- since the only thing that buzzes is a virtual button press.
+    { id = "haptics", label = Strings("VIBRATION"),
+      value = function(g)
+        local TC = require("src.core.TouchControls")
+        return Strings(TC.hapticLabel(g.save.options.haptics))
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        local TC = require("src.core.TouchControls")
+        o.haptics = TC.cycleHaptics(o.haptics, dir)
+        TC:applyOptions(o)
+        -- sample the level being selected: stepping the row is the only way
+        -- to compare LIGHT against HEAVY without leaving the menu
+        TC.buzz(o.haptics)
+        return true
+      end },
   }
   -- issue #136: hide GBC FX on Android/iOS -- the present shader soft-bricks
   if not GBCFX.isSupported() then
@@ -454,8 +473,10 @@ local function buildRows(game)
     end
     rows = filtered
   end
-  -- TOUCH PAD only where the overlay can appear (mobile, or desktop with
-  -- POKEPORT_TOUCH=1).  POKEPORT_TOUCH=0 forces it off everywhere.
+  -- TOUCH PAD and VIBRATION only where the overlay can appear (mobile, or
+  -- desktop with POKEPORT_TOUCH=1).  POKEPORT_TOUCH=0 forces it off
+  -- everywhere.  VIBRATION rides the same gate: nothing else in the port
+  -- vibrates, and love.system.vibrate is a no-op on desktop anyway.
   do
     local env = os.getenv("POKEPORT_TOUCH")
     local osName = love.system and love.system.getOS and love.system.getOS()
@@ -464,7 +485,9 @@ local function buildRows(game)
     if not show then
       local filtered = {}
       for _, row in ipairs(rows) do
-        if row.id ~= "touchControls" then filtered[#filtered + 1] = row end
+        if row.id ~= "touchControls" and row.id ~= "haptics" then
+          filtered[#filtered + 1] = row
+        end
       end
       rows = filtered
     end

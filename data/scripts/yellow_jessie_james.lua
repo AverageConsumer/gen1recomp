@@ -62,10 +62,15 @@ M.MT_MOON_B2F = {
       { "walk_npc", 6, { "left", "left", "left", "left", "left" } },
       { "face_object", 6, "left" },
       { "show_text", "_MtMoonJessieJamesText2" },
+      -- MtMoonB2FScript12 arms _MtMoonJessieJamesText3 with
+      -- SaveEndBattleTextPointers before it sets wCurOpponent, so
+      -- TrainerBattleVictory prints it on the battle screen as "ROCKET: A
+      -- brat beat us?" between TrainerDefeatedText and MoneyForWinningText.
+      -- Its one-word first line only reads right behind that tag (#866).
+      { "save_end_battle_text", "_MtMoonJessieJamesText3" },
       { "start_battle", "trainer", "OPP_ROCKET", 42 },
       { "check_battle_result", "win" },
       { "jump_if_false", "end" },
-      { "show_text", "_MtMoonJessieJamesText3" },
       { "show_text", "_MtMoonJessieJamesText4" },
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
@@ -85,7 +90,8 @@ M.MT_MOON_B2F = {
 -- motto plays from off-screen FIRST, then the duo pops in at (25,10) /
 -- (24,10) and whichever of them shares the player's column ($18=24 or
 -- $19=25, EVENT_ROCKET_HIDEOUT_4_JESSIE_JAMES_ON_LEFT) walks the three
--- tiles down to loom over the player while the other steps one.  A loss
+-- tiles down to loom over the player while the other walks four and ends
+-- up beside him.  A loss
 -- re-hides them (RocketHideoutB4FResetScripts via EVENT_6A0), so the
 -- trigger re-arms clean.
 -- -------------------------------------------------------------------
@@ -106,7 +112,7 @@ M.ROCKET_HIDEOUT_B4F = {
     if f.EVENT_BEAT_ROCKET_HIDEOUT_4_JESSIE_JAMES then return false end
     -- ON_LEFT: player under James's column (25); movement data pairs
     -- RocketHideoutB4FJessieJamesMovementData_45605/45606 swap so the
-    -- column-mate walks 3, the other 1.
+    -- column-mate walks 3, the other 4.
     local onLeft = (x == 25)
     ow.runner:run({
       { "stop_music" },
@@ -116,16 +122,30 @@ M.ROCKET_HIDEOUT_B4F = {
       { "emote", "player", "shock", 30 },
       { "show_object", "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_JAMES" },
       { "show_object", "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_JESSIE" },
-      -- James (object 2) then Jessie (object 3), Script4..Script9 order
-      { "walk_npc", 2, onLeft and { "down", "down", "down" } or { "down" } },
+      -- James (object 2) then Jessie (object 3), Script4..Script9 order.
+      -- RocketHideoutB4FJessieJamesMovementData_45605 is a lone $4 that FALLS
+      -- THROUGH into _45606 ($4 $4 $4 $ff), so MoveSprite_ (home/pathfinding.asm)
+      -- reads _45605 as FOUR steps and _45606 as three; $4 is DOWN in Yellow's
+      -- Func_5288 lookup (engine/overworld/movement.asm), which walks with no
+      -- collision test.  From (25,10)/(24,10) against a player on y=14 the
+      -- column-mate stops three down, right above him, and the other walks the
+      -- full four to stand alongside -- which is what the facings below assume.
+      -- Reading _45605 as a single step stranded whoever was off-column three
+      -- tiles away, so James never reached the player (#865).
+      { "walk_npc", 2, onLeft and { "down", "down", "down" }
+                              or { "down", "down", "down", "down" } },
       { "face_object", 2, onLeft and "down" or "left" },
-      { "walk_npc", 3, onLeft and { "down" } or { "down", "down", "down" } },
+      { "walk_npc", 3, onLeft and { "down", "down", "down", "down" }
+                              or { "down", "down", "down" } },
       { "face_object", 3, onLeft and "right" or "down" },
       { "show_text", "_RocketHideoutJessieJamesText2" },
+      -- RocketHideoutB4FScript10 saves _RocketHideoutJessieJamesText3 as the
+      -- end-battle text, so it prints as "ROCKET: Such a dreadful twerp!" on
+      -- the battle screen ahead of MoneyForWinningText (#866).
+      { "save_end_battle_text", "_RocketHideoutJessieJamesText3" },
       { "start_battle", "trainer", "OPP_ROCKET", 43 },
       { "check_battle_result", "win" },
       { "jump_if_false", "lost" },
-      { "show_text", "_RocketHideoutJessieJamesText3" },
       { "show_text", "_RocketHideoutJessieJamesText4" },
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
@@ -175,16 +195,27 @@ M.POKEMON_TOWER_7F = {
       { "show_text", "_PokemonTowerJessieJamesText1" },
       { "face_player_dir", "up" },
       { "emote", "player", "shock", 30 },
-      -- Jessie (object 1) then James (object 2), Script1..Script6 order
-      { "walk_npc", 1, onLeft and { "down" } or { "down", "down", "down" } },
+      -- Jessie (object 1) then James (object 2), Script1..Script6 order.
+      -- Same fall-through blob as the hideout: PokemonTower7FMovementData_60d7a
+      -- is a lone $4 running into _60d7b ($4 $4 $4 $FF), so _60d7a is FOUR
+      -- steps and _60d7b is three.  From (10,8)/(11,8) against a player on
+      -- y=12 the column-mate halts one tile above him and the other closes the
+      -- full four to his side; the single-step reading is why James only
+      -- "moved a bit" here (#865).
+      { "walk_npc", 1, onLeft and { "down", "down", "down", "down" }
+                              or { "down", "down", "down" } },
       { "face_object", 1, onLeft and "right" or "down" },
-      { "walk_npc", 2, onLeft and { "down", "down", "down" } or { "down" } },
+      { "walk_npc", 2, onLeft and { "down", "down", "down" }
+                              or { "down", "down", "down", "down" } },
       { "face_object", 2, onLeft and "down" or "left" },
       { "show_text", "_PokemonTowerJessieJamesText2" },
+      -- PokemonTower7FScript7 saves _PokemonTowerJessieJamesText3 as the
+      -- end-battle text: "ROCKET: You will regret this!" on the battle screen,
+      -- before the prize money (#866).
+      { "save_end_battle_text", "_PokemonTowerJessieJamesText3" },
       { "start_battle", "trainer", "OPP_ROCKET", 44 },
       { "check_battle_result", "win" },
       { "jump_if_false", "end" },
-      { "show_text", "_PokemonTowerJessieJamesText3" },
       { "show_text", "_PokemonTowerJessieJamesText4" },
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
@@ -254,10 +285,12 @@ M.SILPH_CO_11F = {
       { "walk_npc", 6, jessieDirs },
       { "face_object", 6, jessieFace },
       { "show_text", "_SilphCoJessieJamesText2" },
+      -- SilphCo11FScript11 saves _SilphCoJessieJamesText3 (SilphCo11FText_624c2)
+      -- as the end-battle text: "ROCKET: Like always..." before the money (#866).
+      { "save_end_battle_text", "_SilphCoJessieJamesText3" },
       { "start_battle", "trainer", "OPP_ROCKET", 45 },
       { "check_battle_result", "win" },
       { "jump_if_false", "end" },
-      { "show_text", "_SilphCoJessieJamesText3" },
       { "show_text", "_SilphCoJessieJamesText4" },
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },

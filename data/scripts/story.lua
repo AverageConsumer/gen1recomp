@@ -1031,23 +1031,31 @@ local championsRoomRivalScript = {
   { "show_text", "_ChampionsRoomRivalAfterBattleText" },    -- 10
   -- ChampionsRoomOakArrivesScript: Music_Cities1AlternateTempo
   -- (Cities1, kept into HALL_OF_FAME like BIT_NO_MAP_MUSIC after
-  -- defeating RIVAL3), then Oak's "{PLAYER}!" + reveal + walk in
-  { "play_music", "Music_Cities1", { keep = true } },       -- 11
-  { "show_text", "_ChampionsRoomOakText" },                 -- 12
-  { "show_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 13
-  { "move_npc", 2, "up", 5 },                               -- 14 OakEntranceAfterVictoryMovement
+  -- defeating RIVAL3), then Oak's "{PLAYER}!" + reveal + walk in.
+  -- audio/alternate_tempo.asm Music_Cities1AlternateTempo is not a plain
+  -- PlayMusic: it fades the current song out (wAudioFadeOutControl = 10),
+  -- waits 100 frames for the fade, then restarts Cities1 with channel 1
+  -- pointed at Music_Cities1_Ch1_AlternateTempo -- `tempo 232` where the
+  -- normal Music_Cities1_Ch1 opens `tempo 144`, i.e. the slower, heavier
+  -- reading of the town theme this scene is known for (#847).
+  { "fade_music", 10 },                                     -- 11
+  { "wait", 100 },                                          -- 12
+  { "play_music", "Music_Cities1", { keep = true, tempo = 232 } }, -- 13
+  { "show_text", "_ChampionsRoomOakText" },                 -- 14
+  { "show_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 15
+  { "move_npc", 2, "up", 5 },                               -- 16 OakEntranceAfterVictoryMovement
   -- OakCongratulatesPlayerScript: rival faces left, Oak faces down
-  { "face_object", 1, "left" },                             -- 15
-  { "face_object", 2, "down" },                             -- 16
-  { "show_text", "_ChampionsRoomOakCongratulatesPlayerText" }, -- 17
+  { "face_object", 1, "left" },                             -- 17
+  { "face_object", 2, "down" },                             -- 18
+  { "show_text", "_ChampionsRoomOakCongratulatesPlayerText" }, -- 19
   -- OakDisappointedWithRivalScript: Oak turns to the rival (right)
-  { "face_object", 2, "right" },                            -- 18
-  { "show_text", "_ChampionsRoomOakDisappointedWithRivalText" }, -- 19
+  { "face_object", 2, "right" },                            -- 20
+  { "show_text", "_ChampionsRoomOakDisappointedWithRivalText" }, -- 21
   -- OakComeWithMeScript: Oak faces down again, then exits up
-  { "face_object", 2, "down" },                             -- 20
-  { "show_text", "_ChampionsRoomOakComeWithMeText" },       -- 21
-  { "move_npc", 2, "up", 2 },                               -- 22 OakExitChampionsRoomMovement
-  { "hide_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 23
+  { "face_object", 2, "down" },                             -- 22
+  { "show_text", "_ChampionsRoomOakComeWithMeText" },       -- 23
+  { "move_npc", 2, "up", 2 },                               -- 24 OakExitChampionsRoomMovement
+  { "hide_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 25
   -- ChampionsRoomPlayerFollowsOakScript / WalkToHallOfFame_RLEMovement
   -- (PAD_UP 4, PAD_LEFT 1): the player walks out after Oak instead of the
   -- screen just fading on the spot (#704).  The entrance walk leaves the
@@ -1057,12 +1065,14 @@ local championsRoomRivalScript = {
   -- trailing UP/LEFT are dropped.  Scripted steps ignore collision here just
   -- as they do in the original (CollisionCheckOnLand skips its checks while
   -- wSimulatedJoypadStatesIndex is non-zero), so stepping through the
-  -- rival's cell at (4,2) is the ported behavior, not a clip.
-  { "move_player", "up", 3 },                               -- 24
+  -- rival's cell at (4,2) is the ported behavior, not a clip.  Re-reported
+  -- as a clip in #847 and re-checked against home/overworld.asm
+  -- CollisionCheckOnLand, which is still the authority: do not "fix" it.
+  { "move_player", "up", 3 },                               -- 26
   -- hand the induction off to the HALL_OF_FAME room (consumed by its
   -- onEnter), then warp up into it (destWarp 1 lands at (4,7) facing up)
-  { "set_field", "pendingHallOfFame", true },               -- 25
-  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 26
+  { "set_field", "pendingHallOfFame", true },               -- 27
+  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 28
 }
 
 M.CHAMPIONS_ROOM = {

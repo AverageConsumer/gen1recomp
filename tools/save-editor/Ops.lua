@@ -717,6 +717,58 @@ function Ops.dexClear(S)
   return Ops.mark(S, "Pokedex wiped")
 end
 
+-- ------------------------------------------------------------------ dex sort
+-- The DEX grid's row order.  Sorting is view-only: it never touches the save,
+-- so the list itself is computed here (pure, testable) and the switch is
+-- narrated through Ops.say, never Ops.mark.
+--
+--   "dex"  -- by Pokedex number (1-151), the panel default
+--   "name" -- by display name, alphabetical (case-insensitive)
+--
+-- A species whose record lacks the sort key (a partial mod record) sorts
+-- last, ordered by its id, so the grid can never drop a row or crash.
+-- table.sort is not stable, so every sort carries the id as a tiebreak and
+-- the order is fully deterministic.
+local SORT_KEYS = {
+  dex = function(def, id)
+    return def and def.dex or math.huge
+  end,
+  name = function(def, id)
+    local name = def and def.name
+    return (name and tostring(name):lower()) or tostring(id):lower()
+  end,
+}
+
+function Ops.dexList(S)
+  local list = S and S.cat and S.cat.species
+  if not list then return {} end
+  local make = SORT_KEYS[S.dexSort == "name" and "name" or "dex"]
+  local data = S.data
+  local rows = {}
+  for _, id in ipairs(list) do
+    rows[#rows + 1] = { key = make(data and data.pokemon and data.pokemon[id], id),
+                        id = id }
+  end
+  table.sort(rows, function(a, b)
+    if a.key ~= b.key then return a.key < b.key end
+    return a.id < b.id
+  end)
+  local out = {}
+  for i, r in ipairs(rows) do out[i] = r.id end
+  return out
+end
+
+-- View-only verb: switching the DEX grid's order resets its scroll but never
+-- dirties the save or narrates in the status bar (the active chip carries
+-- the mode).  Returns true when the mode changed, false on a no-op.
+function Ops.dexSort(S, mode)
+  if mode ~= "name" and mode ~= "dex" then return false end
+  if S.dexSort == mode then return false end
+  S.dexSort = mode
+  S.dexOffset = 0
+  return true
+end
+
 -- -------------------------------------------------------------------- map
 -- Outdoor is detected the way the game treats LAST_MAP sources:
 -- OVERWORLD/PLATEAU tilesets, maps with connections, or fly spots the save
