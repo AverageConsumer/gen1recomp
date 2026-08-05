@@ -404,6 +404,21 @@ public class GameActivity extends SDLActivity {
             getContentResolver(), DUAL_SCREEN_DISPLAY_MODE, -1);
     }
 
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // AYN's screen toggle shells out to `input keyevent 60` (Right Shift).
+        // SDL would expose that virtual key as SELECT and change gameplay.
+        if (dualScreenDisplayMode != -1
+                && event.getKeyCode() == KeyEvent.KEYCODE_SHIFT_RIGHT
+                && event.getDeviceId() == KeyCharacterMap.VIRTUAL_KEYBOARD) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                Log.d("GameActivity", "ignored synthetic AYN screen-toggle key");
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
     private void unregisterCompanionDisplayObservers() {
         if (displayManager != null && companionDisplayListenerRegistered) {
             displayManager.unregisterDisplayListener(companionDisplayListener);
