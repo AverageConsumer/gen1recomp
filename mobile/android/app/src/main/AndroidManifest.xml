@@ -31,6 +31,9 @@
       android:allowBackup="true"
       android:icon="@drawable/love"
       android:label="${NAME}" >
+    <meta-data
+        android:name="android.allow_multiple_resumed_activities"
+        android:value="true" />
     <activity
         android:name="org.love2d.android.GameActivity"
         android:exported="true"
@@ -49,5 +52,15 @@
         <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
       </intent-filter>
     </activity>
+    <activity
+        android:name="org.love2d.android.GameActivity$SecondaryActivity"
+        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation"
+        android:excludeFromRecents="true"
+        android:exported="false"
+        android:launchMode="singleTask"
+        android:resizeableActivity="false"
+        android:screenOrientation="${ORIENTATION}"
+        android:taskAffinity="${applicationId}.secondary"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
   </application>
 </manifest>
