@@ -1380,7 +1380,7 @@ public class GameActivity extends SDLActivity {
     // in src/jni/love/src/common/android.cpp.
     private static volatile SecondaryPresentation secondaryPresentation;
     // Android rejects Presentation on the unflagged primary display. On Android
-    // 10+ a non-focusable Activity can host that one asymmetric layout instead.
+    // 10+ an Activity can host that one asymmetric layout instead.
     private static volatile SecondaryActivity secondaryActivity;
     private static volatile boolean secondaryActivityPending;
     private static volatile int secondaryActivityTarget = Display.INVALID_DISPLAY;

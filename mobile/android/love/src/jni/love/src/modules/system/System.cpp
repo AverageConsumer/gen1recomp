@@ -221,6 +221,52 @@ bool System::is24HourClock() const
 #endif
 }
 
+bool System::hasSecondaryDisplay() const
+{
+#ifdef LOVE_ANDROID
+	return ::love_android_secondary_detected() != 0;
+#else
+	return false;
+#endif
+}
+
+bool System::presentSecondaryDisplay(int width, int height, const void *rgba, size_t size,
+	unsigned int backgroundColor, const char *preference) const
+{
+#ifdef LOVE_ANDROID
+	if (rgba == nullptr || width <= 0 || height <= 0
+		|| size != (size_t) width * (size_t) height * 4)
+		return false;
+	return ::love_android_present_secondary(rgba, width, height,
+		backgroundColor, preference) != 0;
+#else
+	LOVE_UNUSED(width);
+	LOVE_UNUSED(height);
+	LOVE_UNUSED(rgba);
+	LOVE_UNUSED(size);
+	LOVE_UNUSED(backgroundColor);
+	LOVE_UNUSED(preference);
+	return false;
+#endif
+}
+
+std::string System::pollSecondaryDisplayTouch() const
+{
+#ifdef LOVE_ANDROID
+	const char *touch = ::love_android_poll_secondary_touch();
+	return touch != nullptr ? touch : "";
+#else
+	return std::string();
+#endif
+}
+
+void System::closeSecondaryDisplay() const
+{
+#ifdef LOVE_ANDROID
+	::love_android_secondary_enable(0);
+#endif
+}
+
 bool System::syncHealthSteps() const
 {
 #ifdef LOVE_ANDROID

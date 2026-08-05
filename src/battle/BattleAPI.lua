@@ -362,6 +362,14 @@ function BattleAPI:submit(intent)
   elseif intent.kind == "mimic" then
     if top ~= battle then return nil, "mimic menu is covered" end
     ok, err = battle:chooseMimic(intent.index)
+  elseif intent.kind == "advance" then
+    local canAdvance = (top == battle and battle.phase == "messages"
+      and battle.current and (battle.msgWaiting or battle.msgPrompt))
+      or (top and top.isTextBox and not top.choice
+        and (top.waiting or top.done))
+    if not canAdvance then return nil, "battle text is not waiting" end
+    table.insert(self.game.input.pressQueue, "a")
+    ok = true
   elseif intent.kind == "fight" or intent.kind == "run" then
     if top ~= battle then return nil, "battle menu is covered" end
     ok, err = battle:chooseMenu(intent.kind)

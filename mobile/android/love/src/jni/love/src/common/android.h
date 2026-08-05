@@ -153,5 +153,14 @@ const char *getArg0();
 } // android
 } // love
 
+extern "C"
+{
+int love_android_secondary_detected();
+int love_android_present_secondary(const void *rgba, int width, int height,
+	unsigned int background, const char *preference);
+const char *love_android_poll_secondary_touch();
+void love_android_secondary_enable(int on);
+}
+
 #endif // LOVE_ANDROID
 #endif // LOVE_ANDROID_H
