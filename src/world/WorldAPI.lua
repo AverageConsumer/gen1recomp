@@ -31,33 +31,44 @@ local function mapTileRows(map)
   if not cached then
     local ok, pixels = pcall(Assets.imageData, tileset.image)
     if not ok then return nil end
-    cached = { pixels = pixels, shades = {} }
+    cached = { pixels = pixels, tiles = {} }
     overviewShades[tileset.image] = cached
   end
-  local rows, perRow = {}, tileset.tilesPerRow
+  local rows, detailRows, perRow = {}, {}, tileset.tilesPerRow
   for ty = 0, map.heightCells * 2 - 1 do
-    local row = {}
+    local row, detailTop, detailBottom = {}, {}, {}
     for tx = 0, map.widthCells * 2 - 1 do
       local tile = map:tileAt(tx, ty)
-      local shade = cached.shades[tile]
-      if shade == nil then
-        local sum = 0
+      local shades = cached.tiles[tile]
+      if shades == nil then
+        local sums = { 0, 0, 0, 0 }
         local ox, oy = (tile % perRow) * 8, math.floor(tile / perRow) * 8
         for py = 0, 7 do
           for px = 0, 7 do
             local r, g, b = cached.pixels:getPixel(ox + px, oy + py)
-            sum = sum + r * 0.2126 + g * 0.7152 + b * 0.0722
+            local quadrant = math.floor(py / 4) * 2 + math.floor(px / 4) + 1
+            sums[quadrant] = sums[quadrant]
+              + r * 0.2126 + g * 0.7152 + b * 0.0722
           end
         end
-        shade = tostring(math.max(0, math.min(3,
-          math.floor((1 - sum / 64) * 3 + 0.5))))
-        cached.shades[tile] = shade
+        local function digit(sum, pixels)
+          return tostring(math.max(0, math.min(3,
+            math.floor((1 - sum / pixels) * 3 + 0.5))))
+        end
+        shades = { digit(sums[1] + sums[2] + sums[3] + sums[4], 64),
+                   digit(sums[1], 16), digit(sums[2], 16),
+                   digit(sums[3], 16), digit(sums[4], 16) }
+        cached.tiles[tile] = shades
       end
-      row[#row + 1] = shade
+      row[#row + 1] = shades[1]
+      detailTop[#detailTop + 1] = shades[2] .. shades[3]
+      detailBottom[#detailBottom + 1] = shades[4] .. shades[5]
     end
     rows[#rows + 1] = table.concat(row)
+    detailRows[#detailRows + 1] = table.concat(detailTop)
+    detailRows[#detailRows + 1] = table.concat(detailBottom)
   end
-  return rows
+  return rows, detailRows
 end
 
 function WorldAPI.new(game, modId)
@@ -92,6 +103,7 @@ end
 -- A compact, read-only view of the active map for companion UIs.  `rows`
 -- keeps the collision overview for older mods; `tileRows` reduces each real
 -- 8x8 map tile to its average Game Boy shade ("0" lightest, "3" darkest).
+-- `tileDetailRows` preserves one shade per 4x4 quadrant for sharper minimaps.
 -- Markers expose only active exits and untaken items.
 function WorldAPI:mapOverview()
   local ow = self:overworld()
@@ -123,11 +135,14 @@ function WorldAPI:mapOverview()
       markers[#markers + 1] = { kind = "hidden", x = item.x, y = item.y }
     end
   end
-  local tileRows = mapTileRows(map)
+  local tileRows, tileDetailRows = mapTileRows(map)
   return { mapId = map.id, width = map.widthCells,
            height = map.heightCells, rows = rows, markers = markers,
            tileRows = tileRows, tileWidth = tileRows and map.widthCells * 2,
-           tileHeight = tileRows and map.heightCells * 2 }
+           tileHeight = tileRows and map.heightCells * 2,
+           tileDetailRows = tileDetailRows,
+           tileDetailWidth = tileDetailRows and map.widthCells * 4,
+           tileDetailHeight = tileDetailRows and map.heightCells * 4 }
 end
 
 local function acceptsMenuInput(game, ow)

@@ -5,8 +5,10 @@ local WorldAPI = require("src.world.WorldAPI")
 local Assets = require("src.render.Assets")
 love.image = { newImageData = function() end }
 Assets.imageData = function()
-  return { getPixel = function(_, x)
-    local shade = x < 8 and 1 or 0
+  return { getPixel = function(_, x, y)
+    if x >= 8 then return 0, 0, 0, 1 end
+    local shade = ({ 1, 0, 2 / 3, 1 / 3 })[
+      math.floor(y / 4) * 2 + math.floor(x / 4) + 1]
     return shade, shade, shade, 1
   end }
 end
@@ -50,7 +52,11 @@ local overview = api:mapOverview()
 assert(overview.rows[1]:sub(1, 1) == "~"
   and overview.rows[3]:sub(2, 2) == "+", "terrain overview")
 assert(overview.tileWidth == 10 and overview.tileHeight == 12
-  and overview.tileRows[1]:sub(1, 2) == "03", "real tile overview")
+  and overview.tileRows[1]:sub(1, 2) == "23", "real tile overview")
+assert(overview.tileDetailWidth == 20 and overview.tileDetailHeight == 24
+  and overview.tileDetailRows[1]:sub(1, 4) == "0333"
+  and overview.tileDetailRows[2]:sub(1, 4) == "1233",
+  "detailed tile overview")
 assert(hasMarker("warp") and hasMarker("item") and hasMarker("hidden"),
   "enhanced overview markers")
 save.itemsTaken = { TEST_MAP_obj_1 = true }
@@ -58,4 +64,4 @@ save.hiddenTaken = { TEST_MAP_4_5 = true }
 assert(hasMarker("warp") and not hasMarker("item") and not hasMarker("hidden"),
   "collected markers disappear")
 
-print("mod world overview: 4/4 checks passed")
+print("mod world overview: 5/5 checks passed")
