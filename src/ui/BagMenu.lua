@@ -227,7 +227,13 @@ local function useOn(game, battle, id, target, list, moveIndex, picker)
     if extra and extra.evolveTo then
       list:close()
       local Evolution = require("src.pokemon.Evolution")
-      Evolution.evolve(game, target, extra.evolveTo)
+      -- item_effects.asm ItemUseEvoStone sets wForceEvolution before
+      -- TryEvolvingMon, so a stone evolution's B press is read and
+      -- discarded (EvolutionState.lua's cancelable check).  via = "ITEM"
+      -- is what makes that non-cancelable here, same as the RARE_CANDY
+      -- call below; without it the stone (already consumed above) could
+      -- be cancelled out from under the player (#883)
+      Evolution.evolve(game, target, extra.evolveTo, nil, "ITEM")
       return
     end
     -- RARE CANDY: after the level text, the stat window, any level-up

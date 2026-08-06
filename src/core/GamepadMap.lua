@@ -1,5 +1,5 @@
 -- Shared gamepad + raw joystick button tables for launcher and gameplay.
--- Hardware-measured NX overrides live in NX_* tables (see docs/switch-development.md).
+-- Hardware-measured NX overrides live in NX_* tables below.
 
 local GamepadMap = {}
 

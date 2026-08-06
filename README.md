@@ -221,6 +221,39 @@ even on a different computer, as long as the same folder comes along.
 already written to either location is touched automatically, so copy files
 over yourself if you want to carry existing progress across the switch.
 
+## Launch Options
+
+By default the app opens the launcher so you can pick a game. Launch options
+skip it and start one game directly, which is what you want for a one-click
+entry: a desktop shortcut per game, a Steam entry, or a handheld frontend.
+
+| Option | Effect |
+| --- | --- |
+| `--game=red` | boot Red, skipping the launcher (`blue` and `yellow` too, or just `r` / `b` / `y`) |
+| `--slot=2` | load that save slot; takes a slot number or a slot id |
+| `--launcher` | open the launcher anyway, so you can edit a shortcut you already made |
+
+
+## Linux on arm64 (Raspberry Pi)
+
+Alongside the x86_64 `gen1recomp-*-linux.zip`, every release ships
+`gen1recomp-*-linux-arm64.AppImage` for 64-bit ARM desktop Linux — Raspberry
+Pi 4/5, Armbian and other SBC distros, and arm64 VMs on Apple Silicon:
+
+```sh
+chmod +x gen1recomp-*-linux-arm64.AppImage
+./gen1recomp-*-linux-arm64.AppImage
+```
+
+LÖVE publishes no aarch64 binary of any kind, so this artifact compiles the
+engine — and SDL2, OpenAL and the codecs — from source inside a Debian
+bullseye arm64 container. It needs only glibc 2.29+, libstdc++, freetype and
+zlib on the host; OpenGL, X11, Wayland, KMSDRM, ALSA and PulseAudio are all
+dlopened, so the same image runs on a full desktop, a Wayland-only session or
+a KMSDRM handheld with no X server. Build instructions and the reasoning are
+in [docs/linux-arm64-build.md](docs/linux-arm64-build.md).
+
+
 ## iOS
 
 Every release ships `gen1recomp-*-ios.ipa`. Sideload it with AltStore
@@ -238,6 +271,40 @@ build and install from source on a Mac instead, see
     <a href="https://github.com/bryanthaboi/gen1recomp/releases/latest"><img src="./.github/resources/github-badge.png" alt="Download from GitHub" height="60"></a>
 </div>
 
+## Xbox Dev Mode
+
+Every release ships `gen1recomp-*-xbox-uwp.zip` for Xbox One and Xbox Series
+consoles in Developer Mode. It cannot be installed in retail mode.
+
+Extract the archive, then use Xbox Device Portal to install the `.msix` and
+the x64 package under `Dependencies`.
+
+### External setup
+
+1. Put your legally obtained Red, Blue, or Yellow ROMs on an external drive.
+   Mod ZIPs can go on the same drive.
+2. Connect the drive to the Xbox and open Gen1Recomp.
+3. Select **Import ROM** or **Import Mod**, then choose the file with the Xbox
+   file picker.
+4. Repeat the ROM import for each version you want to use.
+
+### Internal setup
+
+1. Create a folder named `baseroms` on your PC and place your legally obtained
+   Red, Blue, or Yellow ROMs inside it.
+2. ZIP the folder, keeping `baseroms` at the top level of the archive.
+3. Launch Gen1Recomp once, then close it.
+4. Open Xbox Device Portal and upload the ZIP to
+   `Gen1Recomp/LocalState/pokemon-love2d/`.
+5. Choose **Yes** when Device Portal asks whether to extract the archive.
+6. Open Gen1Recomp. The launcher checks baseroms once at startup. When it finds a compatible ROM, that game’s tab shows ROM FOUND and an Import detected ROM button.
+
+ROMs, generated game data, saves, and mods remain in LocalState and are not
+included in the app.
+
+Source builds and package details are covered in
+[the Xbox UWP build notes](ports/uwp/BUILD.md).
+
 ## Handhelds
 
 A PortMaster-style port for the **Anbernic RG34XXSP** on Stock OS 64-bit MOD
@@ -247,24 +314,18 @@ Install steps, controls, and troubleshooting live in
 
 ## Nintendo Switch
 
-Releases ship an SD-ready `gen1recomp-*-switch.zip` (issue
-[#531](https://github.com/bryanthaboi/gen1recomp/issues/531)). Runtime target
-is pinned [love-nx](https://github.com/retronx-team/love-nx) `11.5-nx1`.
-Requires a console that can run Switch homebrew. Hardware evidence: **OLED**
-(author) and **V1 / Erista** boot (community).
+Releases ship an SD-ready `gen1recomp-*-switch.zip`. Runtime target is pinned
+[love-nx](https://github.com/retronx-team/love-nx) `11.5-nx1`. Requires a
+console that can run Switch homebrew.
 
-- Players: [docs/switch-install.md](docs/switch-install.md) — download the
+- Players: [docs/switch-install.md](docs/switch-install.md). Download the
   zip, extract at the microSD root (install or update), title-override
   launch, import your own legal ROM, Joy-Con controls and shortcuts.
-- Builders: [docs/switch-build.md](docs/switch-build.md) — `--fetch` /
-  `--loose` / `--fused`, toolchain, Docker fallback, and **CI vs release**
-  (path-gated ubuntu selftest, canonical fused PR artifact, release hard-fail).
-
-Limitations, Dusklight-derived method, and how we tested:
-[docs/switch-development.md](docs/switch-development.md) and
-[docs/switch-hardware-evidence.md](docs/switch-hardware-evidence.md). Community
-help — especially HOS / love-nx packaging and broader hardware coverage — is
-welcome.
+- Builders: [docs/switch-build.md](docs/switch-build.md). `--fetch` /
+  `--loose` / `--fused`, toolchain, Docker fallback, and CI vs release
+  (path-gated ubuntu selftest, fused PR artifact on the main repo, release
+  hard-fail).
+- File transfer (MTP / SD / FTP): [docs/switch-transfer.md](docs/switch-transfer.md).
 
 ## Modding
 
@@ -312,8 +373,5 @@ request with real detail is one that can actually get built.
 This project would not be possible without [pret](https://github.com/pret) >
 the pret band of decompiling maniacs > and their
 [pokered](https://github.com/pret/pokered) disassembly.
-
-Nintendo Switch port: [andrewqsantos](https://github.com/andrewqsantos).  
-Switch hardware testing (V1 boot): [booshankles](https://github.com/booshankles).
 
 <p align="center"><a href="https://boisclub.games"><img src="https://raw.githubusercontent.com/bryanthaboi/gen1recomp/refs/heads/dev/assets/logo/bcg.png"></a></p>

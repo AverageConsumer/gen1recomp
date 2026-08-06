@@ -199,7 +199,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(ports/uwp/|scripts/build_xbox_uwp\.sh$|scripts/xbox-uwp/|scripts/pack_love\.sh$|\.github/workflows/(ci|release)\.yml$|src/core/Platform\.lua$|src/import/(CacheFs|RomImporter)\.lua$|src/update/Check\.lua$|tests/engine/(platform_nx|uwp_native_picker)_test\.lua$|tests/rom_importer_double_pick_test\.lua$)'; then
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(ports/uwp/|scripts/build_xbox_uwp\.sh$|scripts/xbox-uwp/|scripts/pack_love\.sh$|\.github/workflows/(ci|release)\.yml$|src/core/Platform\.lua$|src/import/(CacheFs|LauncherView|RomImporter)\.lua$|src/update/Check\.lua$|tests/engine/(platform_nx|uwp_baseroms|uwp_native_picker)_test\.lua$|tests/rom_importer_double_pick_test\.lua$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -257,6 +257,117 @@ jobs:
           path: |
             dist/xbox-uwp/gen1recomp-0.0.0-xbox-uwp.zip
             dist/xbox-uwp/gen1recomp-0.0.0-xbox-uwp.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-arm64-changes:
+    name: detect Linux arm64 changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(scripts/build_linux_arm64\.sh$|scripts/linux-arm64/|scripts/pack_love\.sh$|docs/linux-arm64-build\.md$|\.github/workflows/(ci|release)\.yml$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux-arm64-selftest:
+    name: Linux arm64 offline selftest
+    needs: linux-arm64-changes
+    if: needs.linux-arm64-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Deliberately on x86_64: everything this gate checks (pins, the
+      # host-arch guard, the dependency exclude list, the AppRun fusion
+      # contract) is answerable without a container or an aarch64 machine,
+      # so the slow native job below only ever starts on a sane tree.
+      - name: Linux arm64 offline selftest
+        run: bash scripts/linux-arm64/selftest_build_linux_arm64.sh
+
+  linux-arm64-build:
+    name: Linux arm64 AppImage build
+    needs: [linux-arm64-changes, linux-arm64-selftest]
+    if: |
+      always()
+      && needs.linux-arm64-changes.outputs.changed == 'true'
+      && needs.linux-arm64-selftest.result == 'success'
+    # No fork restriction, unlike switch-build: this needs no secrets and no
+    # self-hosted hardware, just GitHub's free arm64 runner for public repos,
+    # so contributors get the same coverage on their own PRs.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the aarch64 AppImage
+        run: |
+          set -euo pipefail
+          scripts/build_linux_arm64.sh --version 0.0.0
+      - name: Verify the AppImage is self-contained and bullseye-compatible
+        run: |
+          set -euo pipefail
+          image="dist/linux-arm64/gen1recomp-0.0.0-linux-arm64.AppImage"
+
+          # --appimage-extract needs no FUSE, so this works on a runner
+          # without /dev/fuse and still exercises the real payload.
+          "$image" --appimage-extract >/dev/null
+          for required in AppRun bin/love game.love lib/liblove-11.5.so; do
+            [ -e "squashfs-root/$required" ] \
+              || { echo "::error::AppImage is missing $required"; exit 1; }
+          done
+
+          # Every bundled object must resolve once AppRun's LD_LIBRARY_PATH is
+          # applied; an unresolved soname here is a user-visible launch crash.
+          #
+          # This runs on a HEADLESS runner on purpose, and that is the point.
+          # The first version of this build bundled Debian's SDL2, which
+          # hard-links libpulse/libasound/libX11/libwayland, so it only ever
+          # started on a full desktop -- a bare runner is what exposed it.
+          missing="$(LD_LIBRARY_PATH="$PWD/squashfs-root/lib" \
+            ldd squashfs-root/bin/love squashfs-root/lib/*.so* 2>/dev/null \
+            | grep 'not found' || true)"
+          [ -z "$missing" ] || { echo "::error::unresolved deps:"; echo "$missing"; exit 1; }
+
+          # Nothing may hard-link a driver, session or audio-stack library:
+          # those must be reached through dlopen so the AppImage runs on a box
+          # with only ALSA, only Wayland, or only KMSDRM.
+          linked="$(for f in squashfs-root/bin/love squashfs-root/lib/*.so*; do
+            objdump -p "$f" 2>/dev/null | awk '/NEEDED/{print $2}'
+          done | sort -u | grep -E '^lib(pulse|asound|X11|wayland|GL|EGL|drm|gbm|xcb|cairo|sndio|dbus)' || true)"
+          [ -z "$linked" ] \
+            || { echo "::error::these must be dlopened, not linked:"; echo "$linked"; exit 1; }
+
+          # The whole point of compiling on bullseye. If a future change moves
+          # the builder to a newer base, the glibc floor silently rises and
+          # every user on an older distro gets "GLIBC_2.xx not found" -- catch
+          # it here instead of in a release.
+          floor="$(objdump -T squashfs-root/bin/love squashfs-root/lib/*.so* 2>/dev/null \
+            | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)"
+          echo "highest required glibc symbol version: $floor"
+          [ -n "$floor" ] \
+            || { echo "::error::found no versioned glibc symbols -- objdump read nothing"; exit 1; }
+          highest="$(printf '%s\n' "$floor" "GLIBC_2.31" | sort -V | tail -1)"
+          [ "$highest" = "GLIBC_2.31" ] \
+            || { echo "::error::AppImage requires $floor, above the bullseye 2.31 floor"; exit 1; }
+      - name: Upload the AppImage
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-linux-arm64
+          path: |
+            dist/linux-arm64/gen1recomp-0.0.0-linux-arm64.AppImage
+            dist/linux-arm64/gen1recomp-0.0.0-linux-arm64.AppImage.sha256
           if-no-files-found: error
           retention-days: 7
 

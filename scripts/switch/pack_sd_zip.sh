@@ -2,16 +2,18 @@
 # Pack a Switch SD-ready zip: extract at microSD root (merge-safe update).
 #
 # Usage:
-#   scripts/switch/pack_sd_zip.sh NRO_PATH VERSION OUT_ZIP
+#   scripts/switch/pack_sd_zip.sh GAME_NRO VERSION OUT_ZIP [LAUNCHER_NRO]
 #
 # Layout inside the zip (SD root):
-#   switch/gen1recomp/gen1recomp.nro
+#   switch/gen1recomp/gen1recomp.nro            (launcher if LAUNCHER_NRO set, else game)
+#   switch/gen1recomp/gen1recomp-game.nro       (only when LAUNCHER_NRO set)
+#   switch/gen1recomp/version.txt
 #   switch/gen1recomp/INSTALL.txt
 #   switch/gen1recomp/pokemon-love2d/imports/.../README.txt
 #   switch/gen1recomp/pokemon-love2d/exports/.../README.txt
 #
 # Does not ship ROMs, saves, or mods. Re-extracting merges over an existing
-# install and only overwrites the NRO + these text placeholders — keep
+# install and only overwrites the NRO(s) + these text placeholders — keep
 # pokemon-love2d/ to preserve progress.
 
 set -euo pipefail
@@ -23,11 +25,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NRO_PATH="${1:-}"
 VERSION="${2:-}"
 OUT_ZIP="${3:-}"
+LAUNCHER_NRO="${4:-}"
 
 [ -n "$NRO_PATH" ] && [ -n "$VERSION" ] && [ -n "$OUT_ZIP" ] \
-  || fail "usage: scripts/switch/pack_sd_zip.sh NRO_PATH VERSION OUT_ZIP"
+  || fail "usage: scripts/switch/pack_sd_zip.sh GAME_NRO VERSION OUT_ZIP [LAUNCHER_NRO]"
 
-[ -f "$NRO_PATH" ] || fail "missing NRO at $NRO_PATH"
+[ -f "$NRO_PATH" ] || fail "missing game NRO at $NRO_PATH"
+if [ -n "$LAUNCHER_NRO" ]; then
+  [ -f "$LAUNCHER_NRO" ] || fail "missing launcher NRO at $LAUNCHER_NRO"
+fi
 
 command -v zip >/dev/null 2>&1 || fail "need zip on PATH"
 
@@ -45,7 +51,15 @@ trap cleanup EXIT
 APP_DIR="$STAGE/switch/gen1recomp"
 SAVE_ROOT="$APP_DIR/pokemon-love2d"
 mkdir -p "$APP_DIR"
-cp "$NRO_PATH" "$APP_DIR/gen1recomp.nro"
+
+if [ -n "$LAUNCHER_NRO" ]; then
+  LAUNCHER_NRO="$(cd "$(dirname "$LAUNCHER_NRO")" && pwd)/$(basename "$LAUNCHER_NRO")"
+  cp "$LAUNCHER_NRO" "$APP_DIR/gen1recomp.nro"
+  cp "$NRO_PATH" "$APP_DIR/gen1recomp-game.nro"
+else
+  cp "$NRO_PATH" "$APP_DIR/gen1recomp.nro"
+fi
+printf '%s\n' "$VERSION" > "$APP_DIR/version.txt"
 
 cat > "$APP_DIR/INSTALL.txt" <<EOF
 gen1recomp Switch (v${VERSION})
@@ -55,7 +69,7 @@ First install or update (same steps):
   1. Extract this zip at the root of your microSD (merge folders if asked).
   2. Do NOT delete switch/gen1recomp/pokemon-love2d/ — that folder holds
      your saves, imported ROMs, mods, and options. Re-extracting only
-     replaces gen1recomp.nro and these help files.
+     replaces the NRO(s) and these help files.
   3. Launch with title override (hold R on HOME, open any title → hbmenu).
   4. Copy a legal Pokemon Red/Blue .gb into:
        switch/gen1recomp/pokemon-love2d/imports/
@@ -106,9 +120,16 @@ rm -f "$OUT_ZIP"
 LISTING="$(unzip -Z1 "$OUT_ZIP" 2>/dev/null || unzip -l "$OUT_ZIP")"
 printf '%s\n' "$LISTING" | grep -q 'switch/gen1recomp/gen1recomp.nro' \
   || fail "zip missing switch/gen1recomp/gen1recomp.nro"
+printf '%s\n' "$LISTING" | grep -Fq 'switch/gen1recomp/version.txt' \
+  || fail "zip missing switch/gen1recomp/version.txt"
+if [ -n "$LAUNCHER_NRO" ]; then
+  printf '%s\n' "$LISTING" | grep -Fq 'switch/gen1recomp/gen1recomp-game.nro' \
+    || fail "zip missing switch/gen1recomp/gen1recomp-game.nro (OTA dual-NRO layout)"
+fi
 
 REQUIRED=(
   "switch/gen1recomp/INSTALL.txt"
+  "switch/gen1recomp/version.txt"
   "switch/gen1recomp/pokemon-love2d/imports/README.txt"
   "switch/gen1recomp/pokemon-love2d/imports/mods/README.txt"
   "switch/gen1recomp/pokemon-love2d/imports/saves/red/README.txt"

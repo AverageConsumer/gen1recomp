@@ -29,6 +29,7 @@ local Fetch = {}
 
 local CMD    = "fetch_cmd"
 local RESULT = "fetch_result"
+local QUIT   = "fetch_quit"
 
 -- Worker count.  Three is enough to overlap the common burst (a mod index
 -- refresh plus a couple of per-mod release checks) without spawning a thread
@@ -36,7 +37,7 @@ local RESULT = "fetch_result"
 local POOL = 3
 
 local workers = {}
-local cmdCh, resCh
+local cmdCh, resCh, quitCh
 local ready          -- nil = untried, true = running, false = unavailable
 local jobs = {}      -- id -> { status, body, err, progress, path }
 local nextId = 0
@@ -50,6 +51,13 @@ local function ensureWorkers()
   end
   cmdCh = love.thread.getChannel(CMD)
   resCh = love.thread.getChannel(RESULT)
+  quitCh = love.thread.getChannel(QUIT)
+  -- Channels outlive a pool (they are global to the process, keyed by name),
+  -- so a pool started after a shutdown -- the save editor opens from a live
+  -- launcher and hands the screen back -- must clear the previous round's
+  -- flag and leftovers or its workers quit on their first job.
+  quitCh:clear()
+  cmdCh:clear()
   for i = 1, POOL do
     local ok, th = pcall(love.thread.newThread, "src/net/fetch_worker.lua")
     if ok and th and pcall(function() th:start() end) then
@@ -114,12 +122,14 @@ local function submit(cmd)
 end
 
 -- GET a URL, returning the body as a string.
--- opts: { userAgent, accept }
+-- opts: { userAgent, accept, maxSeconds }
+-- maxSeconds is the transfer ceiling, and it is also this job's worst-case
+-- contribution to how long closing the window takes (see Fetch.shutdown).
 function Fetch.get(url, opts)
   opts = opts or {}
   return submit({ kind = "get", url = url,
     userAgent = opts.userAgent or "gen1recomp",
-    accept = opts.accept })
+    accept = opts.accept, maxSeconds = opts.maxSeconds })
 end
 
 -- Download a URL to `saveRel`, a path relative to the LOVE save directory.
@@ -129,7 +139,7 @@ function Fetch.download(url, saveRel, opts)
   return submit({ kind = "download", url = url, dest = saveRel,
     size = opts.size,
     userAgent = opts.userAgent or "gen1recomp",
-    accept = opts.accept })
+    accept = opts.accept, maxSeconds = opts.maxSeconds })
 end
 
 -- Non-blocking status.  Returns a table; never nil, even for an unknown id
@@ -176,13 +186,28 @@ end
 -- End every worker.  Their command loops sit in Channel:demand(), which never
 -- returns on its own, and LOVE waits for every live love.thread before the
 -- process exits (#339).
+--
+-- ORDER MATTERS, and getting it wrong is what froze the launcher on close
+-- after a visit to the mod tabs.  A quit pushed as an ordinary command is
+-- just another item in a FIFO the workers are already chewing through: a page
+-- of thumbnail downloads sits in front of it, and th:wait() below blocks the
+-- main thread until every one of them finishes.  So:
+--   1. raise the quit FLAG, which workers check after every demand(),
+--   2. CLEAR the queue -- nobody will read those results, and dropping them
+--      is what turns "wait for the backlog" into "wait for what is in flight",
+--   3. push one wake sentinel per worker, because a worker idling inside
+--      demand() has nothing to check the flag on until something arrives.
+-- What remains is at most one transfer per worker, bounded by the caller's
+-- maxSeconds; there is no portable way to interrupt a running curl.
 function Fetch.shutdown()
+  if quitCh then quitCh:push(true) end
   if cmdCh then
+    cmdCh:clear()
     for _ = 1, #workers do cmdCh:push({ kind = "quit" }) end
   end
   for _, th in ipairs(workers) do pcall(function() th:wait() end) end
   workers = {}
-  cmdCh, resCh, ready = nil, nil, false
+  cmdCh, resCh, quitCh, ready = nil, nil, nil, false
 end
 
 return Fetch

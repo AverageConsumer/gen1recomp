@@ -14,8 +14,29 @@ local check, eq = S.check, S.eq
 local RomImporter = require("src.import.RomImporter")
 
 -- ---------------------------------------------------------------- the funnel
--- The release lives in commandOutput because all three pickers reach popen
--- through it; a fourth picker calling io.popen directly would bring #254 back.
+-- The release lives in HostShell.popen because every host spawn reaches the
+-- OS through it; a caller reaching for io.popen directly would bring #254
+-- back.  This assertion used to count io.popen calls in RomImporter, which is
+-- where the release started out, and it went red the day the call was hoisted
+-- into HostShell and nobody moved the check with it: RomImporter has held
+-- zero io.popen calls since, so the count could never be the 1 it wanted.
+-- Point it at the funnel that actually exists now.
+-- Matched as pcall(io.popen rather than io.popen( because the spawn is
+-- wrapped to swallow lua errors, so the call form never appears bare.
+do
+  local f = io.open("src/core/HostShell.lua", "rb")
+  check(f ~= nil, "HostShell source is readable")
+  if f then
+    local src = f:read("*a")
+    f:close()
+    local calls = 0
+    for _ in src:gmatch("pcall%(io%.popen") do calls = calls + 1 end
+    eq(calls, 1, "every host spawn still funnels through the one io.popen"
+      .. " call, which is where the pointer grab is released (#254)")
+  end
+end
+
+-- RomImporter must not grow a picker that goes around HostShell.
 do
   local f = io.open("src/import/RomImporter.lua", "rb")
   check(f ~= nil, "RomImporter source is readable")
@@ -24,8 +45,7 @@ do
     f:close()
     local calls = 0
     for _ in src:gmatch("io%.popen%(") do calls = calls + 1 end
-    eq(calls, 1, "every desktop picker still funnels through the one io.popen"
-      .. " call, which is where the pointer grab is released (#254)")
+    eq(calls, 0, "no picker calls io.popen behind HostShell's back (#254)")
   end
 end
 

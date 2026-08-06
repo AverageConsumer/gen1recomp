@@ -1,10 +1,16 @@
 -- Launch options: boot straight into a game, skipping the launcher.
 --
---   love . --game red              -- boot Red
---   love . --game yellow --slot 2  -- boot Yellow on save slot 2
---   love . --game red --launcher   -- open the launcher anyway (a shortcut
---                                     the player wants to edit)
---   POKEPORT_GAME=blue love .      -- same, for launchers that only pass env
+--   love . --game=red               -- boot Red
+--   love . --game=yellow --slot=2   -- boot Yellow on save slot 2
+--   love . --game=red --launcher    -- open the launcher anyway (a shortcut
+--                                      the player wants to edit)
+--   POKEPORT_GAME=blue love .       -- same, for launchers that only pass env
+--
+-- The "--flag value" spelling parses here (argValue reads argv[i + 1]), but it
+-- does not survive LOVE: boot.lua takes the first bare argument as a path to a
+-- game to run, so `--game red` dies with "Cannot load game at path .../red"
+-- before love.load is ever called, fused or not.  Only the "=" spelling is
+-- reachable, so that is the one the docs quote.
 --
 -- This exists for the click-once cases: a desktop shortcut per game, a Steam
 -- entry, an EmulationStation/Playnite entry, a handheld frontend.  Those all

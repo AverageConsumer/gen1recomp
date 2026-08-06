@@ -62,11 +62,84 @@ function HostShell.hideHostConsole()
   return consoleHidden
 end
 
+-- #254 was fixed inside the launcher and nowhere else: a native dialog opened
+-- while a mouse button is still down blocks the whole loop in io.popen, so SDL
+-- never processes the button-up and never drops the pointer capture it took
+-- for the press (on X11 an XGrabPointer with owner_events).  The grab outlives
+-- the click, every pointer event over the child dialog is still routed to our
+-- window, and the dialog draws and keyboard-navigates but ignores the mouse.
+-- src/import/RomImporter.lua owns the launcher's copy; hoisting it here means
+-- every host spawn inherits it, including one a mod reaches through HostShell.
+-- Pump until nothing is held so SDL sees the release first; bounded, so a
+-- stuck button costs a moment and never the game.  pump() drains OS events
+-- into LOVE's queue and dispatches nothing, so there is no reentry.  Worker
+-- threads load neither love.mouse nor love.event, so the guard below makes
+-- this a no-op off the main thread.
+function HostShell.releasePointerGrab()
+  if not (love and love.mouse and love.mouse.isDown and love.event
+      and love.event.pump and love.timer) then
+    return
+  end
+  local deadline = love.timer.getTime() + 1
+  while love.mouse.isDown(1, 2, 3) do
+    love.event.pump()
+    if love.timer.getTime() > deadline then break end
+    love.timer.sleep(0.005)
+  end
+end
+
+-- POPEN IS NOT THREAD SAFE, and this app calls it from four threads (the main
+-- one, the update checker, and a pool of three fetch workers).
+--
+-- On Darwin, popen() flushes every open stream first: _fwalk walks libc's
+-- global FILE list and locks each entry as it goes.  pclose() frees a FILE and
+-- takes it off that list.  Run the two concurrently and the walker can end up
+-- waiting on the lock of a FILE another thread has already freed -- a wait
+-- that nothing will ever satisfy.  That is the launcher freezing on close
+-- after a visit to the mod tabs: sampling a hung process shows a fetch worker
+-- parked in popen -> _fwalk -> flockfile with NO curl running anywhere on the
+-- machine, and the main thread blocked in Thread:wait() for that worker, which
+-- is why LOVE never reaches the process exit.
+--
+-- The fix is a process-wide mutex around the two list-mutating calls, and only
+-- those: a LOVE Channel's performAtomic runs its callback holding the
+-- channel's own mutex, which is the one lock primitive shared across love
+-- threads.  Reading a pipe stays outside it, so the fetch pool still runs its
+-- transfers in parallel -- a spawn is microseconds, a transfer is seconds.
+local POPEN_LOCK = "hostshell_popen_lock"
+
+local function popenLock()
+  if not (love and love.thread and love.thread.getChannel) then return nil end
+  local ok, ch = pcall(love.thread.getChannel, POPEN_LOCK)
+  return ok and ch or nil
+end
+
+-- Run `fn` with the spawn lock held, or plain when there is no love.thread to
+-- take one from (the headless test stub, a plain luajit run).
+local function withPopenLock(fn)
+  local ch = popenLock()
+  if not ch then return fn() end
+  local okAtomic = pcall(function() ch:performAtomic(fn) end)
+  if not okAtomic then fn() end
+end
+
 -- Wraps io.popen with the AppImage env fix applied and lua errors swallowed
 function HostShell.popen(command, mode)
-  local ok, pipe = pcall(io.popen, HostShell.envPrefix() .. command, mode or "r")
-  if not ok or not pipe then return nil end
+  HostShell.releasePointerGrab()
+  local pipe
+  withPopenLock(function()
+    local ok, p = pcall(io.popen, HostShell.envPrefix() .. command, mode or "r")
+    pipe = (ok and p) or nil
+  end)
   return pipe
+end
+
+-- Close a pipe HostShell.popen opened.  Callers MUST use this rather than
+-- pipe:close(): pclose is the other half of the race above, and a close that
+-- skips the lock can free a FILE out from under another thread's spawn.
+function HostShell.pclose(pipe)
+  if not pipe then return end
+  withPopenLock(function() pcall(function() pipe:close() end) end)
 end
 
 -- Restart the whole app. The obvious love.event.quit("restart") re-runs LÖVE's
@@ -130,6 +203,65 @@ end
 -- block the calling thread and deal in whole files, so callers keep exactly
 -- the contract they had with curl.
 
+-- DIAGNOSING A FAILED FETCH.  curl's own stderr ("curl: (56) The requested
+-- URL returned error: 403") went straight to the terminal, naming neither the
+-- URL nor which of the launcher's many fetches produced it, while the caller
+-- got back a generic "empty response".  Both curl branches below now merge
+-- stderr into the pipe and ask curl for the HTTP status with --write-out, so
+-- the message that reaches the UI and the log says which URL failed and how.
+--
+-- The status rides a marker rather than a bare "%{http_code}": a GET streams
+-- its body through the same pipe, so the code has to be findable at the end
+-- of arbitrary text.  Matched from the END, and only the last occurrence is
+-- cut, so a body that happens to contain the marker keeps its content.
+-- Two spellings on purpose.  HTTP_MARK is what comes back down the pipe; the
+-- FMT one is what goes to curl, where the newline MUST be the two characters
+-- backslash-n (curl expands the escape itself).  A literal newline inside the
+-- argument would be quoted fine by a POSIX shell and be a syntax error in
+-- cmd.exe, which has no multi-line quoted string.
+local HTTP_MARK = "\n__gen1recomp_http__"
+local HTTP_MARK_FMT = "\\n__gen1recomp_http__%{http_code}"
+
+-- Split a curl pipe's output into (body, status, noise).  `status` is nil
+-- when curl never got far enough to have one (DNS failure, no route, a
+-- timeout), in which case `noise` carries curl's own complaint.
+local function splitCurlOutput(out)
+  out = tostring(out or "")
+  local at = nil
+  local from = 1
+  while true do
+    local s = out:find(HTTP_MARK, from, true)
+    if not s then break end
+    at, from = s, s + 1
+  end
+  if not at then return out, nil, out end
+  local body = out:sub(1, at - 1)
+  local code = tonumber(out:sub(at + #HTTP_MARK):match("^(%d+)"))
+  -- curl writes http_code 0 when it never got a response at all (DNS, no
+  -- route, connect timeout).  That is not a status, and reporting it as
+  -- "HTTP 0" buries the real reason, which is in curl's own message.
+  if code == 0 then code = nil end
+  return body, code, body
+end
+
+-- The error string a caller (and the launcher's notice line) sees.  It always
+-- names the URL, because "403" on its own is unactionable when the launcher
+-- has an index feed, a releases API and a page of thumbnails in flight.
+local function fetchError(url, status, noise)
+  if status then
+    local extra = (noise or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if #extra > 160 then extra = extra:sub(1, 157) .. "..." end
+    if extra ~= "" then
+      return ("HTTP %d from %s (%s)"):format(status, url, extra)
+    end
+    return ("HTTP %d from %s"):format(status, url)
+  end
+  local why = (noise or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if why == "" then why = "no response" end
+  if #why > 160 then why = why:sub(1, 157) .. "..." end
+  return ("fetch failed for %s: %s"):format(url, why)
+end
+
 -- Shell quoting for one curl argument; cmd.exe has no single-quote form.
 function HostShell.quote(s)
   s = tostring(s)
@@ -140,12 +272,21 @@ function HostShell.quote(s)
   return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
+-- MEMOISED per Lua state (so once per thread).  This used to spawn a whole
+-- `curl --version` process on every single fetch -- twice for a GET through
+-- the Android-bridge fallback -- which doubled the number of spawns the lock
+-- above has to serialise, for an answer that cannot change while the app is
+-- running.
+local curlAvailable = nil
+
 function HostShell.haveCurl()
+  if curlAvailable ~= nil then return curlAvailable end
   local pipe = HostShell.popen("curl --version")
-  if not pipe then return false end
+  if not pipe then curlAvailable = false return false end
   local readOk, out = pcall(function() return pipe:read("*a") end)
-  pcall(function() pipe:close() end)
-  return readOk and out ~= nil and out:find("curl", 1, true) ~= nil
+  HostShell.pclose(pipe)
+  curlAvailable = readOk and out ~= nil and out:find("curl", 1, true) ~= nil
+  return curlAvailable
 end
 
 -- An older mobile build reports nil here and falls back to the "no transport"
@@ -154,8 +295,15 @@ local function haveBridge()
   if not (love and love.system and type(love.system.httpDownload) == "function") then
     return false
   end
+  -- The OS allowlist is deliberate: the bridge is a per-port native addition,
+  -- not part of LOVE, so a build that exports the name on a platform we never
+  -- wired one for is a name collision, not a transport.  UWP is listed because
+  -- Xbox has no curl and no way to spawn one (Platform.canSpawnProcess is
+  -- false there), so the bridge is its only possible transport (#876).  Its
+  -- LOVE backend does not export it today and this still returns false, but
+  -- the gate is no longer the thing in the way.
   local osName = love.system.getOS and love.system.getOS()
-  return osName == "Android" or osName == "iOS"
+  return osName == "Android" or osName == "iOS" or osName == "UWP"
 end
 
 -- Is any transport available at all?  Callers gate on this, never on curl.
@@ -183,11 +331,24 @@ function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime)
     if accept then
       cmd = cmd .. "-H " .. HostShell.quote("Accept: " .. accept) .. " "
     end
-    cmd = cmd .. "-o " .. HostShell.quote(absPath) .. " " .. HostShell.quote(url)
+    cmd = cmd .. "-o " .. HostShell.quote(absPath) .. " "
+      .. "-w " .. HostShell.quote(HTTP_MARK_FMT) .. " "
+      .. HostShell.quote(url) .. " 2>&1"
     local pipe = HostShell.popen(cmd)
     if not pipe then return nil, "could not start download" end
-    pcall(function() pipe:read("*a") end)
-    pcall(function() pipe:close() end)
+    local readOk, out = pcall(function() return pipe:read("*a") end)
+    HostShell.pclose(pipe)
+    -- The file is still what the caller judges success by (-f writes nothing
+    -- on an HTTP error, and the callers all check the file anyway).  The
+    -- status is here purely so the failure can NAME itself: "download failed"
+    -- with no URL and no code is the report this whole change exists to fix.
+    local body, status, noise = splitCurlOutput(readOk and out or "")
+    if status and (status < 200 or status >= 300) then
+      return nil, fetchError(url, status, body)
+    end
+    if not status and (noise or ""):match("%S") then
+      return nil, fetchError(url, nil, noise)
+    end
     return true
   end
   if not haveBridge() then
@@ -195,7 +356,7 @@ function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime)
   end
   local ok, done = pcall(love.system.httpDownload, url, absPath, userAgent, accept)
   if ok and done then return true end
-  return nil, "download failed"
+  return nil, "download failed for " .. url
 end
 
 -- GET returning the body.  curl streams it through a pipe; the Android bridge
@@ -205,20 +366,32 @@ function HostShell.httpGet(url, userAgent, accept, maxTime)
   if type(url) ~= "string" or url == "" then return nil, "missing url" end
   userAgent = userAgent or "gen1recomp"
   if HostShell.haveCurl() then
-    local cmd = ("curl -fsSL --connect-timeout 10 --max-time %d ")
+    -- No -f here (the download branch keeps it).  -f suppresses the error
+    -- BODY, and on the two services this talks to that body is the whole
+    -- diagnosis: GitHub's 403 says "API rate limit exceeded for <ip>", which
+    -- tells a user to wait rather than to go hunting for a broken index.
+    local cmd = ("curl -sSL --connect-timeout 10 --max-time %d ")
       :format(tonumber(maxTime) or 40)
       .. "-H " .. HostShell.quote("User-Agent: " .. userAgent) .. " "
     if accept then
       cmd = cmd .. "-H " .. HostShell.quote("Accept: " .. accept) .. " "
     end
-    cmd = cmd .. HostShell.quote(url)
+    cmd = cmd .. "-w " .. HostShell.quote(HTTP_MARK_FMT) .. " "
+      .. HostShell.quote(url) .. " 2>&1"
     local pipe = HostShell.popen(cmd)
     if not pipe then return nil, "could not run curl" end
     local readOk, out = pcall(function() return pipe:read("*a") end)
-    pcall(function() pipe:close() end)
-    if not readOk then return nil, "fetch failed: " .. tostring(out) end
-    if not out or out == "" then return nil, "empty response from " .. url end
-    return out
+    HostShell.pclose(pipe)
+    if not readOk then
+      return nil, fetchError(url, nil, tostring(out))
+    end
+    local body, status, noise = splitCurlOutput(out)
+    if not status then return nil, fetchError(url, nil, noise) end
+    if status < 200 or status >= 300 then
+      return nil, fetchError(url, status, body)
+    end
+    if body == "" then return nil, "empty response from " .. url end
+    return body
   end
   if not haveBridge() then
     return nil, "no network transport on this platform"

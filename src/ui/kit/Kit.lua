@@ -29,8 +29,10 @@
 --  4. Lists PAGINATE.  Row count is bounded by the page size, so a 500-mod
 --     index costs exactly what a 10-mod one does.  There is no virtualised
 --     scroller and no momentum integrator to run.
---  5. Draw flat.  No stencil, no mesh, no blend-mode change, no rounded
---     corners (see Theme.lua) -- every one is a pipeline flush.
+--  5. Draw flat.  No stencil, no mesh, no canvas, no shader, no blend-mode
+--     change -- every one is a pipeline flush.  Rounded corners, the emboss
+--     and a card's drop shadow are allowed because they only add VERTICES at
+--     the same pipeline state (see Theme.lua's header for the full rule).
 --
 -- ACCESSIBILITY / INPUT: every control is reachable four ways -- mouse,
 -- touch (>= 30px targets), keyboard (spatial focus ring, arrows + Enter),
@@ -544,8 +546,9 @@ function Kit.row(x, y, w, h, selected, id)
   -- The focus ring is a second inset outline, so it reads on both a black
   -- row and a white selected one.
   if focused then
-    Theme.stroke(x + 2, y + 2, w - 4, h - 4,
-      selected and PAL.inverse or PAL.lineStrong, Theme.A.focus, 1)
+    Theme.strokeRounded(x + 2, y + 2, w - 4, h - 4,
+      selected and PAL.inverse or PAL.lineStrong, Theme.A.focus, 1,
+      Theme.radius())
   end
   local clicked = Kit.press(x, y, w, h)
     or (id ~= nil and Kit._activateId == id)
@@ -557,7 +560,7 @@ end
 -- hairline says the same thing for one rect.)
 function Kit.emptyBox(x, y, w, h, message)
   if not G then return end
-  Theme.stroke(x, y, w, h, PAL.line, 0.22, 1)
+  Theme.strokeRounded(x, y, w, h, PAL.line, 0.22, 1, Theme.radius())
   Kit.textCenter("button", Kit.ellipsize("button", message, w - 24 * Kit.scale),
     x, y + (h - Kit.textHeight("button")) / 2, w, PAL.muted)
 end
@@ -596,11 +599,16 @@ local KINDS = {
 }
 Kit.KINDS = KINDS
 
--- opts: { kind, font, enabled, align, id, glow }
+-- opts: { kind, font, enabled, align, id, glow, fill, ink }
 --   id      -- opts into the focus ring (give every real control one)
 --   glow    -- a pulsing outline for "something is waiting for you" (the
 --              update button).  No blend-mode change: the alpha of the
 --              existing outline is animated instead.
+--   fill/ink -- override the kind's colours.  The ONE caller is the
+--              launcher's Play button, which wears its cartridge colour
+--              (red/blue/gold) rather than a semantic one: on that screen
+--              "which game am I launching" outranks "what kind of verb is
+--              this", and the colour is already the tab's identity.
 -- Returns true when activated, by click OR by the focus ring's Enter/A.
 function Kit.button(x, y, w, h, label, opts)
   opts = opts or {}
@@ -611,6 +619,9 @@ function Kit.button(x, y, w, h, label, opts)
   local focused = enabled and opts.id
     and Kit.focusable(opts.id, x, y, w, h) or false
   local kind = KINDS[enabled and (opts.kind or "ghost") or "disabled"]
+  if enabled and opts.fill then
+    kind = { fill = opts.fill, ink = opts.ink or PAL.inverse }
+  end
   local hot = enabled and Kit.hover(x, y, w, h)
 
   if G then
@@ -700,12 +711,13 @@ function Kit.checkbox(x, y, w, h, checked, label, id, labelColor)
   local box = 20 * Kit.scale
   local bx, by = x + 12 * Kit.scale, y + (h - box) / 2
   if G then
+    local br = math.min(Theme.radius(), box / 3)
     if checked then
-      Theme.fill(bx, by, box, box, PAL.ink, 1)
+      Theme.fillRounded(bx, by, box, box, PAL.ink, 1, br)
       Kit.textCenter("small", "X", bx,
         by + (box - Kit.textHeight("small")) / 2, box, PAL.inverse)
     else
-      Theme.stroke(bx, by, box, box, PAL.line, Theme.A.hover, 1)
+      Theme.strokeRounded(bx, by, box, box, PAL.line, Theme.A.hover, 1, br)
     end
     local lx = bx + box + 12 * Kit.scale
     Kit.text("mono", Kit.ellipsize("mono", label, x + w - lx - 10 * Kit.scale),
@@ -724,12 +736,14 @@ function Kit.toggle(x, y, w, h, on, id)
     -- Track, then a knob inset inside it, so the control reads as a switch
     -- rather than as a white square with a word next to it.  The label sits
     -- in the empty half, which is the half that says what pressing does.
-    Theme.stroke(x, y, w, h, PAL.line,
-      (focused or Kit.hover(x, y, w, h)) and Theme.A.focus or Theme.A.hover, 1)
+    local r = math.min(Theme.radius(), h / 2)
+    Theme.fillRounded(x, y, w, h, PAL.rowBg, 1, r)
+    Theme.strokeRounded(x, y, w, h, PAL.line,
+      (focused or Kit.hover(x, y, w, h)) and Theme.A.focus or Theme.A.hover, 1, r)
     local inset = 3
     local knob = w / 2 - inset
-    Theme.fill(on and (x + w / 2) or (x + inset), y + inset, knob, h - 2 * inset,
-      PAL.ink, 1)
+    Theme.fillRounded(on and (x + w / 2) or (x + inset), y + inset, knob,
+      h - 2 * inset, PAL.ink, 1, math.min(r, (h - 2 * inset) / 2))
     Kit.textCenter("micro", on and "ON" or "OFF",
       on and x or (x + w / 2), y + (h - Kit.textHeight("micro")) / 2, w / 2,
       PAL.text)
@@ -768,8 +782,8 @@ function Kit.textfield(id, x, y, w, h, value, placeholder)
     end
   end
   if G then
-    Theme.fill(x, y, w, h, PAL.bg, 1)
-    Theme.stroke(x, y, w, h, PAL.line,
+    Theme.fillRounded(x, y, w, h, PAL.bg, 1)
+    Theme.strokeRounded(x, y, w, h, PAL.line,
       (focused or focusRing) and Theme.A.focus or Theme.A.hairline,
       focused and 2 or 1)
     local pad = 10 * Kit.scale

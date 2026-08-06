@@ -14,6 +14,15 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
+
+-- Scoped suite, not the module-level counters: run_tests.lua dofiles this
+-- file in its own process, and T.finish ends in os.exit, which took the
+-- parent runner down with it.  The run still exited 0, so it read as a pass
+-- while every alphabetically later parity file and the three tiers chained
+-- after them silently never ran.  S.finish raises instead, which is what the
+-- rest of the parity files do.  modkit does not re-export suite, so it comes
+-- off the shared harness it wraps.
+local S = T.harness.suite("parity faint cry bug709")
 local Data = T.fixtures.fresh()
 local Font = require("src.render.Font")
 Font.load(Data)
@@ -70,10 +79,10 @@ do
   battle.playVictoryMusic = function() end
   battle:onFaint(battle.player)
   pump(battle, 1)
-  T.eq(cries[1], "FIXMON_A", "the player mon's faint plays its species cry")
-  T.eq(#cries, 1, "no other cry on the player faint")
+  S.eq(cries[1], "FIXMON_A", "the player mon's faint plays its species cry")
+  S.eq(#cries, 1, "no other cry on the player faint")
   for _, name in ipairs(sfx) do
-    T.check(name ~= "Faint_Fall",
+    S.check(name ~= "Faint_Fall",
             "the player faint never plays Faint_Fall (#709)")
   end
 end
@@ -87,18 +96,18 @@ do
   battle.playVictoryMusic = function() end
   battle:onFaint(battle.enemy)
   pump(battle, 2)
-  T.eq(#cries, 0, "the enemy faint plays no species cry")
+  S.eq(#cries, 0, "the enemy faint plays no species cry")
   local fall, thud = false, false
   for i, name in ipairs(sfx) do
     if name == "Faint_Fall" then
-      T.check(not fall, "Faint_Fall plays once")
+      S.check(not fall, "Faint_Fall plays once")
       fall = true
-      T.check(not thud, "Faint_Fall precedes Faint_Thud")
+      S.check(not thud, "Faint_Fall precedes Faint_Thud")
     elseif name == "Faint_Thud" then
       thud = true
     end
   end
-  T.check(fall and thud, "trainer enemy faint plays Faint_Fall and Faint_Thud")
+  S.check(fall and thud, "trainer enemy faint plays Faint_Fall and Faint_Thud")
 end
 
 -- enemy faint, wild battle: no faint sfx at all (victory music only)
@@ -110,11 +119,11 @@ do
   battle.playVictoryMusic = function() end
   battle:onFaint(battle.enemy)
   pump(battle)
-  T.eq(#cries, 0, "the wild enemy faint plays no species cry")
+  S.eq(#cries, 0, "the wild enemy faint plays no species cry")
   for _, name in ipairs(sfx) do
-    T.check(name ~= "Faint_Fall" and name ~= "Faint_Thud",
+    S.check(name ~= "Faint_Fall" and name ~= "Faint_Thud",
             "the wild enemy faint plays no faint sfx (.wild_win)")
   end
 end
 
-T.finish("parity faint cry bug709")
+S.finish()

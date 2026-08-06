@@ -33,6 +33,7 @@ local Theme = require("src.ui.kit.Theme")
 local Layout = require("src.ui.kit.Layout")
 local Loader = require("src.ui.kit.Loader")
 local GameVersion = require("src.core.GameVersion")
+local Version = require("src.core.Version")
 local Strings = require("src.core.Strings")
 
 local PAL = Theme.PAL
@@ -271,6 +272,45 @@ local function textField(imp, x, y, w, h, key, rawText, placeholder, focused, ac
   end
 end
 
+-- A square icon control: the header's gear and quit, and the game panel's
+-- manage button.  Inverts to a solid white fill when hot, the same signal
+-- every other control here uses, and rounds to the shared control radius.
+-- `image` draws a texture; `drawFn(x, y, size, hot)` draws a hand-rolled
+-- glyph (the quit X, which ships no asset).
+local function iconButton(imp, key, x, y, size, image, action, drawFn)
+  Kit._audit("control", x, y, size, size, key)
+  local focused = Kit.focusable(key, x, y, size, size)
+  local hot = focused or Kit.hover(x, y, size, size)
+  Theme.fillRounded(x, y, size, size, hot and PAL.ink or PAL.surface, 1)
+  Theme.strokeRounded(x, y, size, size, PAL.line,
+    hot and Theme.A.focus or Theme.A.hairline, 1)
+  if image then
+    local iw, ih = image:getDimensions()
+    local pad = math.floor(size * 0.24)
+    local s = math.min((size - 2 * pad) / iw, (size - 2 * pad) / ih)
+    if hot then love.graphics.setColor(0, 0, 0, 1)
+    else love.graphics.setColor(1, 1, 1, 0.85) end
+    love.graphics.draw(image, Theme.snap(x + (size - iw * s) / 2),
+      Theme.snap(y + (size - ih * s) / 2), 0, s, s)
+    love.graphics.setColor(1, 1, 1, 1)
+  elseif drawFn then
+    drawFn(x, y, size, hot)
+  end
+  if action and (Kit.press(x, y, size, size) or Kit._activateId == key) then
+    queueAction(imp, key, action)
+  end
+end
+
+-- The cartridge colour for a game, matching its tab in the header.  Play
+-- wears it, so "which game is this button going to boot" is answered before
+-- the label is read.  Unknown versions fall back to the commit green.
+local CART_COLOR = {
+  red = PAL.railRed, blue = PAL.railBlue, yellow = PAL.railGold,
+}
+local function cartColor(version)
+  return CART_COLOR[version] or PAL.green
+end
+
 local function modStatusColor(status)
   if status == "ok" then return Strings("Ready"), PAL.green end
   if status == "conflict" then return Strings("Conflict"), PAL.red end
@@ -337,20 +377,42 @@ local function buildHeader(imp, m)
   local rowH = m.logoH + math.floor(12 * m.s)
   local gear = m.chip
 
-  -- The logo is centred in the FULL row, then the right cluster is drawn over
-  -- its own reserved space, so the wordmark never drifts as buttons appear.
-  if imp.logo then
+  -- The wordmark is centred in the row MINUS the right cluster, mirrored on
+  -- the left so it still reads as centred in the window.  Centring it in the
+  -- FULL row (what this used to do) let a phone-width wordmark run straight
+  -- under the gear and the quit X -- "the settings is covering the logo".
+  -- Reserving the space on both sides costs a little width and cannot
+  -- overlap at any window size.
+  local clusterW = 2 * gear + math.floor(6 * m.s) + m.pad
+  local boxX = m.x + clusterW
+  local boxW = math.max(0, m.w - 2 * clusterW)
+  if imp.logo and boxW > 0 then
     local lw, lh = imp.logo:getDimensions()
-    local maxW = math.min(320 * m.s, m.w * 0.55)
+    local maxW = math.min(320 * m.s, boxW)
     local scale = math.min(maxW / lw, m.logoH / lh)
     local dw, dh = lw * scale, lh * scale
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(imp.logo, Theme.snap(m.x + (m.w - dw) / 2),
+    love.graphics.draw(imp.logo, Theme.snap(boxX + (boxW - dw) / 2),
       Theme.snap(y + (rowH - dh) / 2), 0, scale, scale)
   end
 
   local rx = m.x + m.w - m.pad
   local by = y + (rowH - gear) / 2
+
+  -- Switch-only: show the running app version opposite the settings gear so
+  -- players can confirm which build is on the microSD (OTA / zip updates).
+  if imp.isNX then
+    local label = "v" .. tostring(Version.engine or "?")
+    local tw = Kit.textWidth("small", label)
+    local padX = math.floor(12 * m.s)
+    local chipW = math.max(tw + 2 * padX, gear)
+    local lx = m.x + m.pad
+    Theme.fill(lx, by, chipW, gear, PAL.bg, 1)
+    Theme.stroke(lx, by, chipW, gear, PAL.yellow, Theme.A.hover, 1)
+    local th = Kit.textHeight("small")
+    Kit.text("small", label, lx + math.floor((chipW - tw) / 2),
+      by + math.floor((gear - th) / 2), PAL.yellow)
+  end
 
   -- The right cluster is laid out right to left -- Quit outermost, the gear
   -- inboard of it -- but the two are REGISTERED gear first, because the first
@@ -359,47 +421,23 @@ local function buildHeader(imp, m)
   local quitX = rx - gear
   rx = quitX - math.floor(6 * m.s)
 
-  -- Settings gear.
+  -- Settings gear.  It now also owns the CONTROL settings (touch overlay
+  -- editor, reset rebinds), which used to be buttons stacked in the game
+  -- panel -- see LauncherSettings.coreRows.
   imp._gearIcon = imp._gearIcon
     or love.graphics.newImage("assets/launcher/gear.png")
   rx = rx - gear
-  do
-    local x = rx
-    Kit._audit("control", x, by, gear, gear, "gear")
-    local focused = Kit.focusable("gear", x, by, gear, gear)
-    local hot = focused or Kit.hover(x, by, gear, gear)
-    Theme.fill(x, by, gear, gear, hot and PAL.ink or PAL.bg, 1)
-    Theme.stroke(x, by, gear, gear, PAL.line,
-      hot and Theme.A.focus or Theme.A.hairline, 1)
-    local iw, ih = imp._gearIcon:getDimensions()
-    local pad = math.floor(gear * 0.22)
-    local s = math.min((gear - 2 * pad) / iw, (gear - 2 * pad) / ih)
-    if hot then love.graphics.setColor(0, 0, 0, 1)
-    else love.graphics.setColor(1, 1, 1, 0.85) end
-    love.graphics.draw(imp._gearIcon, Theme.snap(x + (gear - iw * s) / 2),
-      Theme.snap(by + (gear - ih * s) / 2), 0, s, s)
-    love.graphics.setColor(1, 1, 1, 1)
-    if Kit.press(x, by, gear, gear) or Kit._activateId == "gear" then
-      queueAction(imp, "gear", function() imp:_openSettings() end)
-    end
-  end
+  iconButton(imp, "gear", rx, by, gear, imp._gearIcon,
+    function() imp:_openSettings() end)
 
   -- Quit, top-right corner.
-  do
-    local x = quitX
-    Kit._audit("control", x, by, gear, gear, "quit")
-    local focused = Kit.focusable("quit", x, by, gear, gear)
-    local hot = focused or Kit.hover(x, by, gear, gear)
-    Theme.fill(x, by, gear, gear, hot and PAL.ink or PAL.bg, 1)
-    Theme.stroke(x, by, gear, gear, PAL.line,
-      hot and Theme.A.focus or Theme.A.hairline, 1)
-    local pad = math.floor(gear * 0.32)
-    drawCross(x + pad, by + pad, gear - 2 * pad,
-      hot and { 0, 0, 0, 1 } or { 1, 1, 1, 0.85 })
-    if Kit.press(x, by, gear, gear) or Kit._activateId == "quit" then
-      queueAction(imp, "quit", function() imp:_quitApp() end)
-    end
-  end
+  iconButton(imp, "quit", quitX, by, gear, nil,
+    function() imp:_quitApp() end,
+    function(x, y, size, hot)
+      local pad = math.floor(size * 0.32)
+      drawCross(x + pad, y + pad, size - 2 * pad,
+        hot and { 0, 0, 0, 1 } or { 1, 1, 1, 0.85 })
+    end)
 
   -- The self-update control lives in the FOOTER next to the BCG mark (small,
   -- out of the wordmark's way -- it used to overlap the logo on a phone).  It
@@ -438,9 +476,9 @@ local function buildHeader(imp, m)
     local hot = focused or Kit.hover(tx, ty, w, tabH)
     local invert = active or hot
     local tint = t.color or PAL.ink
-    Theme.fill(tx, ty, w, tabH, invert and tint or PAL.bg, 1)
+    Theme.fillRounded(tx, ty, w, tabH, invert and tint or PAL.surface, 1)
     if not invert then
-      Theme.stroke(tx, ty, w, tabH, tint,
+      Theme.strokeRounded(tx, ty, w, tabH, tint,
         t.color and Theme.A.hover or Theme.A.hairline, 1)
     end
     -- Ink on a filled tab must contrast with THAT fill: black on the light
@@ -503,154 +541,121 @@ end
 
 -- ------------------------------------------------------------ game panel
 
--- One card of actions: Re-import ROM on top, the Import/Export save pair
--- under it.  The old ROM card's caption/filename/"Verified." furniture and
--- the SAVE FILES caption are gone -- a ready game shows only the buttons.
--- The ROM import STATE lines survive (progress, "Import failed", the no-ROM
--- drop hint): while there is no ROM they are the whole story of this card.
-local function buildActionsCard(imp, x, y, w, m, version, info, ready, locked,
-    maxH)
-  local dropHint = imp.isNX and Strings("Copy the .gb/.gbc via MTP into imports/.")
-    or (imp.android and Strings("Copy the .gb/.gbc via USB.")
-      or Strings("Or drop the .gb/.gbc file here."))
+-- What this version's ROM situation is, as a plain table.  The panel and the
+-- per-game manage modal both read it, so the two can never disagree about
+-- whether a ROM is present or what the import button should say.
+--   state    a headline, or nil when there is nothing to report (ready)
+--   detail   the paragraph under it
+--   label    the import button's caption
+--   enabled  whether that button may be pressed
+--   progress 0-1 while an import for THIS version is running
+local function romModel(imp, version, info, ready, locked)
   local importLabel = imp.isNX and Strings("Scan again") or Strings("Import ROM")
-  local romState, romDetail, romBtnLabel, romBtnEnabled, romProgress
   if locked then
-    romState, romDetail = Strings("Not supported yet"),
-      Strings("Support for this game is on the way.")
-    romBtnLabel, romBtnEnabled = Strings("Import unavailable"), false
-  else
-    local importing = imp.importing == version
-    local erroring = imp.workState == "error" and imp.errorVersion == version
-    local notice = imp.notice and imp.notice.version == version and imp.notice
-    if importing and (imp.workState == "working" or imp.workState == "complete") then
-      romState = imp.status or Strings("Importing")
-      romDetail = imp.detail or ""
-      romProgress = imp.progress or 0
-    elseif ready then
-      romBtnLabel, romBtnEnabled = Strings("Re-import ROM"), true
-    elseif erroring then
-      romState = Strings("Import failed")
-      romDetail = imp.detail or Strings("That ROM could not be imported.")
-      romBtnLabel, romBtnEnabled = importLabel, true
-    elseif notice then
-      romState = Strings("No ROM imported")
-      romDetail = ((notice.status or "") .. " " .. (notice.detail or ""))
-        :gsub("^%s+", ""):gsub("%s+$", "")
-      romBtnLabel, romBtnEnabled = importLabel, true
-    elseif imp.returning[version] then
-      romState = Strings("Update required")
-      romDetail = Strings("This build needs a few more things from your ")
-        .. info.label .. Strings(" ROM. Re-import to continue.")
-      romBtnLabel, romBtnEnabled = Strings("Re-import ROM"), true
-    else
-      romState = Strings("No ROM imported")
-      romDetail = Strings("The ROM is verified before any files are created. ")
-        .. dropHint
-      romBtnLabel, romBtnEnabled = importLabel, true
-    end
+    return { state = Strings("Not supported yet"),
+      detail = Strings("Support for this game is on the way."),
+      label = Strings("Import unavailable"), enabled = false }
   end
+  local dropHint = imp.isNX and Strings("Copy the .gb/.gbc via MTP into imports/.")
+    or (imp.baseRomDiscovery and Strings("Or copy the .gb/.gbc into baseroms/.")
+      or (imp.android and Strings("Copy the .gb/.gbc via USB.")
+        or Strings("Or drop the .gb/.gbc file here.")))
+  local importing = imp.importing == version
+  local erroring = imp.workState == "error" and imp.errorVersion == version
+  local notice = imp.notice and imp.notice.version == version and imp.notice
+  local baseRom = imp.baseRoms and imp.baseRoms[version]
+  local scanning = imp.baseRomDiscovery and imp.baseRomScan
+    and imp.baseRomScan.state ~= "done"
+  if importing and (imp.workState == "working" or imp.workState == "complete") then
+    return { state = imp.status or Strings("Importing"),
+      detail = imp.detail or "", progress = imp.progress or 0 }
+  elseif erroring then
+    -- An import that FAILED is reported even on a ready game (a re-import
+    -- that could not read the new file): the failure is the only reason the
+    -- library still holds the old cache, and it must not be silent (the
+    -- "Import failed with no explanation" report).
+    return { state = Strings("Import failed"),
+      detail = imp.detail or Strings("That ROM could not be imported."),
+      label = importLabel, enabled = true }
+  elseif ready then
+    return { label = Strings("Re-import ROM"), enabled = true }
+  elseif notice then
+    return { state = Strings("No ROM imported"),
+      detail = ((notice.status or "") .. " " .. (notice.detail or ""))
+        :gsub("^%s+", ""):gsub("%s+$", ""),
+      label = importLabel, enabled = true }
+  elseif baseRom then
+    return { state = Strings("Compatible ROM found"),
+      detail = Strings("Found in baseroms/: %s", baseRom.name),
+      label = Strings("Import detected ROM"), enabled = true }
+  elseif scanning then
+    return { state = Strings("Checking baseroms..."),
+      detail = Strings("Looking for compatible Red, Blue, and Yellow ROMs."),
+      label = Strings("Import ROM"), enabled = false }
+  elseif imp.returning[version] then
+    return { state = Strings("Update required"),
+      detail = Strings("This build needs a few more things from your ")
+        .. info.label .. Strings(" ROM. Re-import to continue."),
+      label = Strings("Re-import ROM"), enabled = true }
+  end
+  return { state = Strings("No ROM imported"),
+    detail = Strings("The ROM is verified before any files are created. ")
+      .. dropHint,
+    label = importLabel, enabled = true }
+end
 
-  local sfImportEnabled, sfExportEnabled = false, false
-  if not locked then
-    imp:_ensureSlots(version)
-    sfImportEnabled = ready and true or false
-    local activeId = imp.activeSlot[version]
-    for _, sl in ipairs(imp.slots[version] or {}) do
-      if sl.id == activeId and sl.exists then sfExportEnabled = true break end
-    end
+-- The import action behind whichever button carries it.
+local function romAction(imp, version, mdl)
+  if not mdl.enabled then return nil end
+  return function()
+    if imp.ready[version] then imp:reimport(version)
+    else imp:choose(version) end
   end
-  local sfNotice = (not locked) and imp.saveNotice[version] or nil
-  local hintText, hintCol
-  if sfNotice then
-    hintText, hintCol = sfNotice.text, (sfNotice.ok and PAL.green or PAL.red)
-  elseif locked then
-    hintText, hintCol = Strings("Not available yet."), PAL.muted
-  else
-    hintText, hintCol = imp:_savesDefaultHint(version), PAL.muted
-  end
-  local savImportLabel = imp.isNX and Strings("Scan again") or Strings("Import save")
+end
 
+-- The ROM card: the state headline, its paragraph, and the Import button.
+-- It exists ONLY while there is something to report -- a game with a verified
+-- ROM shows Play, not a card of file management (that moved behind the manage
+-- button next to Play, and the save file controls moved into the slot card).
+-- Returns the height it consumed, 0 when it drew nothing.
+local function buildRomCard(imp, x, y, w, m, version, mdl, maxH)
+  if not (mdl.state or mdl.progress) then return 0 end
   local pad = math.floor(14 * m.s)
   local iw = w - 2 * pad
   local lineH = Kit.textHeight("small")
-  local folderRow = sfNotice and sfNotice.dir
-  -- The buttons and pads are fixed furniture that always fits; the two text
-  -- runs are the elastic part.  ROM detail lines come first (they only exist
-  -- while there is an import state to explain), the save hint takes whatever
-  -- lines remain.  Without this the card overflowed its budget and got
-  -- clipped mid-button -- the failure a no-scroll layout must design out.
-  local fixedH = pad + m.btnH + math.floor(10 * m.s) + m.btnH
-    + math.floor(8 * m.s) + pad
-    + (folderRow and (math.floor(6 * m.s) + lineH) or 0)
-  local stateHeadH = romState
-    and (Kit.textHeight("button") + math.floor(4 * m.s) + math.floor(10 * m.s))
-    or 0
-  local detailLines = romState and 3 or 0
-  local hintLines = 3
+  local hasButton = mdl.progress == nil and mdl.label ~= nil
+  -- Pads and the button are fixed furniture that always fits; the detail
+  -- paragraph is the elastic part and gets trimmed to whatever lines the
+  -- budget leaves.  Without that trim the card overflowed and got clipped
+  -- mid-button, which is the failure a no-scroll layout must design out.
+  local fixedH = pad + Kit.textHeight("button") + math.floor(4 * m.s)
+    + math.floor(10 * m.s)
+    + ((hasButton or mdl.progress) and (m.btnH + math.floor(2 * m.s)) or 0)
+    + pad
+  local detailLines = 3
   if maxH then
-    local room = math.floor((maxH - fixedH - stateHeadH) / lineH)
-    detailLines = math.max(0, math.min(detailLines, room))
-    hintLines = math.max(0, math.min(hintLines, room - detailLines))
+    detailLines = math.max(0,
+      math.min(detailLines, math.floor((maxH - fixedH) / lineH)))
   end
-  local detailH = romState
-    and Kit.wrapHeight("small", romDetail, iw, detailLines) or 0
-  local hintH = Kit.wrapHeight("small", hintText, iw, hintLines)
-  local h = fixedH + stateHeadH + detailH + hintH
+  local detailH = Kit.wrapHeight("small", mdl.detail or "", iw, detailLines)
+  local h = fixedH + detailH
 
   Kit.card(x, y, w, h)
   local cy = y + pad
-  if romState then
-    Kit.text("button", Kit.ellipsize("button", romState, iw), x + pad, cy,
-      PAL.heading)
-    cy = cy + Kit.textHeight("button") + math.floor(4 * m.s)
-    cy = cy + Kit.textWrapped("small", romDetail, x + pad, cy, iw, PAL.detail,
-      detailLines)
-    cy = cy + math.floor(10 * m.s)
-  end
-  if romProgress ~= nil then
+  Kit.text("button", Kit.ellipsize("button", mdl.state or "", iw), x + pad, cy,
+    PAL.heading)
+  cy = cy + Kit.textHeight("button") + math.floor(4 * m.s)
+  cy = cy + Kit.textWrapped("small", mdl.detail or "", x + pad, cy, iw,
+    PAL.detail, detailLines)
+  cy = cy + math.floor(10 * m.s)
+  if mdl.progress ~= nil then
     Kit.progress(x + pad, cy + (m.btnH - math.floor(10 * m.s)) / 2, iw,
-      math.floor(10 * m.s), romProgress)
-  else
-    btn(imp, x + pad, cy, iw, m.btnH, "rom-" .. version, romBtnLabel, {
-      kind = "accent",
-      enabled = romBtnEnabled,
-      action = romBtnEnabled and function()
-        if imp.ready[version] then imp:reimport(version)
-        else imp:choose(version) end
-      end or nil,
+      math.floor(10 * m.s), mdl.progress)
+  elseif hasButton then
+    btn(imp, x + pad, cy, iw, m.btnH, "rom-" .. version, mdl.label, {
+      kind = "accent", enabled = mdl.enabled,
+      action = romAction(imp, version, mdl),
     })
-  end
-  cy = cy + m.btnH + math.floor(10 * m.s)
-  local gap = math.floor(10 * m.s)
-  local halfW = math.floor((iw - gap) / 2)
-  btn(imp, x + pad, cy, halfW, m.btnH, "sav-import-" .. version, savImportLabel, {
-    kind = "accent", enabled = sfImportEnabled,
-    action = sfImportEnabled and function() imp:chooseSaveImport(version) end or nil,
-  })
-  btn(imp, x + pad + halfW + gap, cy, halfW, m.btnH, "sav-export-" .. version,
-    Strings("Export save"), {
-      kind = "accent", enabled = sfExportEnabled,
-      action = sfExportEnabled and function() imp:exportSave(version) end or nil,
-    })
-  cy = cy + m.btnH + math.floor(8 * m.s)
-  cy = cy + Kit.textWrapped("small", hintText, x + pad, cy, iw, hintCol,
-    hintLines)
-  if folderRow then
-    cy = cy + math.floor(6 * m.s)
-    local key = "sav-folder-" .. version
-    local label = Strings("Open folder")
-    local lw = Kit.textWidth("small", label)
-    local lh = Kit.textHeight("small")
-    Kit.focusable(key, x + pad, cy, lw, lh)
-    Kit.text("small", label, x + pad, cy, PAL.blue)
-    Theme.fill(x + pad, cy + lh - 1, lw, 1, PAL.blue, 0.6)
-    if Kit.press(x + pad, cy, lw, lh) or Kit._activateId == key then
-      local dir = sfNotice.dir
-      queueAction(imp, key, function()
-        love.system.openURL(imp:fileUrl(dir))
-      end)
-    end
   end
   return h
 end
@@ -658,7 +663,32 @@ end
 -- Save slots, PAGINATED.  This was a fixed-height scroller with momentum; it
 -- is now a page of rows sized to whatever height the column has left, which
 -- is why 40 slots cost exactly what 4 do.
-local function buildSlotCard(imp, x, y, w, availH, m, version)
+-- Lay a row's action chips out right-aligned, wrapping onto further lines
+-- when they cannot all fit across the row.  A narrow window (the 150%-scaled
+-- desktop and the portrait phone in the reports) could not fit four chips on
+-- one line, and a fixed right-to-left cluster simply walked them off the left
+-- edge and under the row's own text.  Returns an array of lines, each an
+-- array of chips, so the caller can size the row BEFORE drawing it.
+local function chipLines(chips, inner, gap)
+  local lines, line, used = {}, {}, 0
+  for _, c in ipairs(chips) do
+    if #line > 0 and used + gap + c.w > inner then
+      lines[#lines + 1] = line
+      line, used = {}, 0
+    end
+    used = used + ((#line > 0) and gap or 0) + c.w
+    line[#line + 1] = c
+  end
+  if #line > 0 then lines[#lines + 1] = line end
+  return lines
+end
+
+-- The width a chip needs for its caption, at the row-chip font.
+local function chipWidth(label, m)
+  return Kit.textWidth("small", label) + math.floor(20 * m.s)
+end
+
+local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   imp:_ensureSlots(version)
   local slots = imp.slots[version] or {}
   local active = imp.activeSlot[version]
@@ -667,17 +697,71 @@ local function buildSlotCard(imp, x, y, w, availH, m, version)
   local iw = w - 2 * pad
   local gap = math.floor(8 * m.s)
 
-  -- A slot row: name + LOADED tag, meta line, action buttons.
+  -- A slot row: name + LOADED tag, meta line, then the action chips.  The
+  -- chip set is measured against the WIDEST possible row (every chip present)
+  -- so every row on the page is the same height even though an empty slot
+  -- offers fewer -- pagination derives its row count from a uniform height.
   local chipH = math.max(Kit.tapMin(), math.floor(30 * m.s))
-  local rowH = math.floor(8 * m.s) + Kit.textHeight("button")
-    + math.floor(4 * m.s) + Kit.textHeight("small")
-    + math.floor(8 * m.s) + chipH + math.floor(8 * m.s)
+  local rowInner = iw - math.floor(20 * m.s)
+  local maxChips = {
+    { w = chipWidth(Strings("Export"), m) },
+    { w = chipWidth(Strings("Rename"), m) },
+    { w = chipWidth(Strings("Edit"), m) },
+    -- Delete's width is pinned to the WIDER of its two captions so arming to
+    -- "Sure?" never reflows the row under the pointer (#433).
+    { w = math.max(chipWidth(DELETE_LABEL(false), m),
+        chipWidth(DELETE_LABEL(true), m)) },
+  }
+  local chipGap = math.floor(6 * m.s)
+  local maxChipsW = 0
+  for i, c in ipairs(maxChips) do
+    maxChipsW = maxChipsW + c.w + ((i > 1) and chipGap or 0)
+  end
+  -- BESIDE the text when the row is wide enough to hold both and still leave
+  -- the name and meta lines a readable share, UNDER it when it is not.  A
+  -- desktop row costs one text block instead of a text block plus a button
+  -- strip, which is what lets a two-column window show several slots per page
+  -- instead of one; a phone row keeps the taller shape rather than squeezing
+  -- four chips and a name into one line.
+  local textH = Kit.textHeight("button") + math.floor(4 * m.s)
+    + Kit.textHeight("small")
+  -- The threshold is what the TEXT needs, not a fraction of the row: a slot
+  -- name plus its badges/time/dex line wants about this much before it starts
+  -- ellipsizing anything a player came to read.
+  local textMinW = math.floor(150 * m.s)
+  local sideBySide =
+    (rowInner - maxChipsW - math.floor(12 * m.s)) >= textMinW
+  local chipRowCount = #chipLines(maxChips, rowInner, chipGap)
+  local chipBlockH = chipRowCount * chipH
+    + math.max(0, chipRowCount - 1) * chipGap
+  local rowH
+  if sideBySide then
+    rowH = math.floor(8 * m.s) + math.max(textH, chipH) + math.floor(8 * m.s)
+  else
+    rowH = math.floor(8 * m.s) + textH + math.floor(8 * m.s) + chipBlockH
+      + math.floor(8 * m.s)
+  end
 
-  local headH = Kit.textHeight("caption") + math.floor(8 * m.s)
+  -- The header carries "Import save": a .sav import CREATES a slot, so it
+  -- belongs to the slot list rather than to the ROM card it used to sit in.
+  local headH = math.max(Kit.textHeight("caption"), m.btnH) + math.floor(8 * m.s)
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local newBtnH = m.btnH
+  local sfNotice = imp.saveNotice[version]
+  local hintText, hintCol
+  if sfNotice then
+    hintText, hintCol = sfNotice.text, (sfNotice.ok and PAL.green or PAL.red)
+  else
+    hintText, hintCol = nil, PAL.muted
+  end
+  local hintH = hintText
+    and (Kit.wrapHeight("small", hintText, iw, 2) + math.floor(8 * m.s)) or 0
+  local folderRow = sfNotice and sfNotice.dir
+  if folderRow then hintH = hintH + Kit.textHeight("small") + math.floor(4 * m.s) end
+
   -- Rows get whatever is left after the card's fixed furniture.
-  local listH = availH - (pad * 2 + headH + pagerH + gap + newBtnH + gap)
+  local listH = availH
+    - (pad * 2 + headH + hintH + pagerH + gap + newBtnH + gap)
   local perPage = Kit.rowsThatFit(listH, rowH, gap, 1, 12)
   local pageKey = "slots-" .. version
   local first, last, cur, pages = Kit.pageBounds(page(imp, pageKey), n, perPage)
@@ -686,14 +770,28 @@ local function buildSlotCard(imp, x, y, w, availH, m, version)
   local shown = math.max(0, last - first + 1)
   local usedListH = (n == 0) and math.floor(70 * m.s)
     or (shown * rowH + math.max(0, shown - 1) * gap)
-  local h = pad + headH + usedListH + gap
+  local h = pad + headH + usedListH + gap + hintH
     + (pages > 1 and (pagerH + gap) or 0) + newBtnH + pad
 
   Kit.card(x, y, w, h)
   local cy = y + pad
-  Kit.caption(x + pad, cy, Strings("SAVE SLOT"))
-  Kit.textRight("small", n == 1 and Strings("1 slot") or Strings("%d slots", n),
-    x + w - pad, cy, PAL.muted)
+  local capY = cy + math.floor((m.btnH - Kit.textHeight("caption")) / 2)
+  Kit.caption(x + pad, capY, Strings("SAVE SLOT"))
+  local savImportLabel = imp.isNX and Strings("Scan again")
+    or Strings("Import save")
+  local impW = chipWidth(savImportLabel, m) + math.floor(8 * m.s)
+  btn(imp, x + w - pad - impW, cy, impW, m.btnH, "sav-import-" .. version,
+    savImportLabel, {
+      kind = "accent", font = "small", enabled = ready and true or false,
+      action = ready and function() imp:chooseSaveImport(version) end or nil,
+    })
+  local countW = (x + w - pad - impW - math.floor(8 * m.s))
+    - (x + pad + Kit.captionWidth(Strings("SAVE SLOT")) + math.floor(8 * m.s))
+  if countW > 0 then
+    Kit.textRight("small",
+      n == 1 and Strings("1 slot") or Strings("%d slots", n),
+      x + w - pad - impW - math.floor(8 * m.s), capY, PAL.muted)
+  end
   cy = cy + headH
 
   if n == 0 then
@@ -715,17 +813,23 @@ local function buildSlotCard(imp, x, y, w, availH, m, version)
 
       local px = x + pad + math.floor(10 * m.s)
       local inner = iw - math.floor(20 * m.s)
+      -- Beside the chips, the text block only owns what they leave; under
+      -- them it owns the row.  Either way the width is fixed before anything
+      -- prints, so the name ellipsizes into its own space rather than into
+      -- a button.
+      local textW = sideBySide
+        and (inner - maxChipsW - math.floor(12 * m.s)) or inner
       local ly = ry + math.floor(8 * m.s)
+        + (sideBySide and math.floor((math.max(textH, chipH) - textH) / 2) or 0)
       local name = slot.label or slot.name or Strings("NEW GAME")
       local tagW = 0
       if selected then
         tagW = Kit.textWidth("micro", Strings("LOADED")) + math.floor(16 * m.s)
-        Kit.tag(x + pad + iw - math.floor(10 * m.s) - tagW, ly,
-          tagW, Kit.textHeight("button"), Strings("LOADED"),
-          selected and PAL.inverse or PAL.green)
+        Kit.tag(px + textW - tagW, ly, tagW, Kit.textHeight("button"),
+          Strings("LOADED"), PAL.inverse)
         tagW = tagW + math.floor(8 * m.s)
       end
-      Kit.text("button", Kit.ellipsize("button", name, inner - tagW), px, ly, ink)
+      Kit.text("button", Kit.ellipsize("button", name, textW - tagW), px, ly, ink)
       ly = ly + Kit.textHeight("button") + math.floor(4 * m.s)
       local metaTxt
       if slot.exists and slot.meta then
@@ -734,43 +838,90 @@ local function buildSlotCard(imp, x, y, w, availH, m, version)
       else
         metaTxt = Strings("empty slot")
       end
-      Kit.text("small", Kit.ellipsize("small", metaTxt, inner), px, ly,
+      Kit.text("small", Kit.ellipsize("small", metaTxt, textW), px, ly,
         selected and PAL.inverse or PAL.muted)
-      ly = ly + Kit.textHeight("small") + math.floor(8 * m.s)
+      -- Where the chip block starts: centred on the row beside the text, or
+      -- on its own line under it.
+      ly = sideBySide and (ry + (rowH - chipBlockH) / 2)
+        or (ly + Kit.textHeight("small") + math.floor(8 * m.s))
 
-      -- Action chips, right-aligned.  A selected row is a white fill, so its
-      -- chips invert too or they would vanish.
-      local place = Layout.rightCluster(px, inner, math.floor(6 * m.s))
+      -- Action chips, right-aligned and wrapped onto as many lines as the row
+      -- width needs.  Export lives HERE rather than beside the ROM buttons:
+      -- an export is a property of a slot, so the control belongs on the slot
+      -- it exports (it selects the row first, since the exporter writes
+      -- whichever slot is active).
       local armed = deleteArmed(imp, "slot", slot.id, version)
-      -- Width pinned to the WIDER of the two captions so arming to "Sure?"
-      -- never reflows the row under the pointer (#433), and a translation
-      -- whose "delete" is shorter than its "sure?" is not clipped.
-      local delW = math.max(Kit.textWidth("small", DELETE_LABEL(false)),
-        Kit.textWidth("small", DELETE_LABEL(true))) + math.floor(20 * m.s)
-      btn(imp, place(delW), ly, delW, chipH, rowKey .. "-del", DELETE_LABEL(armed), {
-        kind = "danger", font = "small", keepArm = true,
+      local chips = {}
+      if slot.exists then
+        chips[#chips + 1] = { label = Strings("Export"), kind = "accent",
+          key = rowKey .. "-export",
+          action = function()
+            imp:_selectSlot(version, slot.id)
+            imp:exportSave(version)
+          end }
+      end
+      if not imp.android then
+        chips[#chips + 1] = { label = Strings("Rename"), kind = "accent",
+          key = rowKey .. "-rename",
+          action = function() imp:_beginRename(version, slot.id) end }
+      end
+      if imp.onEditSave and slot.exists then
+        chips[#chips + 1] = { label = Strings("Edit"), kind = "accent",
+          key = rowKey .. "-edit",
+          action = function() imp.onEditSave(version, slot.id) end }
+      end
+      chips[#chips + 1] = { label = DELETE_LABEL(armed), kind = "danger",
+        keepArm = true, key = rowKey .. "-del",
+        -- Pinned width, so arming to "Sure?" cannot reflow the cluster.
+        w = math.max(chipWidth(DELETE_LABEL(false), m),
+          chipWidth(DELETE_LABEL(true), m)),
         action = function()
           imp:pressDelete("slot", slot.id, version, function()
             imp:_deleteSlot(version, slot.id)
           end)
-        end,
-      })
-      if imp.onEditSave and slot.exists then
-        local ew = Kit.textWidth("small", Strings("Edit")) + math.floor(20 * m.s)
-        btn(imp, place(ew), ly, ew, chipH, rowKey .. "-edit", Strings("Edit"), {
-          kind = "accent", font = "small",
-          action = function() imp.onEditSave(version, slot.id) end,
-        })
-      end
-      if not imp.android then
-        local rw = Kit.textWidth("small", Strings("Rename")) + math.floor(20 * m.s)
-        btn(imp, place(rw), ly, rw, chipH, rowKey .. "-rename", Strings("Rename"), {
-          kind = "accent", font = "small",
-          action = function() imp:_beginRename(version, slot.id) end,
-        })
+        end }
+      for _, c in ipairs(chips) do c.w = c.w or chipWidth(c.label, m) end
+      for li, line in ipairs(chipLines(chips, inner, chipGap)) do
+        local total = 0
+        for i, c in ipairs(line) do
+          total = total + c.w + ((i > 1) and chipGap or 0)
+        end
+        local cx = px + inner - total
+        local cly = ly + (li - 1) * (chipH + chipGap)
+        for _, c in ipairs(line) do
+          btn(imp, cx, cly, c.w, chipH, c.key, c.label, {
+            kind = c.kind, font = "small", keepArm = c.keepArm,
+            action = c.action,
+          })
+          cx = cx + c.w + chipGap
+        end
       end
     end
     cy = cy + usedListH + gap
+  end
+
+  -- The save-file notice (import/export result) lands in this card now that
+  -- the buttons that produce it do.
+  if hintText then
+    cy = cy + Kit.textWrapped("small", hintText, x + pad, cy, iw, hintCol, 2)
+    if folderRow then
+      cy = cy + math.floor(4 * m.s)
+      local key = "sav-folder-" .. version
+      local label = Strings("Open folder")
+      local lw = Kit.textWidth("small", label)
+      local lh = Kit.textHeight("small")
+      Kit.focusable(key, x + pad, cy, lw, lh)
+      Kit.text("small", label, x + pad, cy, PAL.blue)
+      Theme.fill(x + pad, cy + lh - 1, lw, 1, PAL.blue, 0.6)
+      if Kit.press(x + pad, cy, lw, lh) or Kit._activateId == key then
+        local dir = sfNotice.dir
+        queueAction(imp, key, function()
+          love.system.openURL(imp:fileUrl(dir))
+        end)
+      end
+      cy = cy + lh
+    end
+    cy = cy + math.floor(8 * m.s)
   end
 
   if pages > 1 then
@@ -799,6 +950,8 @@ local function buildGamePanel(imp, x, y, w, availH, m, version)
   Kit.text("title", Kit.ellipsize("title", gameName, w * 0.6), x, y, PAL.heading)
   local tagText, tagCol
   if ready then tagText, tagCol = Strings("GOOD TO GO"), PAL.green
+  elseif imp.baseRoms and imp.baseRoms[version] then
+    tagText, tagCol = Strings("ROM FOUND"), PAL.green
   elseif locked then tagText, tagCol = Strings("COMING SOON"), PAL.steel
   else tagText, tagCol = Strings("ROM REQUIRED"), PAL.yellow end
   local tagW = Kit.textWidth("micro", tagText) + math.floor(18 * m.s)
@@ -817,84 +970,57 @@ local function buildGamePanel(imp, x, y, w, availH, m, version)
     lx, lw, rx2, rw = x, w, x, w
   end
 
-  -- LEFT COLUMN.  The controls that must always be reachable -- Play, and the
-  -- control-reset pair -- are PINNED to the bottom of the column and laid out
-  -- upward; the informational cards fill downward from the top into whatever
-  -- is left.  Without that pinning the column is a stack whose height depends
-  -- on how much text the actions card happens to carry, and at a
-  -- large UI scale on a short window the Play button is what falls off the
-  -- bottom -- the one thing that must never happen, and with no scrollbar to
-  -- rescue it.
-  local playH = math.max(m.btnH, math.floor(52 * m.s))
-  local bottom = cy + remaining
-  local py = bottom - playH
-  btn(imp, lx, py, lw, playH, "play-" .. version,
-    ready and (Strings("Play ") .. gameName)
-      or (locked and Strings("Coming soon") or Strings("Import a ROM to play")),
-    {
-      kind = ready and "primary" or "ghost", font = "stat",
-      enabled = ready,
-      action = ready and function() imp:play(version) end or nil,
-    })
-
-  if imp.controlsNotice then
-    local nh = Kit.wrapHeight("small", imp.controlsNotice.text, lw, 2)
-    py = py - nh - math.floor(4 * m.s)
-    Kit.textWrapped("small", imp.controlsNotice.text, lx, py, lw,
-      imp.controlsNotice.ok and PAL.green or PAL.red, 2)
-  end
-  -- Reset rebinds, directly under the touch controls.  Rebinds are additive
-  -- (Input:applyBindings layers them over the defaults), so there is no
-  -- in-game way to undo one -- this is the way back.  Two-press confirm,
-  -- same as every other destructive control here.
-  do
-    py = py - math.floor(6 * m.s) - m.btnH
-    local armed = deleteArmed(imp, "rebinds", "all", nil)
-    btn(imp, lx, py, lw, m.btnH, "reset-rebinds",
-      armed and Strings("Sure? Reset all rebinds") or Strings("Reset rebinds"), {
-        kind = "danger", keepArm = true,
-        action = function()
-          imp:pressDelete("rebinds", "all", nil, function()
-            imp:_resetRebinds()
-          end)
-        end,
-      })
-  end
-  if imp.onEditTouchControls then
-    py = py - math.floor(6 * m.s) - m.btnH
-    btn(imp, lx, py, lw, m.btnH, "touch-controls", Strings("Touch Controls"), {
-      kind = "accent",
-      action = function() imp.onEditTouchControls() end,
-    })
-  end
-
-  -- The actions card fills the space above the pinned block, clipped so a
-  -- long ROM error message can never paint over the controls below it; it
-  -- trims its own elastic text to fit.  The clip is a backstop, not the
-  -- mechanism.
-  local cardsH = py - gap - cy
-  Kit.pushClip(lx, cy, lw, math.max(0, cardsH))
+  -- LEFT COLUMN, laid out DOWNWARD from the top.  It used to pin Play and a
+  -- Touch-Controls/Reset-rebinds pair to the BOTTOM and fill the cards
+  -- downward into whatever was left, which meant the column's height was
+  -- whatever its text happened to need -- and on any window shorter than
+  -- that pile the pinned block simply left the window (Play was measurably
+  -- off-screen at 1280x720 and on every phone shape).  The controls pair has
+  -- moved behind the gear (they are global settings, not per-game), the ROM
+  -- and save file management moved into the manage modal and the slot card,
+  -- and what is left is short enough to lay out top-down and always fit.
+  local mdl = romModel(imp, version, info, ready, locked)
   local ly = cy
-  -- In one column the save-slot card shares this region, so the actions
-  -- card gets a bounded share of it rather than the whole thing.
-  local infoBudget = m.twoCol and cardsH or math.floor(cardsH * 0.42)
-  local actH = buildActionsCard(imp, lx, ly, lw, m, version, info, ready,
-    locked, infoBudget)
-  ly = ly + actH + gap
-  Kit.popClip()
 
-  -- Save slots.  Two columns put them beside the info cards; ONE column
-  -- stacks them underneath, in the space between those cards and the pinned
-  -- controls at the bottom.  Placing them after the pinned block (the
-  -- obvious reading of "stack it under the left column") drew them off the
-  -- bottom of the window and over the footer, with no scrollbar to reach
-  -- them -- in a no-scroll layout, anything below the fold is simply gone.
+  if ready then
+    -- Play IS the panel: it takes the space the ROM buttons used to hold, at
+    -- the top of the column where the eye lands, wearing this game's own
+    -- cartridge colour rather than a generic green.
+    -- Play grows into the room the column has: it is the one thing on this
+    -- screen the player came for, and the space freed by moving ROM and
+    -- control management out belongs to it rather than to a gap.  Clamped at
+    -- both ends so a short window still gets a real button and a tall one
+    -- does not get a billboard.
+    local playH = math.floor(clamp(remaining * 0.30, 64 * m.s, 132 * m.s))
+    local mgW = playH
+    local bgap = math.floor(8 * m.s)
+    btn(imp, lx, ly, lw - mgW - bgap, playH, "play-" .. version,
+      Strings("Play ") .. gameName, {
+        fill = cartColor(version), ink = PAL.inverse, font = "stat",
+        action = function() imp:play(version) end,
+      })
+    imp._gearIcon = imp._gearIcon
+      or love.graphics.newImage("assets/launcher/gear.png")
+    iconButton(imp, "manage-" .. version, lx + lw - mgW, ly, playH,
+      imp._gearIcon, function() imp._gameManage = version end)
+    ly = ly + playH + gap
+  end
+
+  -- The ROM card, which now only exists while there is something to report:
+  -- no ROM, a failed import, an import in flight, or an unsupported game.
+  local romH = buildRomCard(imp, lx, ly, lw, m, version, mdl,
+    m.twoCol and remaining or math.floor(remaining * 0.5))
+  if romH > 0 then ly = ly + romH + gap end
+
+  -- Save slots.  Two columns put them beside the left stack; ONE column
+  -- stacks them underneath.  Either way the card is clipped to the room it
+  -- actually has, and sizes its own list to that budget.
   if not locked then
     local slotY = m.twoCol and cy or ly
-    local slotAvail = m.twoCol and remaining or (py - gap - ly)
+    local slotAvail = m.twoCol and remaining or (cy + remaining - ly)
     if slotAvail > 80 * m.s then
       Kit.pushClip(rx2, slotY, rw, math.max(0, slotAvail))
-      buildSlotCard(imp, rx2, slotY, rw, slotAvail, m, version)
+      buildSlotCard(imp, rx2, slotY, rw, slotAvail, m, version, ready)
       Kit.popClip()
     end
   end
@@ -1457,7 +1583,12 @@ end
 -- z-ordered hit test, so this ordering IS the z-order.
 
 local function modalPanel(m, w, h)
-  Theme.fill(0, 0, m.W, m.H, PAL.bg, 0.82)
+  -- A near-opaque scrim, not a tint.  At 0.82 the header and the wordmark
+  -- still read through the settings panel and the screen looked like two
+  -- layouts fighting rather than one panel on top ("the settings is covering
+  -- the logo"); at this weight the page behind is present but plainly out of
+  -- play, which is what a modal is supposed to say.
+  Theme.fill(0, 0, m.W, m.H, PAL.bg, 0.93)
   Kit.blockClicks = true
   local pw = math.floor(math.min(w, m.W - 2 * m.pad))
   local ph = math.floor(math.min(h, m.H - 2 * m.pad))
@@ -1930,6 +2061,73 @@ local function buildFindEntryModal(imp, m)
       action = function() imp._findEntry = nil end })
 end
 
+-- Per-game file management, behind the manage button beside Play.  A ready
+-- game's panel is Play and its saves; everything episodic about the FILES --
+-- swapping the ROM out, finding them on disk -- lives here instead of taking
+-- two permanent buttons out of a column that has to fit on a phone.
+local function buildGameManageModal(imp, m)
+  local version = imp._gameManage
+  local info = GameVersion.info(version)
+  local ready = imp.ready[version] or false
+  local mdl = romModel(imp, version, info, ready, info == nil)
+  local gameName = info and (info.launcherName or info.displayName)
+    or tostring(version)
+  local saveDir = love.filesystem.getSaveDirectory
+    and love.filesystem.getSaveDirectory() or nil
+  -- The folder link is desktop-only: Android and NX have no browsable path to
+  -- open, and both already print their own transfer hint on the slot card.
+  local canOpenFolder = saveDir and not imp.android and not imp.isNX
+
+  local pad = math.floor(18 * m.s)
+  local w = math.floor(460 * m.s)
+  local gap = math.floor(8 * m.s)
+  local bodyW = w - 2 * pad
+  local detailH = Kit.wrapHeight("small",
+    mdl.detail or Strings("The ROM for this game is imported and verified."),
+    bodyW, 3)
+  local pathH = saveDir
+    and (Kit.textHeight("micro") + math.floor(8 * m.s)) or 0
+  local nBtns = 1 + (canOpenFolder and 1 or 0) + 1
+  local h = pad + Kit.textHeight("button") + math.floor(8 * m.s) + detailH
+    + math.floor(12 * m.s) + pathH + nBtns * (m.btnH + gap) - gap + pad
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = py + pad
+
+  Kit.text("button", Kit.ellipsize("button",
+    Strings("Manage ") .. gameName, pw - 2 * pad), px + pad, cy, PAL.heading)
+  cy = cy + Kit.textHeight("button") + math.floor(8 * m.s)
+  cy = cy + Kit.textWrapped("small",
+    mdl.detail or Strings("The ROM for this game is imported and verified."),
+    px + pad, cy, pw - 2 * pad, mdl.state and PAL.detail or PAL.green, 3)
+  cy = cy + math.floor(12 * m.s)
+  if saveDir then
+    -- Truncated from the LEFT: the tail of a save path is the part that
+    -- identifies it.
+    Kit.text("micro", Kit.ellipsizeLeft("micro", saveDir, pw - 2 * pad),
+      px + pad, cy, PAL.faint)
+    cy = cy + Kit.textHeight("micro") + math.floor(8 * m.s)
+  end
+
+  btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "manage-rom",
+    mdl.label or Strings("Re-import ROM"), {
+      kind = "accent", font = "small", enabled = mdl.enabled ~= false,
+      action = (mdl.enabled ~= false) and function()
+        imp._gameManage = nil
+        local fn = romAction(imp, version, mdl)
+        if fn then fn() end
+      end or nil })
+  cy = cy + m.btnH + gap
+  if canOpenFolder then
+    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "manage-folder",
+      Strings("Open folder"), { kind = "accent", font = "small",
+        action = function() love.system.openURL(imp:fileUrl(saveDir)) end })
+    cy = cy + m.btnH + gap
+  end
+  btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "manage-close",
+    Strings("Close"), { font = "small",
+      action = function() imp._gameManage = nil end })
+end
+
 local function buildSettingsModal(imp, m)
   local model = imp._settings
   local pad = math.floor(18 * m.s)
@@ -1944,10 +2142,12 @@ local function buildSettingsModal(imp, m)
     Strings("Close"), { font = "small",
       action = function() imp:_closeSettings() end })
   cy = cy + math.max(Kit.textHeight("stat"), m.btnH) + math.floor(6 * m.s)
-  Kit.text("micro", Strings(
+  -- WRAPPED, not printed flat: on a portrait panel this line ran straight off
+  -- the right edge and the sentence ended mid-word at the card border.
+  cy = cy + Kit.textWrapped("micro", Strings(
     "Saved to your options file; the game applies these on its next start."),
-    px + pad, cy, PAL.muted)
-  cy = cy + Kit.textHeight("micro") + math.floor(10 * m.s)
+    px + pad, cy, pw - 2 * pad, PAL.muted, 2)
+    + math.floor(10 * m.s)
 
   -- Settings rows are PAGINATED, flattened across sections so a page is a
   -- uniform run of rows.  Section titles ride along as their own entry.
@@ -1962,8 +2162,39 @@ local function buildSettingsModal(imp, m)
     end
     imp._settingsFlat = flat
   end
+  -- The widest label in the whole model decides the row shape (below), so it
+  -- is measured once per model rather than per row per frame.  Measuring the
+  -- WIDEST rather than each row keeps every row the same height, which is
+  -- what lets the list paginate off a uniform row.
+  if not flat.labelW or flat.labelFont ~= Kit.fonts.scale then
+    local widest = 0
+    for _, item in ipairs(flat) do
+      if item.row then
+        widest = math.max(widest, Kit.textWidth("small", item.row.label))
+      end
+    end
+    flat.labelW, flat.labelFont = widest, Kit.fonts.scale
+  end
 
-  local rowH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  local stepW = math.floor(34 * m.s)
+  local valW = math.floor(140 * m.s)
+  local inner = pw - 2 * pad - math.floor(24 * m.s)
+  -- STACKED ROWS.  Side by side, a row spends most of its width on the value
+  -- ladder and leaves the label whatever remains -- on a portrait phone that
+  -- was three characters and an ellipsis ("TEX...", "BAT...", "BAT..."), so
+  -- the panel listed a dozen settings none of which could be identified.
+  -- When the widest label does not fit beside its control, every row puts the
+  -- label on its own line ABOVE the control instead.  All-or-nothing, because
+  -- a list that switches shape row by row is harder to scan than either form.
+  local stacked = flat.labelW
+    > (inner - 2 * stepW - valW - math.floor(24 * m.s))
+  local rowH
+  if stacked then
+    rowH = Kit.textHeight("small") + math.floor(4 * m.s) + m.btnH
+      + math.floor(10 * m.s)
+  else
+    rowH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  end
   local gap = math.floor(4 * m.s)
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local listH = (py + ph - pad) - cy - pagerH - math.floor(8 * m.s)
@@ -1989,19 +2220,34 @@ local function buildSettingsModal(imp, m)
     else
       local row = item.row
       local key = "set-" .. i
-      Theme.stroke(px + pad, ry, pw - 2 * pad, rowH, PAL.line,
+      Theme.strokeRounded(px + pad, ry, pw - 2 * pad, rowH, PAL.line,
         Theme.A.hairline, 1)
       local ix = px + pad + math.floor(12 * m.s)
-      local inner = pw - 2 * pad - math.floor(24 * m.s)
-      local ly = ry + (rowH - Kit.textHeight("small")) / 2
+      -- Where the label prints, and where the control band starts.  Stacked:
+      -- label on its own full-width line, controls on the line below it.
+      -- Inline: both centred on one line, label left, controls right.
+      local labelY, ctlY, labelW
+      if stacked then
+        labelY = ry + math.floor(6 * m.s)
+        ctlY = labelY + Kit.textHeight("small") + math.floor(4 * m.s)
+        labelW = inner
+      else
+        labelY = ry + (rowH - Kit.textHeight("small")) / 2
+        ctlY = ry + (rowH - m.btnH) / 2
+        labelW = nil   -- per-shape below: what the controls leave over
+      end
+      local rx = ix + inner
+
       if row.editText then
         local ew = Kit.textWidth("small", Strings("Edit")) + math.floor(20 * m.s)
         local vw = math.floor(160 * m.s)
         Kit.text("small", Kit.ellipsize("small", row.label,
-          inner - ew - vw - math.floor(20 * m.s)), ix, ly, PAL.text)
+          labelW or (inner - ew - vw - math.floor(20 * m.s))),
+          ix, labelY, PAL.text)
         Kit.textRight("small", Kit.ellipsize("small", tostring(row.value()), vw),
-          ix + inner - ew - math.floor(10 * m.s), ly, PAL.detail)
-        btn(imp, ix + inner - ew, ry + (rowH - m.btnH) / 2, ew, m.btnH,
+          rx - ew - math.floor(10 * m.s),
+          ctlY + (m.btnH - Kit.textHeight("small")) / 2, PAL.detail)
+        btn(imp, rx - ew, ctlY, ew, m.btnH,
           key .. "-edit", Strings("Edit"), { kind = "accent", font = "small",
             action = function()
               imp._settingsText = { row = row, text = tostring(row.value() or ""),
@@ -2009,30 +2255,34 @@ local function buildSettingsModal(imp, m)
               imp:_armTextInput()
             end })
       elseif row.action then
-        -- A plain action row (Reset rebinds): the whole right side is one
-        -- button rather than a value ladder.
+        -- A plain action row (Reset rebinds, Touch controls): the whole right
+        -- side is one button rather than a value ladder.
         local aw = Kit.textWidth("small", row.actionLabel or Strings("Run"))
           + math.floor(24 * m.s)
         Kit.text("small", Kit.ellipsize("small", row.label,
-          inner - aw - math.floor(12 * m.s)), ix, ly, PAL.text)
-        btn(imp, ix + inner - aw, ry + (rowH - m.btnH) / 2, aw, m.btnH,
+          labelW or (inner - aw - math.floor(12 * m.s))), ix, labelY, PAL.text)
+        btn(imp, rx - aw, ctlY, aw, m.btnH,
           key .. "-act", row.actionLabel or Strings("Run"), {
             kind = row.danger and "danger" or "ghost", font = "small",
             action = function()
               if row.action() ~= false then model.save() end
             end })
       else
-        local stepW = math.floor(34 * m.s)
-        local valW = math.floor(140 * m.s)
         Kit.text("small", Kit.ellipsize("small", row.label,
-          inner - 2 * stepW - valW - math.floor(24 * m.s)), ix, ly, PAL.text)
-        local rx = ix + inner
-        btn(imp, rx - stepW, ry + (rowH - m.btnH) / 2, stepW, m.btnH,
+          labelW or (inner - 2 * stepW - valW - math.floor(24 * m.s))),
+          ix, labelY, PAL.text)
+        -- Stacked rows give the value the whole span between the steppers,
+        -- which is where the extra width goes now that the label is not
+        -- competing for it.
+        local vw = stacked and (inner - 2 * stepW - math.floor(16 * m.s))
+          or valW
+        btn(imp, rx - stepW, ctlY, stepW, m.btnH,
           key .. "-next", ">", { font = "small",
             action = function() if row.step and row.step(1) then model.save() end end })
-        Kit.textCenter("small", Kit.ellipsize("small", tostring(row.value()), valW),
-          rx - stepW - valW, ly, valW, PAL.heading)
-        btn(imp, rx - stepW - valW - stepW, ry + (rowH - m.btnH) / 2, stepW,
+        Kit.textCenter("small", Kit.ellipsize("small", tostring(row.value()), vw),
+          rx - stepW - vw, ctlY + (m.btnH - Kit.textHeight("small")) / 2, vw,
+          PAL.heading)
+        btn(imp, rx - stepW - vw - stepW, ctlY, stepW,
           m.btnH, key .. "-prev", "<", { font = "small",
             action = function() if row.step and row.step(-1) then model.save() end end })
       end
@@ -2053,7 +2303,7 @@ local function modalUp(imp)
     or imp._indexPrompt or imp._modConfirm or imp._modReleaseNotes
     or imp._findDetails or imp._modVersions or imp._sortPopup
     or imp._filterPopup or imp._indexManage or imp._modActions
-    or imp._findEntry) ~= nil
+    or imp._findEntry or imp._gameManage) ~= nil
 end
 
 local function buildModals(imp, m)
@@ -2130,6 +2380,7 @@ local function buildModals(imp, m)
   if imp._indexManage then buildIndexesModal(imp, m) return true end
   if imp._modActions then buildModActionsModal(imp, m) return true end
   if imp._findEntry then buildFindEntryModal(imp, m) return true end
+  if imp._gameManage then buildGameManageModal(imp, m) return true end
   return false
 end
 
@@ -2200,15 +2451,16 @@ end
 -- pinned Play block used to walk up over the cards on a short window, which
 -- is unusable, and the footer simply lives below the fold until scrolled to.
 local function minPanelHeight(m)
-  -- One column stacks the actions card, the slot card and the pinned Play
-  -- block in a single pile, so it needs more room than the side-by-side
-  -- layout: 460 was tuned for two columns, and on a squat one-column window
-  -- (a 4:3 device, a phone held upright) it left the slot card clipped
-  -- inert against the pinned buttons -- Kit's clip bounds hit-testing, so
-  -- no slot could be picked at all (#852).  660 fits the actions card, one
-  -- slot row with its pager and New button, and the pinned block; whatever
-  -- the window cannot show, the page scroll above reaches.
-  return math.floor((m.twoCol and 460 or 660) * m.s)
+  -- One column stacks the ROM card and the slot card in a single pile, so it
+  -- needs more room than the side-by-side layout; two columns only have to
+  -- fit the taller of the two.  Both numbers came DOWN sharply when the
+  -- pinned Touch-Controls / Reset-rebinds pair moved behind the gear and the
+  -- save-file buttons moved into the slot card: the pile they used to sit on
+  -- top of was what forced 460/660 (#852), and a threshold larger than the
+  -- content pushes the whole page below the fold on windows that could have
+  -- shown it outright (a 1280x720 desktop was scrolling for 93px of nothing).
+  -- Whatever a window still cannot show, the page scroll above reaches.
+  return math.floor((m.twoCol and 340 or 470) * m.s)
 end
 
 function LauncherView.draw(imp)

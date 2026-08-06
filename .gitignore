@@ -31,11 +31,28 @@ mobile/ios/love-src/
 mobile/ios/cache/
 mobile/ios/build/
 
-# love-nx vendor binaries (fetch per docs/switch-development.md; also covered by .*)
+# love-nx vendor binaries (fetch per docs/switch-build.md; also covered by .*)
 .bazinga/love-nx/
 
 # Final packaged build artifacts (mac/win/web/android/ios/switch) — see scripts/build.sh
 /dist/
+
+# Switch OTA launcher build outputs
+ports/switch/ota-launcher/build/
+ports/switch/ota-launcher/build-host/
+ports/switch/ota-launcher/*.nro
+ports/switch/ota-launcher/*.nacp
+ports/switch/ota-launcher/*.elf
+ports/switch/ota-launcher/*.map
+ports/switch/ota-launcher/romfs/logo.rgba
+ports/switch/ota-launcher/romfs/logo.png
+ports/switch/ota-launcher/romfs/cacert.pem
+ports/switch/ota-launcher/romfs/ota-bootstrap.nro
+ports/switch/ota-bootstrap/build/
+ports/switch/ota-bootstrap/*.nro
+ports/switch/ota-bootstrap/*.nacp
+ports/switch/ota-bootstrap/*.elf
+ports/switch/ota-bootstrap/*.map
 
 # Legacy manual convenience-copy location (superseded by /dist/android/)
 mobile/dist/

@@ -33,11 +33,11 @@ local Platform = require("src.core.Platform")
 local SEP = package.config:sub(1, 1)
 
 -- Cache-relative paths are prefixed with this before every read/write, so a
--- Blue/Yellow import lands under its GameVersion.cachePrefix (blue/, yellow/)
--- while a Red import keeps the historical root.  The launcher sets it per
--- import / per readiness check; it stays "" for Red.  Runtime *reads*
--- (require / newImage) do NOT go through here -- CacheFs.mountVersion overlays
--- the active version's subtree onto the un-prefixed paths instead.
+-- version's import lands under its GameVersion.cachePrefix (red/, blue/,
+-- yellow/).  The launcher sets it per import / per readiness check; it stays
+-- "" outside those flows.  Runtime *reads* (require / newImage) do NOT go
+-- through here -- CacheFs.mountVersion overlays the active version's subtree
+-- onto the un-prefixed paths instead.
 CacheFs.prefix = ""
 
 local function withPrefix(rel)
@@ -383,17 +383,120 @@ function CacheFs.removeTree(rel)
   walk(rel)
 end
 
+-- One-time move of Red's pre-#899 cache (data/generated, assets/generated
+-- and the rom-cache.complete marker at the cache root) into red/, the
+-- layout Blue and Yellow always used.  Idempotent: an existing red/ cache
+-- wins and a missing root marker means nothing to do.
+--
+-- The two cache homes are handled separately: the save directory goes
+-- through love.filesystem so every host (NX included) and the headless test
+-- stub take the same path, and the portable game folder goes through
+-- os.rename on real paths -- skipped for a source run, where the game
+-- folder IS the checkout and its data/generated is Red's source data, not
+-- a cache.  Called from RomImporter.new (before the readiness loop) and
+-- from mountVersion, so no boot path can probe red/ before the move ran.
+function CacheFs.migrateLegacyRedCache()
+  if not (love and love.filesystem and love.filesystem.getInfo) then return end
+  local fs = love.filesystem
+
+  local function hasFile(p) return fs.getInfo(p, "file") ~= nil end
+  local function hasDir(p) return fs.getInfo(p, "directory") ~= nil end
+
+  local function moveFile(src, dst)
+    local data = fs.read(src)
+    if data then
+      local parent = dst:match("^(.*)/[^/]+$")
+      if parent and fs.createDirectory then fs.createDirectory(parent) end
+      fs.write(dst, data)
+    end
+    fs.remove(src)
+  end
+
+  local function moveTree(src, dst)
+    for _, child in ipairs(fs.getDirectoryItems(src) or {}) do
+      local sp, dp = src .. "/" .. child, dst .. "/" .. child
+      if hasDir(sp) then moveTree(sp, dp) else moveFile(sp, dp) end
+    end
+    -- remove only takes an empty directory; a non-empty one simply stays
+    fs.remove(src)
+  end
+
+  -- --- save directory
+  if hasDir("red/data/generated") or hasFile("red/rom-cache.complete") then
+    -- already on the new layout
+  elseif hasFile("rom-cache.complete") then
+    -- The marker must be a save-dir file before anything moves: a developer
+    -- checkout also resolves data/generated at the root, but from the physfs
+    -- SOURCE, and moving that tree would gut the repository.
+    local real = fs.getRealDirectory and fs.getRealDirectory("rom-cache.complete")
+    if not real or (fs.getSaveDirectory and real == fs.getSaveDirectory()) then
+      -- cheap path first: renames inside the same directory; the copy below
+      -- covers whatever rename could not take (or hosts where the save dir
+      -- is not a plain os path, like the headless stub)
+      local saveDir = fs.getSaveDirectory and fs.getSaveDirectory()
+      if saveDir and fs.createDirectory then
+        fs.createDirectory("red/data")
+        fs.createDirectory("red/assets")
+        os.rename(saveDir .. SEP .. "data" .. SEP .. "generated",
+                  saveDir .. SEP .. "red" .. SEP .. "data" .. SEP .. "generated")
+        os.rename(saveDir .. SEP .. "assets" .. SEP .. "generated",
+                  saveDir .. SEP .. "red" .. SEP .. "assets" .. SEP .. "generated")
+        os.rename(saveDir .. SEP .. "rom-cache.complete",
+                  saveDir .. SEP .. "red" .. SEP .. "rom-cache.complete")
+      end
+      if hasDir("data/generated") then
+        moveTree("data/generated", "red/data/generated")
+      end
+      if hasDir("assets/generated") then
+        moveTree("assets/generated", "red/assets/generated")
+      end
+      if hasFile("rom-cache.complete") then
+        moveFile("rom-cache.complete", "red/rom-cache.complete")
+      end
+      -- drop the emptied roots; a non-empty one (e.g. mods/ beside them is
+      -- untouched -- only data and assets are cache subtrees) simply stays
+      fs.remove("data")
+      fs.remove("assets")
+    end
+  end
+
+  -- --- portable game folder (desktop only): rename on real paths
+  local root = CacheFs.root()
+  if root and not (fs.getSource and root == fs.getSource()) then
+    local function rootHas(rel)
+      local f = io.open(realPath(root, rel), "rb")
+      if f then f:close() return true end
+      return false
+    end
+    if rootHas("rom-cache.complete") and not rootHas("red/rom-cache.complete") then
+      local mkdir = resolveMkdir()
+      if mkdir then
+        mkdir(realPath(root, "red"))
+        mkdir(realPath(root, "red/data"))
+        mkdir(realPath(root, "red/assets"))
+        os.rename(realPath(root, "data/generated"),
+                  realPath(root, "red/data/generated"))
+        os.rename(realPath(root, "assets/generated"),
+                  realPath(root, "red/assets/generated"))
+        os.rename(realPath(root, "rom-cache.complete"),
+                  realPath(root, "red/rom-cache.complete"))
+      end
+    end
+  end
+end
+
 -- Overlay the active version's extracted cache onto the un-prefixed read
 -- paths, so require("data.generated.*") and love.graphics.newImage(
 -- "assets/generated/*") resolve to that version's files.
 --
--- Non-Red versions live under blue/ / yellow/ in the save directory.  On
--- desktop fused+portable we PHYSFS_mount that folder by absolute path.  On
--- NX (and any host without a working FFI mount) love.filesystem.mount of
--- the save-dir-relative name must succeed, or Play boots with Red's paths
--- and Data:load dies.  Always also prepend-mount the version's
--- data/generated + assets/generated onto the un-prefixed paths so PhysFS
--- directory non-merge (archive data/ vs save generated) cannot hide them.
+-- Each version lives under its cachePrefix folder in the save directory.
+-- On desktop fused+portable we PHYSFS_mount that folder by absolute path.
+-- On NX (and any host without a working FFI mount) love.filesystem.mount
+-- of the save-dir-relative name must succeed, or Play boots with another
+-- version's paths and Data:load dies.  Always also prepend-mount the
+-- version's data/generated + assets/generated onto the un-prefixed paths
+-- so PhysFS directory non-merge (archive data/ vs save generated) cannot
+-- hide them.
 local function mountGeneratedTrees(prefix)
   prefix = prefix or ""
   if not (love and love.filesystem and love.filesystem.mount) then
@@ -416,10 +519,13 @@ local function mountGeneratedTrees(prefix)
 end
 
 function CacheFs.mountVersion(version)
+  -- A legacy root Red cache has to move into red/ before anything probes
+  -- red/ paths (idempotent and near-free once migrated, issue #899).
+  if version == "red" then CacheFs.migrateLegacyRedCache() end
   local prefix = require("src.core.GameVersion").cachePrefix(version)
   local sub = prefix:gsub("/+$", "")
 
-  -- Save-dir relative mount first (NX / no-FFI). Prepend so blue|yellow win.
+  -- Save-dir relative mount first (NX / no-FFI). Prepend so the version wins.
   if sub ~= "" and love.filesystem.mount
       and love.filesystem.getInfo(sub, "directory") then
     love.filesystem.mount(sub, "", false)
@@ -436,21 +542,21 @@ function CacheFs.mountVersion(version)
     end
   end
 
-  -- Version-scoped generated trees → un-prefixed paths (Red prefix is "").
+  -- Version-scoped generated trees → un-prefixed paths.
   mountGeneratedTrees(prefix)
   return true
 end
 
 -- Undo mountVersion.  A process normally mounts exactly one version and then
--- boots it, but the launcher can open the save editor on a Blue/Yellow save,
--- close it, and press Play on Red: with that version's subtree still
--- prepended, Red's require("data.generated.*") and its generated art would
--- silently resolve to the other game's files.  Callers must also drop the
--- generated modules from package.loaded (src.core.Data:unloadGenerated) --
--- unmounting alone only fixes the read path, not what require already cached.
+-- boots it, but the launcher can open the save editor on one game's save,
+-- close it, and press Play on another: with the first version's subtree
+-- still prepended, the other's require("data.generated.*") and generated
+-- art would silently resolve to the first game's files.  Callers must also
+-- drop the generated modules from package.loaded
+-- (src.core.Data:unloadGenerated) -- unmounting alone only fixes the read
+-- path, not what require already cached.
 --
--- Returns true when nothing was mounted or the unmount took.  Red is a no-op
--- because its cache lives at the root and was never overlaid.
+-- Returns true when nothing was mounted or the unmount took.
 function CacheFs.unmountVersion(version)
   local prefix = require("src.core.GameVersion").cachePrefix(version)
   if prefix == "" then return true end

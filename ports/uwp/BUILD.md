@@ -113,6 +113,11 @@ picker copies user-selected files into LocalState and the launcher imports them
 from there. Saves, ROM cache and installed mods remain under the LÖVE save
 directory in LocalState.
 
+The launcher also checks `LocalState\pokemon-love2d\baseroms` once at startup
+for clean Red, Blue, and Yellow ROMs. Compatible files are offered on their
+launcher tabs and remain in `baseroms` after import. The file picker remains
+available when no compatible ROM is found.
+
 LuaJIT requires the `codeGeneration` capability. `removableStorage` exposes
 external media to the Xbox picker. The network capabilities support relay play
 and direct hosting. The package does not request full trust or broad filesystem

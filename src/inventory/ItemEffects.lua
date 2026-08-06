@@ -51,6 +51,10 @@ local STONES = {
 local VITAMINS = { HP_UP = "hp", PROTEIN = "attack", IRON = "defense",
                    CARBOS = "speed", CALCIUM = "special" }
 
+-- REPEL / SUPER_REPEL / MAX_REPEL all funnel through ItemUseRepelCommon,
+-- which refuses mid-battle before writing wRepelRemainingSteps (#894)
+local REPELS = { REPEL = true, SUPER_REPEL = true, MAX_REPEL = true }
+
 ItemEffects.BALLS = BALLS
 
 function ItemEffects.isBall(id) return BALLS[id] or false end
@@ -150,11 +154,11 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   local name = itemDef and itemDef.name or itemId
 
   -- ItemUseVitamin / ItemUsePPUp / ItemUseEvoStone / ItemUseCoinCase /
-  -- ItemUseTMHM all refuse mid-battle (jp nz, ItemUseNotTime)
+  -- ItemUseTMHM / ItemUseRepelCommon all refuse mid-battle
+  -- (jp nz, ItemUseNotTime)
   if battle and (VITAMINS[itemId] or STONES[itemId] or itemId == "PP_UP"
                  or itemId == "RARE_CANDY" or itemId == "COIN_CASE"
-                 or itemId == "ESCAPE_ROPE" or itemId == "REPEL"
-                 or itemId == "SUPER_REPEL" or itemId == "MAX_REPEL"
+                 or itemId == "ESCAPE_ROPE" or REPELS[itemId]
                  or (itemDef and itemDef.machine)) then
     return "failed", { notTime(data, save) }
   end
@@ -526,7 +530,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     return "failed", { romText(data, "_CoinCaseNumCoinsText",
       "Coin count:\n%d", save.coins or 0) }
   end
-  if itemId == "REPEL" or itemId == "SUPER_REPEL" or itemId == "MAX_REPEL" then
+  if REPELS[itemId] then
     local steps = itemId == "REPEL" and 100 or itemId == "SUPER_REPEL" and 200 or 250
     save.repelSteps = steps
     return "consumed", { Strings("%s used\n%s!", save.player.name, name) }

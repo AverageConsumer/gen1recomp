@@ -27,15 +27,26 @@ local HostShell = loadModule("src/core/HostShell.lua")
 
 local cmdCh = love.thread.getChannel("fetch_cmd")
 local resCh = love.thread.getChannel("fetch_result")
+-- Raised by Fetch.shutdown BEFORE the wake sentinels go out.  A worker checks
+-- it after every demand() and drops whatever it just pulled, so a quit does
+-- not have to wait its turn behind a queue of jobs nobody will ever read the
+-- results of.
+local quitCh = love.thread.getChannel("fetch_quit")
 
 local saveDir = love.filesystem.getSaveDirectory()
 
 -- See the note in doGet: these bound how long a quit can block.  A mod index
 -- or a release list is a small JSON document, and a mod zip is a few MB; the
 -- old 300s download ceiling was sized for the self-updater's whole payload,
--- which does not come through this pool.
+-- which does not come through this pool.  Callers may pass a shorter one
+-- (job.maxSeconds) -- a thumbnail has no business holding the process open
+-- for as long as a mod install does.
 local GET_MAX_SECONDS = 20
 local DOWNLOAD_MAX_SECONDS = 90
+
+local function quitting()
+  return quitCh:peek() ~= nil
+end
 
 local function post(t) resCh:push(t) end
 
@@ -48,7 +59,7 @@ local function doGet(job)
   -- command, and LOVE waits for live threads before exiting (#339), so this
   -- ceiling is also the worst case for how long closing the window can take.
   local body, err = HostShell.httpGet(job.url, job.userAgent, job.accept,
-    GET_MAX_SECONDS)
+    tonumber(job.maxSeconds) or GET_MAX_SECONDS)
   if not body then
     post({ id = job.id, ok = false, err = err or "fetch failed" })
     return
@@ -74,7 +85,7 @@ local function doDownload(job)
   love.filesystem.remove(rel)
 
   local ok, err = HostShell.httpDownload(job.url, abs, job.userAgent,
-    job.accept, DOWNLOAD_MAX_SECONDS)
+    job.accept, tonumber(job.maxSeconds) or DOWNLOAD_MAX_SECONDS)
   if not ok then
     post({ id = job.id, ok = false, err = err or "download failed" })
     return
@@ -90,6 +101,13 @@ end
 
 while true do
   local job = cmdCh:demand()
+  -- The flag is checked before the job's KIND, so a worker woken by a
+  -- sentinel abandons whatever real job it happened to pull instead of
+  -- running it.  Without this the quit commands queued behind a page of
+  -- thumbnail downloads and closing the window blocked for as long as those
+  -- transfers took -- the launcher froze on close after a visit to the mods
+  -- tabs, which is exactly what LOVE waiting on live threads looks like.
+  if quitting() then break end
   if type(job) == "table" then
     if job.kind == "quit" then
       break

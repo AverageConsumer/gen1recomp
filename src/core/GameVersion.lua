@@ -4,9 +4,10 @@
 -- extracted cache lives, and the save-file suffix -- so the importer,
 -- cache mount, SaveData, title screen and palette all agree.
 --
--- Red keeps every un-suffixed path it always used (save.lua, the root cache),
--- so existing installs are untouched; Blue is namespaced under blue/ and
--- _blue, Yellow under yellow/ and _yellow, so all three can be imported and
+-- Red keeps the un-suffixed save paths it always used (save.lua) so existing
+-- saves are untouched, but its extracted cache lives under red/ like Blue and
+-- Yellow (issue #899); a legacy root cache is moved into red/ once by
+-- CacheFs.migrateLegacyRedCache.  All three versions can be imported and
 -- played side by side.
 --
 -- Zero requires, so it loads during love.conf and under plain Lua for tools
@@ -23,7 +24,7 @@ GameVersion.VERSIONS = {
     launcherName = "Red",       -- game-panel header in the launcher
     sha1 = "ea9bcae617fdf159b045185467ae58b2e4a48b9a",
     manifest = "tools/rom_manifest.json",
-    cachePrefix = "",       -- Red owns the cache root (backwards compatible)
+    cachePrefix = "red/",   -- red/data/generated, red/assets/generated (#899)
     saveSuffix = "",        -- save.lua / save.lua.bak / save.lua.tmp
   },
   blue = {
@@ -40,7 +41,7 @@ GameVersion.VERSIONS = {
     id = "yellow",
     label = "Yellow",
     displayName = "Pokemon Yellow",
-    launcherName = "Yellow (alpha)",
+    launcherName = "Yellow",
     sha1 = "cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1",
     manifest = "tools/rom_manifest_yellow.json",
     cachePrefix = "yellow/",  -- yellow/data/generated, yellow/assets/generated

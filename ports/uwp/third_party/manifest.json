@@ -7,7 +7,7 @@
     "love": {
       "version": "11.5",
       "repository": "https://github.com/caorthann-celt/love-xbox-uwp.git",
-      "commit": "62275ed10190afbec01f65754b3bcc04f244dd35"
+      "commit": "cdf85f28ed794c95d6f5f7e3a8f23ca9ee1fbdcb"
     },
     "luajit": {
       "repository": "https://github.com/LuaJIT/LuaJIT.git",
@@ -99,7 +99,7 @@
     },
     {
       "path": "love/bin/love.dll",
-      "sha256": "7B1BE4699AC950173474BB0C03B5DD52E1202ABA6F60C29E294957057F587692"
+      "sha256": "A3622828014F03DDB502D2A7807DC8F94432172595BE03508099BD66937FD45F"
     },
     {
       "path": "love/bin/lua51.dll",

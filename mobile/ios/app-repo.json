@@ -13,6 +13,20 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.74",
+          "date": "2026-08-06",
+          "size": 9588946,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.74/gen1recomp-0.1.74-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #883 Evolution Stones consumed if evolution is cancelled\n- #887 MacOS Closing game just keeps reopening\n- #894 Max Repel usable in battle\n\n## Contributors\n\n- @bryanthaboi\n- @MarceloMachadoxD\n- @ratherDashing"
+        },
+        {
+          "version": "0.1.73",
+          "date": "2026-08-06",
+          "size": 9585729,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.73/gen1recomp-0.1.73-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #878 Mod API: allow active screen states to be hidden from the main render\n\n## Contributors\n\n- @AverageConsumer\n- @bryanthaboi"
+        },
+        {
           "version": "0.1.72",
           "date": "2026-08-05",
           "size": 9586678,

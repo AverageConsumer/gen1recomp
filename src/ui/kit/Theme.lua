@@ -1,7 +1,9 @@
--- High-contrast theme shared by the launcher (src/import/LauncherView.lua)
--- and the save editor (tools/save-editor/).  This replaces the old navy
--- gradient look wholesale: black field, white hairline outlines, flat fills,
--- no gradients and no glows anywhere.
+-- High-contrast theme for the launcher (src/import/LauncherView.lua).  The
+-- save editor keeps its own tools/save-editor/Theme.lua, whose primitives
+-- take a radius where these take a colour -- do not cross-wire them.  This
+-- replaces the old navy gradient look wholesale: a near-black field with the
+-- faintest red cast, cards a few values above it, white hairline outlines,
+-- flat fills, no gradients and no glows anywhere.
 --
 -- That is not only a visual choice.  Every effect this theme drops was a GPU
 -- pipeline flush in the old renderer:
@@ -9,10 +11,13 @@
 --     (G.stencil / setStencilTest / draw(mesh) = 3 state changes per card),
 --   * glows set blend mode "add", drew 7 stacked rects, then set it back.
 -- Flat fills with a 1px outline all share one pipeline state, so LOVE batches
--- an entire panel into a couple of draw calls.  Controls do carry a small
--- corner radius and a two-rect emboss, which cost extra vertices but no state
--- change -- that is the tier of expense this theme is willing to pay, and the
--- tier above it (stencils, meshes, blend modes) is the one it will not.
+-- an entire panel into a couple of draw calls.  What this theme DOES pay for
+-- is extra vertices at the same pipeline state: rounded corners, the
+-- two-rect emboss on a control, and the three stacked rounded rects that make
+-- a card's drop shadow (Theme.shadow).  Vertices are the tier of expense this
+-- theme is willing to pay; the tier above it -- stencils, meshes, blend-mode
+-- changes, canvases, shaders -- is the one it will not, and a shadow drawn as
+-- a blurred canvas would land squarely in it.
 --
 -- Emphasis is carried by INVERSION, not by colour weight: a selected or
 -- focused control fills white and prints black.  That keeps contrast at
@@ -25,10 +30,16 @@
 local Theme = {}
 
 local PAL = {
-  -- field + surfaces.  Only three fills exist in the whole UI.
-  bg          = { 0, 0, 0 },       -- the page, and every card interior
-  surface     = { 0, 0, 0 },       -- cards/rows: same black, told apart by outline
-  raised      = { 20, 20, 20 },    -- the one non-black fill: hover feedback
+  -- field + surfaces.  The field carries a FAINT red cast (a few points of
+  -- red over an otherwise neutral near-black) and cards sit a few steps above
+  -- it in the same hue, so a card reads as a raised object rather than as an
+  -- outline drawn on the page.  These are still flat fills -- the depth comes
+  -- from the value step plus Theme.shadow, not from a gradient.
+  field       = { 16, 8, 10 },     -- the page BEHIND the cards
+  bg          = { 0, 0, 0 },       -- true black: button rests, field interiors
+  surface     = { 28, 21, 24 },    -- card interiors
+  rowBg       = { 20, 14, 17 },    -- rows inside a card, one step below it
+  raised      = { 44, 34, 38 },    -- hover feedback
   ink         = { 255, 255, 255 }, -- the selected/focused fill
   -- outlines.  Two weights only: a hairline for structure, solid for focus.
   line        = { 255, 255, 255 }, -- hairline, drawn at alpha 0.35
@@ -55,7 +66,6 @@ local PAL = {
 }
 -- Semantic aliases kept so ported call sites read the same as before.
 PAL.cardBorder = PAL.line
-PAL.rowBg      = PAL.surface
 PAL.greenInk   = PAL.inverse
 PAL.blueInk    = PAL.blue
 PAL.redSoft    = PAL.red
@@ -106,11 +116,34 @@ function Theme.fill(x, y, w, h, c, a)
   G.rectangle("fill", snap(x), snap(y), snap(w), snap(h))
 end
 
--- Corner radius for controls.  Small and fixed: enough to read as a physical
--- key rather than a painted rectangle, small enough that the extra
--- tessellation is noise next to the rest of the frame.
+-- Corner radius for controls.  Fixed rather than scaled: LOVE tessellates a
+-- rounded rect by radius, so a scale-driven radius would change the vertex
+-- count with the window size, and these are the two tiers the design needs.
+-- Controls get the smaller one, containers the larger, so a button never
+-- looks like a card and a card never looks like a button.
 function Theme.radius()
-  return 4
+  return 8
+end
+
+function Theme.cardRadius()
+  return 14
+end
+
+-- DROP SHADOW.  Three stacked rounded rects at low alpha, each one step wider
+-- and one step lower than the last -- a cheap falloff that needs no blur, no
+-- canvas and no blend-mode change, so it stays inside the pipeline budget the
+-- rest of this file is written to.  Drawn BEFORE the surface it belongs to,
+-- and never for a control (only containers cast one, or the whole screen
+-- reads as floating debris).
+function Theme.shadow(x, y, w, h, r)
+  if not G or w <= 0 or h <= 0 then return end
+  r = r or Theme.cardRadius()
+  for i = 1, 3 do
+    local spread = i * 2
+    col(PAL.bg, 0.13)
+    G.rectangle("fill", snap(x - spread), snap(y - spread + i * 3),
+      snap(w + 2 * spread), snap(h + 2 * spread), r + spread, r + spread)
+  end
 end
 
 function Theme.fillRounded(x, y, w, h, c, a, r)
@@ -139,7 +172,10 @@ function Theme.emboss(x, y, w, h, strength)
   if not G or w <= 2 or h <= 2 then return end
   strength = strength or 1
   local t = math.max(1, math.floor(h * 0.10))
-  local r = Theme.radius()
+  -- The inset must clear the corner arc, but a narrow control (a stepper, a
+  -- row chip) is thinner than two radii -- clamp or the highlight rect goes
+  -- negative-width and vanishes.
+  local r = math.min(Theme.radius(), math.floor(w / 3))
   -- highlight along the top
   col(PAL.ink, 0.28 * strength)
   G.rectangle("fill", snap(x) + r, snap(y) + 1, snap(w) - 2 * r, t)
@@ -166,35 +202,46 @@ function Theme.stroke(x, y, w, h, c, a, lw)
   if probe("setLineWidth") then G.setLineWidth(1) end
 end
 
--- The design's only container: black interior, white hairline.  `emphasis`
--- raises the outline to full white (used for the focused/active card).
+-- The design's only container: a rounded surface a few values above the
+-- field, its own drop shadow, and a white hairline.  `emphasis` raises the
+-- outline to full white (used for the focused/active card).
 function Theme.card(x, y, w, h, emphasis)
-  Theme.fill(x, y, w, h, PAL.bg, 1)
-  Theme.stroke(x, y, w, h, PAL.line, emphasis and Theme.A.focus or Theme.A.hairline, 1)
+  local r = Theme.cardRadius()
+  Theme.shadow(x, y, w, h, r)
+  Theme.fillRounded(x, y, w, h, PAL.surface, 1, r)
+  Theme.strokeRounded(x, y, w, h, PAL.line,
+    emphasis and Theme.A.focus or Theme.A.hairline, 1, r)
 end
 
 -- A list row.  Three states, each one rect plus one outline:
---   normal    black fill, hairline
---   hover     near-black fill, brighter hairline
+--   normal    one value below the card it sits in, hairline
+--   hover     lifted fill, brighter hairline
 --   selected  WHITE fill (callers print ink = PAL.inverse over it)
 function Theme.row(x, y, w, h, state)
+  local r = Theme.radius()
   if state == "selected" then
-    Theme.fill(x, y, w, h, PAL.ink, 1)
+    Theme.fillRounded(x, y, w, h, PAL.ink, 1, r)
     return PAL.inverse
   end
-  Theme.fill(x, y, w, h, state == "hover" and PAL.raised or PAL.surface, 1)
-  Theme.stroke(x, y, w, h, PAL.line,
-    state == "hover" and Theme.A.hover or Theme.A.hairline, 1)
+  Theme.fillRounded(x, y, w, h,
+    state == "hover" and PAL.raised or PAL.rowBg, 1, r)
+  Theme.strokeRounded(x, y, w, h, PAL.line,
+    state == "hover" and Theme.A.hover or Theme.A.hairline, 1, r)
   return PAL.text
 end
 
 -- A percentage meter (HP, box fill, dex completion, import progress).
--- pct is 0-100.  Outline + solid white fill, no rounding.
+-- pct is 0-100.  Outline + solid fill, rounded to the track's own half-height
+-- so a thin bar reads as a capsule instead of a clipped rectangle.
 function Theme.meter(x, y, w, h, pct, c)
   if not G then return end
-  Theme.stroke(x, y, w, h, PAL.line, Theme.A.hairline, 1)
+  local r = math.min(Theme.radius(), h / 2)
+  Theme.strokeRounded(x, y, w, h, PAL.line, Theme.A.hairline, 1, r)
   local fill = (w - 2) * clamp((pct or 0) / 100, 0, 1)
-  if fill > 0 then Theme.fill(x + 1, y + 1, fill, h - 2, c or PAL.ink, 1) end
+  if fill > 0 then
+    Theme.fillRounded(x + 1, y + 1, fill, h - 2, c or PAL.ink, 1,
+      math.min(r, fill / 2))
+  end
 end
 
 -- The 4px tri-colour rail across the top of both windows: the only brand
@@ -325,11 +372,14 @@ function Theme.ellipsizeLeft(font, text, maxW)
   return ell
 end
 
--- The background: a flat black clear.  One call, no mesh, no fan, no
--- allocation -- the old radial field built a 66-vertex mesh EVERY frame.
+-- The background: one flat clear to the faintly red-cast field colour.  One
+-- call, no mesh, no fan, no allocation -- the old radial field built a
+-- 66-vertex mesh EVERY frame.  The tint is deliberately small (a handful of
+-- points of red at near-black): enough that the cards read as sitting ON
+-- something, not enough to compete with the tri-colour rail for brand duty.
 function Theme.field()
   if not G then return end
-  G.clear(0, 0, 0, 1)
+  G.clear(PAL.field[1] / 255, PAL.field[2] / 255, PAL.field[3] / 255, 1)
 end
 
 -- ------------------------------------------------------------------- fonts

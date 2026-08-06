@@ -67,8 +67,15 @@ function TrainerCard.new(game, opts)
     end
   end
   self.circle = tryImage("assets/generated/trainer_card/circle_tile.png")
-  self.pic = tryImage(require("src.pokemon.Sprites").playerPath(
-    game.data, "front", { kind = "trainer_card" }))
+
+  -- Capture both return values from playerPath: path and trueColor flag.
+  -- The trueColor flag is set by the player.sprite hook when a mod injects
+  -- a custom portrait that should bypass the MEWMON palette pipeline.
+  local picPath, picTrueColor = require("src.pokemon.Sprites").playerPath(
+    game.data, "front", { kind = "trainer_card" })
+  self.pic          = tryImage(picPath)
+  self.picTrueColor = self.pic and picTrueColor or false
+
   return self
 end
 
@@ -117,7 +124,18 @@ function TrainerCard:draw()
   -- top card (rows 0-7): NAME / MONEY / TIME, pic upper-right
   self:frameBox(0, 0, 20, 8)
   if self.pic then
+    love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(self.pic, 104, 4)
+    -- True-colour portraits (e.g. mod-injected custom characters) carry their
+    -- own colours and must not be re-mapped by the MEWMON zone shader.
+    -- markTrueColor appends a colors=false zone that the Renderer splices at
+    -- the end of the zone list, causing it to re-blit just this rect without
+    -- the palette shader on top of the already-colourised frame.
+    -- This matches the pattern used by OakSpeech, HallOfFame and SummaryMenu.
+    if self.picTrueColor then
+      local w, h = self.pic:getDimensions()
+      require("src.render.PaletteFX").markTrueColor(104, 4, w, h)
+    end
   end
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(Strings("NAME/%s", save.player.name or "RED"), 16, 16)

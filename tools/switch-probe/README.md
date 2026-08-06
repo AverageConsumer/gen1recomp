@@ -1,4 +1,4 @@
-# switch-probe — love-nx hardware probe
+# switch-probe: love-nx hardware probe
 
 **NOT FOR RELEASE.** This package is a developer-only diagnostic for Nintendo Switch (love-nx). Do not ship it inside `game.love` or release NRO payloads.
 
@@ -11,7 +11,9 @@ Validate Phase 0 runtime facts on real Switch hardware before running the full G
 - Save directory path (`love.filesystem.getSaveDirectory()`)
 - Gamepad / joystick / touch event logging
 
-To date this probe has only been run on **Switch OLED** (see `docs/switch-hardware-evidence.md`); other models are untested. Deploy beside `gen1recomp.nro` remains **manual** (MTP); see `docs/switch-development.md`.
+To date this probe has only been run on **Switch OLED**; other models are
+untested. Deploy beside `gen1recomp.nro` remains **manual** (MTP). See
+`docs/switch-transfer.md`.
 
 ## Fields shown on screen
 
@@ -36,7 +38,9 @@ mkdir -p .bazinga/work
 zip -9 -j .bazinga/work/switch-probe.love tools/switch-probe/main.lua tools/switch-probe/conf.lua
 ```
 
-Deploy beside `gen1recomp.nro` (loose mode) per `docs/switch-development.md`, renaming to `game.love` only for a probe run — use a separate SD folder so probe and game builds do not mix.
+Deploy beside `gen1recomp.nro` (loose mode) per `docs/switch-build.md` and
+`docs/switch-transfer.md`. Rename to `game.love` only for a probe run. Use a
+separate SD folder so probe and game builds do not mix.
 
 ## Desktop smoke (optional)
 

@@ -152,27 +152,28 @@ check(comment_wf:find("comment-tag: switch-build-result", 1, true)
 
 -- --- SWCI-08 / SWCI-09: docs CI vs release ---
 local build_doc = read("docs/switch-build.md")
-local development = read("docs/switch-development.md")
 local readme = read("README.md")
 
 mustContain(build_doc, "Path-gated", "switch-build.md")
 mustContain(build_doc, "ubuntu-latest", "switch-build.md")
 mustContain(build_doc, "selftest_build_switch.sh", "switch-build.md")
-mustContain(build_doc, "canonical", "switch-build.md")
+mustContain(build_doc, "main repo", "switch-build.md")
 mustContain(build_doc, "gen1recomp-switch-nro", "switch-build.md")
 mustContain(build_doc, "switch-build-result", "switch-build.md")
 mustContain(build_doc, "hard gate", "switch-build.md")
 mustContain(build_doc, "continue-on-error", "switch-build.md")
 mustContain(build_doc, "nacptool", "switch-build.md")
 mustContain(build_doc, "Docker", "switch-build.md")
-mustContain(build_doc, "Fork → canonical", "switch-build.md")
+mustContain(build_doc, "Fork PRs into the main repo", "switch-build.md")
 mustContain(build_doc, "skip Switch fused", "switch-build.md")
-
-mustContain(development, "Switch CI", "switch-development.md")
-mustContain(development, "selftest_build_switch.sh", "switch-development.md")
+mustContain(build_doc, "CI and release", "switch-build.md")
+mustNotContain(build_doc, "switch-development", "switch-build.md")
+mustNotContain(build_doc, "switch-hardware-evidence", "switch-build.md")
 
 mustContain(readme, "CI vs release", "README.md")
 mustContain(readme, "switch-build.md", "README.md")
+mustNotContain(readme, "switch-development", "README.md")
+mustNotContain(readme, "switch-hardware-evidence", "README.md")
 
 -- --- SWFIX-03: headless suite also runs the content gates ---
 local test_sh = read("scripts/test.sh")

@@ -80,7 +80,10 @@ local function curlCapture(url)
   local pipe = HostShell.popen(cmd)
   if not pipe then return nil end
   local out = pipe:read("*a")
-  pipe:close()
+  -- HostShell.pclose, not pipe:close(): a close outside the spawn lock can
+  -- free a FILE while another thread's popen walks the stream list, which
+  -- deadlocks that thread permanently (see HostShell's popen notes).
+  HostShell.pclose(pipe)
   if not out or out == "" then return nil end
   return out
 end
@@ -89,7 +92,7 @@ local function haveCurl()
   local pipe = HostShell.popen("curl --version")
   if not pipe then return false end
   local out = pipe:read("*a")
-  pipe:close()
+  HostShell.pclose(pipe)
   return out ~= nil and out:find("curl", 1, true) ~= nil
 end
 
