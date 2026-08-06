@@ -226,5 +226,12 @@ for driving a second physical display. This is what lets a mod lay the two
 passes out as two stacked Game Boy screens, or push one onto a second screen,
 without the engine knowing the layout.
 
+`screen.render_visible` receives `(next, state)` while the main screen is being
+composed. Return `false` to omit that state from drawing, opacity selection and
+palette-zone ownership. The state remains on the stack and keeps its normal
+update and input ownership, so a mod can mirror a native menu on another
+display without reimplementing it. The default is `true`. Treat the wrapper as
+a pure predicate: the renderer may ask it more than once per frame.
+
 Developer mode also arms the mod loader's dev tripwire, which flags mods
 that reach outside their permission set.

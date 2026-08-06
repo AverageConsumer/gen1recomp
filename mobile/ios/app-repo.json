@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.72",
+          "date": "2026-08-05",
+          "size": 9586678,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.72/gen1recomp-0.1.72-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #604 Android, retroid pocket 2+ Rom won't import\n- #666 Pikachu emotions are not working on Android\n- #716 Lock Auto Rotate Mobile\n- #727 [Bug] [Windows] Gen1 Recomp \"still in use\" after closing\n- #763 Some EVENTS are turned off\n- #781 Mouse cursor broken on Linux with multi-monitor X11 setup\n- #784 Leech Seed effect\n- #799 Held direction randomly stops player movement (requires re-input)\n- #801 Cannot update mods from the launcher (MacOS)\n- #810 Launcher menu cuts off in vertical mode iOS\n- #828 Closing the app causes settings in launcher to reset\n- #834 Mod import failing\n- #838 Exporting save file Pokemon Yellow\n- #839 AYN Thor Misplaced Data files\n- #849 Public folder support on iOS\n- #852 Cannot switch between saves states on smaller 4:3 screen or in vertical mode\n- #857 Mt. Moon Fossils Reappeared and Won’t Disappear.\n- #863 [Yellow] When you use stairs, Pikachu shouldn't be next to you in the new area\n- #864 Faithful Ratio\n- #867 Missing Dialogue after defeating Marowak in Pokemon Tower\n- #869 Giovanni moves up to the player too early\n- #870 Start Menu on Classic Color\n- #872 Missing text when finding an item with full inventory\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.1.71",
           "date": "2026-08-05",
           "size": 9569738,

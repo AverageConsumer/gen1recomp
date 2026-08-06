@@ -39,13 +39,14 @@ function StateStack:update(dt)
   if top and top.update then top:update(dt) end
 end
 
--- Mods that mirror a screen elsewhere may suppress only its rendering while
--- leaving it on top of the stack to keep its input and update logic native.
+local function visibleByDefault() return true end
+
+-- A mod may mirror a state elsewhere and hide only its main-screen render.
+-- The state stays on the stack, so update and input ownership do not move.
 function StateStack:renderVisible(state)
   if not state then return false end
   if not Runtime.wantsHook("screen.render_visible") then return true end
-  return Runtime.call("screen.render_visible", function() return true end,
-                      state) ~= false
+  return Runtime.call("screen.render_visible", visibleByDefault, state) ~= false
 end
 
 -- index of the lowest state drawn this frame (highest opaque, else 1)
