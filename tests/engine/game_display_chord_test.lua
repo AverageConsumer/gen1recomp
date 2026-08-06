@@ -155,6 +155,13 @@ do
   Game._cycleSpeed = origCycle
 end
 
+Input:init()
+resetSpies()
+Game:gamepadpressed(joy, "y")
+Input:step()
+check(Input:wasPressed("screen_swap"), "Y alone fires screen swap")
+eq(#digits, 0, "Y alone does not fire its Select display chord")
+
 -- Edge: Select alone (no face) does not synthesize a digit
 holdSelect()
 resetSpies()

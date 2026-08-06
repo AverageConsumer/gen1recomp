@@ -635,6 +635,7 @@ public class GameActivity extends SDLActivity {
         if (rgba == null || width <= 0 || height <= 0
                 || rgba.length != (long) width * height * 4) return false;
         secondaryPreference = normalizeSecondaryPreference(preference);
+        secondaryFrameCover = preference != null && preference.endsWith(":cover");
         secondaryFrameWidth = width;
         secondaryFrameHeight = height;
         secondaryBackground = backgroundColor;
@@ -646,10 +647,12 @@ public class GameActivity extends SDLActivity {
         try {
             if (p != null) {
                 p.setBackground(backgroundColor);
-                p.updateFrame(java.nio.ByteBuffer.wrap(rgba), width, height);
+                p.updateFrame(java.nio.ByteBuffer.wrap(rgba), width, height,
+                    secondaryFrameCover);
             } else {
                 a.setBackground(backgroundColor);
-                a.updateFrame(java.nio.ByteBuffer.wrap(rgba), width, height);
+                a.updateFrame(java.nio.ByteBuffer.wrap(rgba), width, height,
+                    secondaryFrameCover);
             }
             return true;
         } catch (Throwable t) {
@@ -1454,6 +1457,7 @@ public class GameActivity extends SDLActivity {
     private static volatile int secondaryFrameWidth;
     private static volatile int secondaryFrameHeight;
     private static volatile int secondaryBackground;
+    private static volatile boolean secondaryFrameCover;
     private static final int MAX_SECONDARY_TOUCHES = 32;
     private static final java.util.ArrayDeque<String> secondaryTouches =
         new java.util.ArrayDeque<>();
@@ -1495,6 +1499,9 @@ public class GameActivity extends SDLActivity {
     }
 
     private static String normalizeSecondaryPreference(String preference) {
+        if (preference != null && preference.endsWith(":cover")) {
+            preference = preference.substring(0, preference.length() - 6);
+        }
         return "handheld".equals(preference) || "secondary".equals(preference)
             ? preference : "auto";
     }
@@ -1547,7 +1554,7 @@ public class GameActivity extends SDLActivity {
             if (secondaryFrame != null) {
                 p.setBackground(secondaryBackground);
                 p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                    secondaryFrameWidth, secondaryFrameHeight);
+                    secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
             }
             Log.d("GameActivity", "secondary display presentation started on id=" + chosen.getDisplayId());
         } catch (Throwable t) {
@@ -1702,7 +1709,7 @@ public class GameActivity extends SDLActivity {
             if (secondaryFrame != null) {
                 setBackground(secondaryBackground);
                 updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                    secondaryFrameWidth, secondaryFrameHeight);
+                    secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
             }
         }
 
@@ -1734,6 +1741,10 @@ public class GameActivity extends SDLActivity {
 
         void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
             frameView.updateFrame(buf, w, h);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            frameView.updateFrame(buf, w, h, cover);
         }
 
         void setBackground(int color) {
@@ -1796,6 +1807,10 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h);
         }
 
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            frameView.updateFrame(buf, w, h, cover);
+        }
+
         void setBackground(int color) {
             frameView.setFrameBackground(color);
         }
@@ -1809,6 +1824,7 @@ public class GameActivity extends SDLActivity {
         private int fw, fh;
         private int backgroundColor = 0xFF000000;
         private int activePointer = -1;
+        private boolean cover;
 
         FrameView(Context context) {
             super(context);
@@ -1818,7 +1834,12 @@ public class GameActivity extends SDLActivity {
         }
 
         void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
+            updateFrame(buf, w, h, false);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
             synchronized (lock) {
+                this.cover = cover;
                 if (bitmap == null || fw != w || fh != h) {
                     if (bitmap != null) bitmap.recycle();
                     bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
@@ -1882,9 +1903,14 @@ public class GameActivity extends SDLActivity {
             synchronized (lock) {
                 if (bitmap == null || fw == 0 || fh == 0) return;
                 int vw = getWidth(), vh = getHeight();
-                int s = Math.min(vw / fw, vh / fh);
-                if (s < 1) s = 1;
-                int dw = fw * s, dh = fh * s;
+                float fit = Math.min((float) vw / fw, (float) vh / fh);
+                if (fit <= 0) return;
+                // Companion UIs fit at whole-pixel steps. Game output opts into
+                // cover so the frame's own aspect fills narrower displays.
+                float scale = cover
+                    ? Math.max((float) vw / fw, (float) vh / fh)
+                    : fit >= 2f ? (float) Math.floor(fit) : fit;
+                int dw = Math.round(fw * scale), dh = Math.round(fh * scale);
                 int dx = (vw - dw) / 2, dy = (vh - dh) / 2;
                 dst.set(dx, dy, dx + dw, dy + dh);
                 canvas.drawColor(backgroundColor);

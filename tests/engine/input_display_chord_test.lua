@@ -23,6 +23,10 @@ eq(GamepadMap.displayChordDigit("back"), nil, "back/Select alone is not a digit"
 eq(GamepadMap.displayChordDigit("dpup"), nil, "d-pad is not a display chord")
 eq(GamepadMap.displayChordDigit("rightshoulder"), nil, "R is not a display chord")
 eq(GamepadMap.displayChordDigit(nil), nil, "nil button -> nil")
+eq(GamepadMap.mapGamepadButton("rightstick"), nil,
+  "R3 stays unbound for camera mods")
+eq(GamepadMap.mapGamepadButton("y"), "screen_swap",
+  "Y alone maps to screen swap")
 
 -- NX Nintendo UX: GamepadMap swaps SDL a/b so physical A/B match docs.
 -- Physical Nintendo A arrives as SDL "b" → GB a → key "2".

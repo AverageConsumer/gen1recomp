@@ -631,6 +631,12 @@ function love.lowmemory()
   if Game then Game:onResume() end
 end
 
+local function modTouchHandled(name, ...)
+  local Runtime = require("src.mods.Runtime")
+  return Runtime.wantsHook(name)
+    and Runtime.call(name, function() return false end, ...) == true
+end
+
 function love.touchpressed(id, x, y, dx, dy, pressure)
   if editorMode then
     -- iOS synthesizes mousepressed for the primary touch; forwarding here
@@ -654,7 +660,9 @@ function love.touchpressed(id, x, y, dx, dy, pressure)
     -- Android's synthesized mouse twin so Import cannot double-fire (#553).
     return Importer:touchpressed(id, x, y, dx, dy, pressure)
   end
-  Game:touchpressed(id, x, y, dx, dy, pressure)
+  if not modTouchHandled("input.touchpressed", id, x, y, dx, dy, pressure) then
+    Game:touchpressed(id, x, y, dx, dy, pressure)
+  end
 end
 
 function love.touchmoved(id, x, y, dx, dy, pressure)
@@ -666,7 +674,9 @@ function love.touchmoved(id, x, y, dx, dy, pressure)
   if Importer then
     return Importer:touchmoved(id, x, y, dx, dy, pressure)
   end
-  Game:touchmoved(id, x, y, dx, dy, pressure)
+  if not modTouchHandled("input.touchmoved", id, x, y, dx, dy, pressure) then
+    Game:touchmoved(id, x, y, dx, dy, pressure)
+  end
 end
 
 function love.touchreleased(id, x, y, dx, dy, pressure)
@@ -678,7 +688,9 @@ function love.touchreleased(id, x, y, dx, dy, pressure)
   if Importer then
     return Importer:touchreleased(id, x, y, dx, dy, pressure)
   end
-  Game:touchreleased(id, x, y, dx, dy, pressure)
+  if not modTouchHandled("input.touchreleased", id, x, y, dx, dy, pressure) then
+    Game:touchreleased(id, x, y, dx, dy, pressure)
+  end
 end
 
 function love.wheelmoved(x, y)

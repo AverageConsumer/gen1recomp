@@ -6,7 +6,7 @@ local GamepadMap = {}
 -- LÖVE SDL game-controller mapping (D-pad / face / menu) — desktop/mobile.
 GamepadMap.DEFAULT_GAMEPAD_BINDINGS = {
   dpup = "up", dpdown = "down", dpleft = "left", dpright = "right",
-  a = "a", b = "b",
+  a = "a", b = "b", y = "screen_swap",
   start = "start", back = "select",
 }
 
@@ -16,6 +16,7 @@ GamepadMap.NX_GAMEPAD_BINDINGS = {
   dpup = "up", dpdown = "down", dpleft = "left", dpright = "right",
   a = "b", -- SDL south = Nintendo B → GB B
   b = "a", -- SDL east = Nintendo A → GB A
+  y = "screen_swap",
   start = "start", back = "select",
 }
 

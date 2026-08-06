@@ -19,6 +19,7 @@ local DEFAULT_BINDINGS = {
   tab = "select",
   rshift = "select",
   lshift = "select",
+  f6 = "screen_swap",
 }
 
 -- keys that map to "start" but also to "a" would conflict; keep Enter = a,
