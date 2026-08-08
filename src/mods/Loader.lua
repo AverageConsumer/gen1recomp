@@ -762,18 +762,25 @@ function Loader:_api(mod)
     local path = self.path .. "/" .. relative
     return loader.fs.read(path)
   end
-  -- mod.world materializes on first touch, like the image helper above: a
+  -- Live gameplay facades materialize on first touch, like the image helper:
   -- headless load must not drag the world stack in, and the Game the facade
   -- acts on is still being wired when the entry chunk runs
-  local world
+  local world, battle
   setmetatable(api, { __index = function(_, key)
-    if key ~= "world" then return nil end
-    if world then return world end
     local game = loader:_game()
-    local module = game and engineRequire("src.world.WorldAPI")
-    if not module then return nil end
-    world = module.new(game, modId)
-    return world
+    if key == "world" then
+      if world then return world end
+      local module = game and engineRequire("src.world.WorldAPI")
+      if not module then return nil end
+      world = module.new(game, modId)
+      return world
+    elseif key == "battle" then
+      if battle then return battle end
+      local module = game and engineRequire("src.battle.BattleAPI")
+      if not module then return nil end
+      battle = module.new(game, modId)
+      return battle
+    end
   end })
   return api
 end

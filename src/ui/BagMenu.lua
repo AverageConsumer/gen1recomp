@@ -29,10 +29,6 @@ local function consume(game, id)
   Bag.remove(game.save, id, 1)
 end
 
-local function save_name(game)
-  return game.save.player.name
-end
-
 local function showMessages(game, msgs, onDone)
   if not msgs or #msgs == 0 then
     if onDone then onDone() end
@@ -106,50 +102,14 @@ local function useOn(game, battle, id, target, list, moveIndex, picker)
     end
     list:close()
     local ow = game.overworld
-    local Music = require("src.core.Music")
-    -- IsBikeRidingAllowed (home/overworld.asm): the tilesets of
-    -- bike_riding_tilesets.asm, plus Route 23 / Indigo Plateau by
-    -- map id.  Reads the extracted allowlist when present.
-    local function bikeAllowed()
-      if not ow then return false end
-      local br = game.data.field.bikeRiding
-        or { tilesets = { "OVERWORLD", "FOREST", "UNDERGROUND",
-                          "SHIP_PORT", "CAVERN" },
-             maps = { "ROUTE_23", "INDIGO_PLATEAU" } }
-      for _, m in ipairs(br.maps or {}) do
-        if ow.map.id == m then return true end
-      end
-      for _, t in ipairs(br.tilesets or {}) do
-        if ow.map.def.tileset == t then return true end
-      end
-      return false
-    end
-    if game.save.onBike then
-      game.save.onBike = false
-      Music.playMap(game.data, ow and ow.map.id, false)
-      showMessages(game, { Strings("%s got off\nthe BICYCLE.", save_name(game)) })
-    elseif bikeAllowed() then
-      game.save.onBike = true
-      Music.playMap(game.data, ow.map.id, true)
-      showMessages(game, { Strings("%s got on\nthe BICYCLE!", save_name(game)) })
-    else
-      showMessages(game, { Strings("No cycling\nallowed here.") })
-    end
+    if ow then ow:toggleBike() end
     return
   end
 
   if result == "fish" then
     list:close()
     local ow = game.overworld
-    local p = ow and ow.player
-    if ow and p then
-      local fx, fy = p:facingCell()
-      if ow.map:inBounds(fx, fy) and ow.map:isWaterCell(fx, fy) then
-        ow:goFishing(id)
-        return
-      end
-    end
-    showMessages(game, { Strings("No good! It's not\neven near water.") })
+    if ow then ow:useFishingRod(id) end
     return
   end
 
@@ -382,13 +342,16 @@ local function pickTargetAndUse(game, battle, id, list)
       local rows = {}
       for mi, mv in ipairs(mon.moves) do
         local mdef = game.data.moves[mv.id]
+        local maxPP = mdef and (mdef.pp
+          + (mv.ppUps or 0) * math.floor(mdef.pp / 5)) or 0
         table.insert(rows, {
           value = mi,
           label = mdef and mdef.name or mv.id,
-          right = ("%d"):format(mv.pp),
+          right = ("%d/%d"):format(mv.pp or 0, maxPP),
         })
       end
       game.stack:push(ListMenu.new(game, "Which move?", rows, {
+        kind = "pp_item_move",
         onChoose = function(row, l)
           l:close()
           useOn(game, battle, id, mon, list, row.value)

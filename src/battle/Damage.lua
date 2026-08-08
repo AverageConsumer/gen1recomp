@@ -83,25 +83,36 @@ function Damage.critRoll(ruleset, attacker, moveId, rng, highCrit)
   return rng(0, 255) < b
 end
 
--- Accuracy test: rand(0..255) < floor(accuracy * 255 / 100) adjusted by
--- accuracy/evasion stages.  With oneIn256Miss a max-accuracy move still
--- misses on 255.
-function Damage.accuracyRoll(ruleset, move, attacker, defender, rng)
-  rng = rng or love.math.random
+-- Exact number of the 256 RNG outcomes that pass MoveHitTest.  Keeping the
+-- preview and the roll on this one ruleset-aware path prevents UI hints from
+-- silently drifting from battle behavior.
+function Damage.accuracyThreshold(ruleset, move, attacker, defender)
   -- X ACCURACY sets USING_X_ACCURACY: the move simply never misses
   -- (MoveHitTest returns before any accuracy math, 1/256 included)
-  if attacker.xAccuracy then return true end
+  if attacker.xAccuracy then return 256 end
   local acc = math.floor(move.accuracy * 255 / 100)
+  local accuracyStage = attacker.stages and attacker.stages.accuracy or 0
+  local evasionStage = defender.stages and defender.stages.evasion or 0
   -- CalcHitChance scales by the accuracy stage and the evasion stage as
   -- two separate ratio multiplications, clamping each result
-  acc = math.min(255, Stats.applyStage(acc,
-          attacker.stages and attacker.stages.accuracy or 0))
-  acc = math.min(255, Stats.applyStage(acc,
-          -(defender.stages and defender.stages.evasion or 0)))
+  acc = math.min(255, Stats.applyStage(acc, accuracyStage))
+  acc = math.min(255, Stats.applyStage(acc, -evasionStage))
   if not ruleset.oneIn256Miss and move.accuracy >= 100
-     and (attacker.stages.accuracy or 0) >= (defender.stages.evasion or 0) then
-    return true
+     and accuracyStage >= evasionStage then
+    return 256
   end
+  return acc
+end
+
+function Damage.accuracyChance(ruleset, move, attacker, defender)
+  return Damage.accuracyThreshold(ruleset, move, attacker, defender) * 100 / 256
+end
+
+-- Accuracy test: rand(0..255) < the shared ruleset-aware threshold.
+function Damage.accuracyRoll(ruleset, move, attacker, defender, rng)
+  rng = rng or love.math.random
+  local acc = Damage.accuracyThreshold(ruleset, move, attacker, defender)
+  if acc == 256 then return true end
   return rng(0, 255) < acc
 end
 
