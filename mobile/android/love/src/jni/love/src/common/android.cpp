@@ -324,6 +324,16 @@ bool httpDownload(const char *url, const char *destPath, const char *userAgent, 
 	return result;
 }
 
+bool is24HourClock()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "is24HourClock", "()Z");
+	jboolean result = env->CallStaticBooleanMethod(activity, method);
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
 /*
  * Helper functions for the filesystem module
  */
@@ -1004,13 +1014,65 @@ void love_android_secondary_enable(int on)
 }
 
 extern "C" __attribute__((visibility("default")))
+int love_android_secondary_detected()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "hasCompanionDisplay", "()Z");
+	jboolean detected = JNI_FALSE;
+	if (method)
+		detected = env->CallStaticBooleanMethod(activity, method);
+	else
+		env->ExceptionClear();
+	env->DeleteLocalRef(activity);
+	return detected ? 1 : 0;
+}
+
+extern "C" __attribute__((visibility("default")))
+int love_android_present_secondary(const void *rgba, int width, int height,
+	unsigned int background, const char *preference)
+{
+	if (!rgba || width <= 0 || height <= 0)
+		return 0;
+	jlong size = (jlong) width * (jlong) height * 4;
+	if (size <= 0 || size > INT32_MAX)
+		return 0;
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID method = env->GetStaticMethodID(activity, "presentCompanionDisplay",
+		"(II[BILjava/lang/String;)Z");
+	if (!method)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return 0;
+	}
+	jbyteArray frame = env->NewByteArray((jsize) size);
+	jstring target = env->NewStringUTF(preference ? preference : "auto");
+	if (!frame || !target)
+	{
+		if (frame) env->DeleteLocalRef(frame);
+		if (target) env->DeleteLocalRef(target);
+		env->DeleteLocalRef(activity);
+		return 0;
+	}
+	env->SetByteArrayRegion(frame, 0, (jsize) size, (const jbyte *) rgba);
+	jboolean shown = env->CallStaticBooleanMethod(activity, method, width, height,
+		frame, (jint) background, target);
+	env->DeleteLocalRef(frame);
+	env->DeleteLocalRef(target);
+	env->DeleteLocalRef(activity);
+	return shown ? 1 : 0;
+}
+
+extern "C" __attribute__((visibility("default")))
 const char *love_android_poll_secondary_touch()
 {
 	static thread_local std::string event;
 	event.clear();
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
-	jmethodID method = env->GetStaticMethodID(activity, "pollSecondaryDisplayTouch",
+	jmethodID method = env->GetStaticMethodID(activity, "pollCompanionDisplayTouch",
 		"()Ljava/lang/String;");
 	if (!method)
 		env->ExceptionClear();
