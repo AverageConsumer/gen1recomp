@@ -732,6 +732,79 @@ function OverworldState:bikeAllowed(mapId)
   return false
 end
 
+-- Shared field-action paths used by the vanilla menus and mod.world.  The
+-- caller owns only the trigger; messages, music and transitions stay engine
+-- behavior so a companion cannot drift from ordinary item/party use.
+function OverworldState:toggleBike()
+  local name = Game.save.player.name
+  if Game.save.onBike then
+    Game.save.onBike = false
+    require("src.core.Music").playMap(Game.data, self.map.id, false)
+    Game.stack:push(TextBox.new(Game,
+      Strings("%s got off\nthe BICYCLE.", name)))
+  elseif self:bikeAllowed(self.map.id) then
+    Game.save.onBike = true
+    require("src.core.Music").playMap(Game.data, self.map.id, true)
+    Game.stack:push(TextBox.new(Game,
+      Strings("%s got on\nthe BICYCLE!", name)))
+  else
+    Game.stack:push(TextBox.new(Game, Strings("No cycling\nallowed here.")))
+  end
+end
+
+function OverworldState:useFlashFieldMove(onClose)
+  Game.save.flashLit = true
+  Game.stack:push(TextBox.new(Game,
+    Game.data.text._FlashLightsAreaText
+      or Strings("A blinding FLASH\nlights the area!"), function()
+      if onClose then onClose() end
+      -- Rebuild the newly lit ADVANCED atlas before the blink. Doing it from
+      -- the transition callback leaves a long, solid-white frame on Android.
+      self:setDark(false)
+      Game.stack:push(Transition.whiteFlash(Game))
+    end))
+end
+
+function OverworldState:useStrengthFieldMove(mon, onClose)
+  mon = mon or self:partyKnows("STRENGTH")
+  if not mon then return false end
+  local def = Game.data.pokemon[mon.species]
+  local name = mon.nickname or def.name
+  self.strengthActive = true
+  local first = (Game.data.text._UsedStrengthText
+    or Strings("{RAM:wNameBuffer} used\nSTRENGTH."))
+    :gsub("{RAM:wNameBuffer}", name)
+  local second = (Game.data.text._CanMoveBouldersText
+    or Strings("{RAM:wNameBuffer} can\nmove boulders."))
+    :gsub("{RAM:wNameBuffer}", name)
+  Game.stack:push(TextBox.new(Game, first, function()
+    Game.stack:push(TextBox.new(Game, second, function()
+      if onClose then onClose() end
+      Game.stack:push(Transition.whiteFlash(Game))
+    end))
+  end, { auto = { sound = function()
+    return require("src.core.Sound").playCry(Game.data, mon.species)
+  end } }))
+  return true
+end
+
+function OverworldState:useSoftboiledFieldMove(user, target)
+  local heal = user and user.stats and math.floor(user.stats.hp / 5) or 0
+  if not user or not user.stats or not target or not target.stats
+     or target == user or target.hp <= 0
+     or target.hp >= target.stats.hp or user.hp <= heal then
+    Game.stack:push(TextBox.new(Game, Strings("It won't have\nany effect.")))
+    return false
+  end
+  user.hp = user.hp - heal
+  target.hp = math.min(target.stats.hp, target.hp + heal)
+  require("src.core.Sound").play(Game.data, "Heal_HP")
+  local def = Game.data.pokemon[target.species]
+  Game.stack:push(TextBox.new(Game,
+    Strings("%s's HP\nwas restored!", target.nickname or def.name)))
+  return true
+end
+
 -- The battle transition's dungeon wipe uses the explicit map lists in
 -- data/maps/dungeon_maps.asm (field.dungeonTransitionMaps): singles plus
 -- inclusive map-id ranges -- faithful to the original's omissions
@@ -2424,6 +2497,26 @@ function OverworldState:trySurf(fx, fy, onClose)
     end
     Game.stack:push(require("src.render.Transition").whiteFlash(Game, nil,
       function() self:stepForwardOrCrossEdge(p.facing) end))
+  end))
+end
+
+function OverworldState:useFishingRod(rod)
+  local fx, fy = self.player:facingCell()
+  if self.map:inBounds(fx, fy) and self.map:isWaterCell(fx, fy) then
+    self:goFishing(rod)
+    return true
+  end
+  Game.stack:push(TextBox.new(Game,
+    Strings("No good! It's not\neven near water.")))
+  return false
+end
+
+function OverworldState:stopSurfing(onClose)
+  if onClose then onClose() end
+  self.player.surfing = false
+  require("src.core.Music").setSurfing(Game.data, false)
+  Game.stack:push(Transition.whiteFlash(Game, nil, function()
+    self:stepForwardOrCrossEdge(self.player.facing)
   end))
 end
 

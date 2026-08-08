@@ -11,6 +11,7 @@ local Stats = require("src.pokemon.Stats")
 local Zoom = require("src.render.Zoom")
 local ListMenu = require("src.ui.ListMenu")
 local NamingScreen = require("src.ui.NamingScreen")
+local PartyMenu = require("src.ui.PartyMenu")
 local Player = require("src.world.Player")
 local Music = require("src.core.Music")
 
@@ -88,6 +89,7 @@ do
   local list = ListMenu.new(game, "ITEMS", {
     { label = "A" }, { label = "B" }, { label = "C" },
   }, { kind = "bag" })
+  check(list.kind == "bag", "list keeps its semantic kind for companion UIs")
   check(list.wrap == true, "ui.list_menu can enable wrap")
   check(list.pageJump == true, "ui.list_menu can enable pageJump")
   check(list.keyRepeat == true, "ui.list_menu can enable keyRepeat")
@@ -159,6 +161,146 @@ do
   Runtime.call("battle.overlay", function() end, { kind = "wild" })
   check(drew, "battle.overlay runs after the vanilla no-op")
   unsub()
+end
+
+-- ------- battle.bottom_ui_visible (second-screen battle UI mirrors)
+
+do
+  local BattleState = require("src.battle.BattleState")
+  check(BattleState.bottomUIVisible({ phase = "menu" }),
+    "battle bottom UI is visible without a mod")
+  local unsub = wrap("battle.bottom_ui_visible", function() return false end)
+  check(not BattleState.bottomUIVisible({ phase = "messages" }),
+    "battle bottom UI can be hidden by a mod")
+  unsub()
+  check(BattleState.bottomUIVisible({ phase = "moveSelect" }),
+    "battle bottom UI safely returns after the hook is removed")
+
+  local image = {
+    getWidth = function() return 8 end,
+    getHeight = function() return 8 end,
+  }
+  local battle = setmetatable({
+    phase = "moveSelect", data = {}, player = {
+      sprite = image, mon = {}, isPlayer = true,
+    },
+  }, BattleState)
+  function battle:picImage() return image end
+  function battle:growInScale() return nil end
+  function battle:fxHidden() return false end
+  function battle:drawBattlerPic() end
+  local g = love.graphics
+  local getScissor, intersectScissor = g.getScissor, g.intersectScissor
+  local clips = 0
+  g.getScissor = function() end
+  g.intersectScissor = function() clips = clips + 1 end
+  battle:drawPicsLayer(0, 0, 0)
+  check(clips == 1, "visible move menu clips the player picture")
+  unsub = wrap("battle.bottom_ui_visible", function() return false end)
+  battle:drawPicsLayer(0, 0, 0)
+  check(clips == 1, "hidden move menu leaves the full player picture visible")
+  unsub()
+  g.getScissor, g.intersectScissor = getScissor, intersectScissor
+end
+
+-- ------- battle.status_hud_visible (second-screen HP/status HUD)
+
+do
+  local BattleState = require("src.battle.BattleState")
+  check(BattleState.statusHUDVisible({}),
+    "battle status HUD is visible without a mod")
+  local unsub = wrap("battle.status_hud_visible", function() return false end)
+  check(not BattleState.statusHUDVisible({}),
+    "a mod can move the battle status HUD off the main screen")
+  unsub()
+  check(BattleState.statusHUDVisible({}),
+    "battle status HUD returns when the hook is removed")
+end
+
+-- ------- battle.caught_marker_visible (caught wild marker)
+
+do
+  local BattleState = require("src.battle.BattleState")
+  local state = { kind = "wild", enemy = { mon = { species = "RATTATA" } },
+    game = { save = { pokedex = { owned = { RATTATA = true } } } } }
+  check(not BattleState.caughtMarkerVisible(state),
+    "caught marker is opt-in")
+  local unsub = wrap("battle.caught_marker_visible", function() return true end)
+  check(BattleState.caughtMarkerVisible(state),
+    "a mod can show a caught wild marker")
+  state.kind = "trainer"
+  check(not BattleState.caughtMarkerVisible(state),
+    "trainer battles never show a caught marker")
+  state.kind, state.game.save.pokedex.owned.RATTATA = "wild", false
+  check(not BattleState.caughtMarkerVisible(state),
+    "uncaught wild Pokemon have no marker")
+  unsub()
+end
+
+-- ------- battle.move_grid_navigation (authoritative second-screen move grid)
+
+do
+  local BattleState = require("src.battle.BattleState")
+  local battle = { wideLayout = function() return false end }
+  check(not BattleState.moveGridNavigation(battle),
+    "classic move navigation stays a list without a mod")
+  local unsub = wrap("battle.move_grid_navigation", function() return true end)
+  check(BattleState.moveGridNavigation(battle),
+    "a mod can opt the classic move menu into the existing grid navigation")
+  unsub()
+  battle.wideLayout = function() return true end
+  check(BattleState.moveGridNavigation(battle),
+    "the native wide move grid remains enabled without a mod")
+end
+
+-- ------- ui.party.grid_navigation (authoritative second-screen party grid)
+
+do
+  local field = setmetatable({}, PartyMenu)
+  local battle = setmetatable({ battle = {} }, PartyMenu)
+  check(PartyMenu.gridIndex(1, 6, "down") == 3
+      and PartyMenu.gridIndex(3, 6, "right") == 4
+      and PartyMenu.gridIndex(5, 5, "down") == 1
+      and PartyMenu.gridIndex(4, 5, "down") == 2,
+    "party grid navigation follows the visible two-column layout")
+  check(not field:gridNavigation() and not battle:gridNavigation(),
+    "party navigation stays a vertical list without a mod")
+  local unsub = wrap("ui.party.grid_navigation", function() return true end)
+  check(not field:gridNavigation() and battle:gridNavigation(),
+    "a mod can opt only a battle party menu into grid navigation")
+  local game = {
+    save = { party = { {}, {}, {}, {}, {}, {} } },
+    input = { wasPressed = function(_, key) return key == "down" end },
+  }
+  local menu = PartyMenu.new(game, { battle = {} })
+  menu:update(0)
+  check(menu.index == 3, "Down follows the companion party grid")
+  unsub()
+  menu:update(0)
+  check(menu.index == 4, "removing ownership restores the native list at once")
+end
+
+-- ------- screen.render_visible (second-screen native menu mirrors)
+
+do
+  local StateStack = require("src.core.StateStack")
+  local stack = setmetatable({}, { __index = StateStack })
+  stack:init()
+  local battle = { isOpaque = true }
+  local bag = { isOpaque = true, screenId = "BagMenu" }
+  stack:push(battle)
+  stack:push(bag)
+  check(stack:visibleBase() == 2,
+    "opaque menu normally owns the rendered screen")
+  local unsub = wrap("screen.render_visible", function(next, state)
+    if state.screenId == "BagMenu" then return false end
+    return next(state)
+  end)
+  check(stack:visibleBase() == 1 and not stack:renderVisible(bag),
+    "hidden opaque menu reveals the state below without leaving the stack")
+  unsub()
+  check(stack:visibleBase() == 2 and stack:renderVisible(bag),
+    "native menu rendering safely returns after the hook is removed")
 end
 
 -- ------- music.volume (distance / indoor muffling)

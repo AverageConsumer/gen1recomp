@@ -71,6 +71,12 @@ function ItemEffects.healsHP(id)
       or id == "REVIVE" or id == "MAX_REVIVE"
 end
 
+function ItemEffects.isBattleMedicine(id)
+  return HEAL_AMOUNT[id] ~= nil or STATUS_HEAL[id] ~= nil
+      or id == "MAX_POTION" or id == "FULL_RESTORE"
+      or id == "REVIVE" or id == "MAX_REVIVE"
+end
+
 -- Does this item need a party-member target?
 function ItemEffects.needsTarget(id, itemDef)
   return HEAL_AMOUNT[id] or STATUS_HEAL[id] or id == "MAX_POTION"

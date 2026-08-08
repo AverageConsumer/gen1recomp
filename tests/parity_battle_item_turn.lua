@@ -155,6 +155,15 @@ do
   check(not ItemEffects.healsHP("ANTIDOTE"), "ANTIDOTE is a status cure")
 end
 
+do
+  local game = freshGame(10)
+  for _, id in ipairs({ "ESCAPE_ROPE", "REPEL", "SUPER_REPEL", "MAX_REPEL" }) do
+    local result, messages = ItemEffects.use(game.data, game.save, id, nil, {})
+    check(result == "failed" and messages and messages[1]:find("isn't the", 1, true),
+          id .. " is refused in battle")
+  end
+end
+
 -- The report: a POTION mid-battle healed for free.  BagMenu gated its
 -- animate-the-bar branch on the picker existing, and in battle the picker is
 -- non-nil (PartyMenu hands itself to onSwitch after popping), so the branch
@@ -253,6 +262,25 @@ do
             "dismissing the message closes the picker")
     end
     eq(lead.hp, 30, "and the field POTION healed the same 20 HP")
+  end
+end
+
+-- PP items expose the same current/maximum information as battle move select.
+do
+  local game, lead = freshGame(10)
+  require("src.inventory.Bag").add(game.save, "ETHER", 1)
+  lead.moves[1].pp = 3
+  lead.moves[1].ppUps = 2
+  local picker, why = useFromBag(game, nil, "ETHER")
+  check(picker ~= nil, "the field picker opened for an ETHER: " .. tostring(why))
+  local moves = game.stack:top()
+  local def = Data.moves[lead.moves[1].id]
+  local maxPP = def.pp + 2 * math.floor(def.pp / 5)
+  check(moves and moves.kind == "pp_item_move",
+        "the PP move picker has a stable companion-UI kind")
+  if moves and moves.items then
+    eq(moves.items[1].right, ("3/%d"):format(maxPP),
+       "the PP move picker shows current/max including PP Ups")
   end
 end
 
