@@ -23,6 +23,7 @@
 #include "Graphics.h"
 
 #include <algorithm> // For min/max
+#include <cstring>
 
 namespace love
 {
@@ -197,6 +198,9 @@ Canvas::Canvas(const Settings &settings)
 	, texture(0)
     , renderbuffer(0)
 	, actualSamples(0)
+	, readbackBuffer(0)
+	, readbackFence(nullptr)
+	, readbackSize(0)
 {
 	format = getSizedFormat(format);
 
@@ -314,6 +318,14 @@ bool Canvas::loadVolatile()
 
 void Canvas::unloadVolatile()
 {
+	if (readbackFence != nullptr)
+		glDeleteSync(readbackFence);
+	if (readbackBuffer != 0)
+		glDeleteBuffers(1, &readbackBuffer);
+	readbackFence = nullptr;
+	readbackBuffer = 0;
+	readbackSize = 0;
+
 	if (fbo != 0 || renderbuffer != 0 || texture != 0)
 	{
 		// This is a bit ugly, but we need some way to destroy the cached FBO
@@ -477,6 +489,67 @@ love::image::ImageData *Canvas::newImageData(love::image::Image *module, int sli
 
 	gl.bindFramebuffer(OpenGL::FRAMEBUFFER_ALL, current_fbo);
 
+	return data;
+}
+
+bool Canvas::requestImageData()
+{
+	if (readbackFence != nullptr || !(GLAD_ES_VERSION_3_0 || GLAD_VERSION_3_2)
+		|| texType != TEXTURE_2D
+		|| (format != PIXELFORMAT_RGBA8 && format != PIXELFORMAT_sRGBA8)
+		|| actualSamples > 0)
+		return false;
+
+	auto gfx = Module::getInstance<Graphics>(Module::M_GRAPHICS);
+	if (gfx != nullptr && gfx->isCanvasActive(this))
+		throw love::Exception("Canvas:requestImageData cannot be called while that Canvas is active.");
+
+	const size_t size = (size_t) pixelWidth * (size_t) pixelHeight * 4;
+	if (readbackBuffer == 0)
+		glGenBuffers(1, &readbackBuffer);
+
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, readbackBuffer);
+	if (readbackSize != size)
+	{
+		glBufferData(GL_PIXEL_PACK_BUFFER, size, nullptr, GL_STREAM_READ);
+		readbackSize = size;
+	}
+
+	GLuint currentfbo = gl.getFramebuffer(OpenGL::FRAMEBUFFER_ALL);
+	gl.bindFramebuffer(OpenGL::FRAMEBUFFER_ALL, getFBO());
+	glReadPixels(0, 0, pixelWidth, pixelHeight, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	readbackFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	gl.bindFramebuffer(OpenGL::FRAMEBUFFER_ALL, currentfbo);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+	return readbackFence != nullptr;
+}
+
+love::image::ImageData *Canvas::pollImageData(love::image::Image *module)
+{
+	if (readbackFence == nullptr)
+		return nullptr;
+
+	GLenum status = glClientWaitSync(readbackFence, 0, 0);
+	if (status == GL_TIMEOUT_EXPIRED)
+		return nullptr;
+
+	glDeleteSync(readbackFence);
+	readbackFence = nullptr;
+	if (status == GL_WAIT_FAILED)
+		return nullptr;
+
+	love::image::ImageData *data = module->newImageData(pixelWidth, pixelHeight, PIXELFORMAT_RGBA8);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, readbackBuffer);
+	void *pixels = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, readbackSize, GL_MAP_READ_BIT);
+	if (pixels == nullptr)
+	{
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+		data->release();
+		throw love::Exception("Could not map asynchronous Canvas readback.");
+	}
+	memcpy(data->getData(), pixels, readbackSize);
+	glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 	return data;
 }
 
