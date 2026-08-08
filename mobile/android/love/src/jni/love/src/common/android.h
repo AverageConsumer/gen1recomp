@@ -98,6 +98,8 @@ bool restartApp();
  **/
 bool httpDownload(const char *url, const char *destPath, const char *userAgent, const char *accept);
 
+bool is24HourClock();
+
 /*
  * Helper functions for the filesystem module
  */
