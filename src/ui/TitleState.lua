@@ -226,6 +226,11 @@ function TitleState.new(game, opts)
   self.blue = GameVersion.isBlue()
   self.yellow = GameVersion.isYellow()
     or title.layout == "yellow_pikachu"
+  -- ..(pokeyellow engine/movie/title.asm .tileScreenCopyrightTiles / NineTile)
+  self.nineImg = self.yellow and tryImage(imagePath(title.nine)
+    or "assets/generated/title/nine.png") or nil
+  self.copyPrefix = self.yellow
+    and { 0, 1, 2, 3, 1, 2 } or { 0, 1, 2, 1, 3, 1, 4 }
   -- Yellow title is a fixed Pikachu composition (title_yellow.asm), not
   -- TitleMons cycling.  Prefer composed pikachu.png from the Yellow import.
   self.yellowPikachu = self.yellow and tryImage(imagePath(title.pikachu)
@@ -665,14 +670,15 @@ function TitleState:draw()
   self:drawCopyright(136 + (preRibbon and 0 or scrollY))
 end
 
--- ..(engine/movie/title.asm ln 117)
-local COPY_PREFIX = { 0, 1, 2, 1, 3, 1, 4 }
-
 function TitleState:drawCopyright(y)
   if not self.title.copyrightText and self.copyImg and self.gfInc then
     local x = 16
-    for _, t in ipairs(COPY_PREFIX) do
+    for _, t in ipairs(self.copyPrefix) do
       love.graphics.draw(self.copyImg, self.copyQuads[t], x, y)
+      x = x + 8
+    end
+    if self.nineImg then
+      love.graphics.draw(self.nineImg, x, y)
       x = x + 8
     end
     love.graphics.draw(self.gfInc, x, y)
