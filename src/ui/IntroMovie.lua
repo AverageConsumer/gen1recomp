@@ -2,6 +2,7 @@
 -- ..(engine/movie/splash.asm ln 27)
 
 local Font = require("src.render.Font")
+local GameVersion = require("src.core.GameVersion")
 local Music = require("src.core.Music")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
@@ -56,8 +57,13 @@ local SPLASH_FRAMES = WAVES_END + 40  -- ld c, 40 (intro.asm:329-331)
 local LOGO_X, LOGO_Y = 72, 56
 local TEXT_X, TEXT_Y = 40, 80
 
--- ..(engine/movie/title.asm ln 390)
-local COPY_PREFIX = { 0, 1, 2, 1, 3, 1, 4 }
+-- CopyrightTextString (engine/movie/title.asm).  Red/Blue years are
+-- (c)'95.'96.'98; Yellow's sheet spells (c)1995-1999 and finishes the
+-- last digit with NineTile (title screen).  Intro originally overflows
+-- into the font "A" tile for that digit; we draw NineTile so both
+-- screens read 1999.
+local COPY_PREFIX_RB = { 0, 1, 2, 1, 3, 1, 4 }
+local COPY_PREFIX_YELLOW = { 0, 1, 2, 3, 1, 2 }
 local COPY_NINTENDO = { 5, 6, 7, 8, 9, 10 }
 local COPY_CREATURES = { 11, 12, 13, 14, 15, 16, 17, 18 }
 
@@ -143,6 +149,12 @@ function IntroMovie.new(game, onDone)
   end
   self.gfInc = img(titleCfg.gamefreakInc)
     or tryImage("assets/generated/title/gamefreak_inc.png")
+  -- ..(pokeyellow engine/movie/title.asm CopyrightTextString / NineTile)
+  self.yellowCopy = GameVersion.isYellow()
+    or titleCfg.layout == "yellow_pikachu"
+  self.copyPrefix = self.yellowCopy and COPY_PREFIX_YELLOW or COPY_PREFIX_RB
+  self.nineImg = self.yellowCopy and (
+    img(titleCfg.nine) or tryImage("assets/generated/title/nine.png")) or nil
   self.studioLogo = tryImage(self.studio.logo)
   if self.studioLogo then
     self.studioLogo:setFilter("nearest", "nearest")
@@ -364,6 +376,16 @@ function IntroMovie:drawFight()
   end
 end
 
+function IntroMovie:drawCopyPrefix(x, y)
+  for _, t in ipairs(self.copyPrefix) do
+    love.graphics.draw(self.copyright, self.copyQuads[t], x, y)
+    x = x + 8
+  end
+  if self.nineImg then
+    love.graphics.draw(self.nineImg, x, y)
+  end
+end
+
 function IntroMovie:drawCopyright()
   if self.studio.card or self.studio.credit then
     local card = self.studio.card or ""
@@ -378,7 +400,7 @@ function IntroMovie:drawCopyright()
         x = x + 8
       end
     end
-    for _, y in ipairs({ 56, 72, 88 }) do row(COPY_PREFIX, 16, y) end
+    for _, y in ipairs({ 56, 72, 88 }) do self:drawCopyPrefix(16, y) end
     row(COPY_NINTENDO, 80, 56)
     row(COPY_CREATURES, 80, 72)
     love.graphics.draw(self.gfInc, 80, 88)

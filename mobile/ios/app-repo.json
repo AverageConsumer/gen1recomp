@@ -13,6 +13,83 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.75",
+          "date": "2026-08-06",
+          "size": 9574086,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.75/gen1recomp-0.1.75-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #826 \"Super effective\" and \"not very effective\" SFX are reversed\n- #848 Roms not showing up\n- #876 Remote mod download is unavailable on this platform\n- #899 Importing Pokémon red leads to the contents extracted without a folder called 'red'\n- #902 Audio is wrong!\n\n## Contributors\n\n- @andrewqsantos\n- @bryanthaboi\n- @caorthann-celt\n- @johnjohto\n- @ShaneMcGovernIE"
+        },
+        {
+          "version": "0.1.74",
+          "date": "2026-08-06",
+          "size": 9588946,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.74/gen1recomp-0.1.74-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #883 Evolution Stones consumed if evolution is cancelled\n- #887 MacOS Closing game just keeps reopening\n- #894 Max Repel usable in battle\n\n## Contributors\n\n- @bryanthaboi\n- @MarceloMachadoxD\n- @ratherDashing"
+        },
+        {
+          "version": "0.1.73",
+          "date": "2026-08-06",
+          "size": 9585729,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.73/gen1recomp-0.1.73-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #878 Mod API: allow active screen states to be hidden from the main render\n\n## Contributors\n\n- @AverageConsumer\n- @bryanthaboi"
+        },
+        {
+          "version": "0.1.72",
+          "date": "2026-08-05",
+          "size": 9586678,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.72/gen1recomp-0.1.72-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #604 Android, retroid pocket 2+ Rom won't import\n- #666 Pikachu emotions are not working on Android\n- #716 Lock Auto Rotate Mobile\n- #727 [Bug] [Windows] Gen1 Recomp \"still in use\" after closing\n- #763 Some EVENTS are turned off\n- #781 Mouse cursor broken on Linux with multi-monitor X11 setup\n- #784 Leech Seed effect\n- #799 Held direction randomly stops player movement (requires re-input)\n- #801 Cannot update mods from the launcher (MacOS)\n- #810 Launcher menu cuts off in vertical mode iOS\n- #828 Closing the app causes settings in launcher to reset\n- #834 Mod import failing\n- #838 Exporting save file Pokemon Yellow\n- #839 AYN Thor Misplaced Data files\n- #849 Public folder support on iOS\n- #852 Cannot switch between saves states on smaller 4:3 screen or in vertical mode\n- #857 Mt. Moon Fossils Reappeared and Won’t Disappear.\n- #863 [Yellow] When you use stairs, Pikachu shouldn't be next to you in the new area\n- #864 Faithful Ratio\n- #867 Missing Dialogue after defeating Marowak in Pokemon Tower\n- #869 Giovanni moves up to the player too early\n- #870 Start Menu on Classic Color\n- #872 Missing text when finding an item with full inventory\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.1.71",
+          "date": "2026-08-05",
+          "size": 9569738,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.71/gen1recomp-0.1.71-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #806 Haptic Feedback for On-screen controls (mobile)\n- #809 NPC Stuck in Rock when battle triggered and pushing rock towards it\n- #853 When selecting one of the two pokemon after defeating the Karate Master it should show the Pokedex entry\n- #854 Textbox disappears when the yes/no dialogue appears\n- #860 Disabled moves can still be used in the turn they were disabled\n- #862 Casino Poster Rocket Grunt walks into the poster and doesn't \"Dang!\"\n- #865 [Yellow] James doesn't move in multiple encounters\n- #866 [Yellow] Dialogue in wrong \"order\" after multiple encounters (J+J, Giovanni, probably more)\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.1.70",
+          "date": "2026-08-05",
+          "size": 9562731,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.70/gen1recomp-0.1.70-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #590 Launcher/Save Editor/Dex\n- #788 Fly to the Pokemon Centers in the Routes is not available in original\n- #795 Fly logic is drastically different from the originals.\n- #796 Using Rare Candy from the menu closes it out.\n- #797 Gym Leaders giving items when your bag is full / Bypassing bag limit.\n- #805 Escape Rope Moltres Tower\n- #826 \"Super effective\" and \"not very effective\" SFX are reversed\n- #833 Cancelling nickname entry results in \"A\" as the nickname\n- #835 Restarting the launcher forgets the last rom used\n- #837 Wrong sound effect for Pikachu when entering battle\n- #844 Blizzard sound effect.\n- #845 Moderate issue: Fuchsia City binoculars.\n- #846 Surfing speed after using the bicycle.\n- #847 Minor issues related to the endgame.\n\n## Contributors\n\n- @bryanthaboi\n- @dburton95\n- @johnjohto\n- @KikiManjaro"
+        },
+        {
+          "version": "0.1.69",
+          "date": "2026-08-04",
+          "size": 9552851,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.69/gen1recomp-0.1.69-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #768 Menu behaviour for Pokemon and HM moves\n- #785 Back to launcher\n- #792 HM moves in the wrong position in the menu.\n- #807 Expose gameplay pointer events and source-safe mod input injection\n- #811 Untranslatables\n- #814 [minor thing] bold arrow on move swap (select)\n\n## Contributors\n\n- @bryanthaboi\n- @johnjohto"
+        },
+        {
+          "version": "0.1.68",
+          "date": "2026-08-04",
+          "size": 9768011,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.68/gen1recomp-0.1.68-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Contributors\n\n- @bryanthaboi\n- @caorthann-celt"
+        },
+        {
+          "version": "0.1.67",
+          "date": "2026-08-04",
+          "size": 9767619,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.67/gen1recomp-0.1.67-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #373 Lines at Title Screen\n- #644 Substitute failing causes visual issues\n- #673 iOS: thin vertical seam below the START menu panel (v0.1.56, iPhone 15 Pro Max)\n- #703 Credits playing too fast (song ends after it should)\n- #726 Surfing Pikachu Minigame Broken\n- #737 Battle menu move cursor fails to reset to the first slot after switching Pokémon\n- #750 NPC (possibly player) trades still graphically broken\n- #752 Launcher exports save to AppData while in portable mode\n- #764 Trainer Fanfare doesn't play\n- #765 Text Advance broken in certain aspects\n- #768 Menu behaviour for Pokemon and HM moves\n- #773 Battle screen colours messed up when BG = World, battle in un-flashed Rock Tunnel\n- #774 bug(build): Desktop build can reject a valid game archive under pipefail\n- #775 TM42 Dream Eater dialog.\n- #777 Battle Screen is Very dark\n- #780 Do not delete save\n- #782 Giovanni battle at Silph Co plays wrong song\n\n## Contributors\n\n- @bryanthaboi\n- @luisgonzaleznf\n- @ShaneMcGovernIE"
+        },
+        {
+          "version": "0.1.66",
+          "date": "2026-08-04",
+          "size": 9749980,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.66/gen1recomp-0.1.66-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #691 Save file transfer\n- #743 Cannot Scroll Main Menu/Mod Menu\n- #779 \"Enemy \" untranslateable\n\n## Contributors\n\n- @bryanthaboi\n- @jherediagu\n- @ShaneMcGovernIE\n- @vegerot"
+        },
+        {
+          "version": "0.1.65",
+          "date": "2026-08-03",
+          "size": 9376618,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.65/gen1recomp-0.1.65-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #592 Screen Orientation\n- #702 FLY overworld animation incorrect/incomplete\n- #748 Launcher Menu has overlap\n- #754 Can push boulders with STRENGTH through walls\n- #758 PC to Mac Online Multiplayer Disconnects Shortly After Starting Match\n\n## Contributors\n\n- @andrewqsantos\n- @Bortlesboat\n- @bryanthaboi\n- @castdrian\n- @johnjohto\n- @ShaneMcGovernIE"
+        },
+        {
           "version": "0.1.64",
           "date": "2026-08-03",
           "size": 9317129,
