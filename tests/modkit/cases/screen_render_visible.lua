@@ -5,6 +5,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
 local Game = require("src.core.Game")
+local Game2 = require("src.core.Game2")
 local Runtime = require("src.mods.Runtime")
 local StateStack = require("src.core.StateStack")
 local Renderer = require("src.render.Renderer")
@@ -92,6 +93,27 @@ do
     "the hidden menu remains the active top state")
   game.stack:update(1 / 60)
   T.eq(menu.updates, 1, "the hidden menu keeps its update ownership")
+
+  -- Gold's widescreen fast path must honor the same contract before it calls
+  -- a screen's drawWidescreen directly. Exercise both drawScene branches.
+  for _, boot in ipairs({ false, true }) do
+    game, base, menu = scene()
+    game.world = { map = {} }
+    game.inFillBoot = function() return boot end
+    game.letterbox = function() end
+    menu.wideDraws = 0
+    menu.drawsWidescreen = function() return true end
+    menu.drawWidescreen = function(self)
+      self.wideDraws = self.wideDraws + 1
+    end
+    setmetatable(game, { __index = Game2 })
+
+    game:drawScene(1280, 720)
+    T.eq(menu.wideDraws, 0,
+      "Gold omits a hidden widescreen top (boot=" .. tostring(boot) .. ")")
+    T.eq(base.draws, 1,
+      "Gold reveals the state beneath it (boot=" .. tostring(boot) .. ")")
+  end
   run.release()
 end
 

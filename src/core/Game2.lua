@@ -1475,7 +1475,8 @@ function Game2:drawScene(w, h)
     local base = self.stack.states[self.stack:visibleBase()]
     -- Title (and friends) paint sky/clouds edge-to-edge; Oak speech and
     -- name pick paint a paper-white surround via drawWidescreen.
-    local wide = (top and top.drawsWidescreen and top:drawsWidescreen()
+    local wide = (self.stack:renderVisible(top)
+      and top.drawsWidescreen and top:drawsWidescreen()
       and top.drawWidescreen) and top
       or (base and base.drawsWidescreen and base:drawsWidescreen()
         and base.drawWidescreen and base)
@@ -1525,7 +1526,8 @@ function Game2:drawScene(w, h)
     -- TextBox goes up over them.
     local top = self.stack:top()
     local base = self.stack.states[self.stack:visibleBase()]
-    local wide = (top and top.drawsWidescreen and top:drawsWidescreen()
+    local wide = (self.stack:renderVisible(top)
+      and top.drawsWidescreen and top:drawsWidescreen()
       and top.drawWidescreen) and top
       or (base and base.drawsWidescreen and base:drawsWidescreen()
         and base.drawWidescreen and base)
