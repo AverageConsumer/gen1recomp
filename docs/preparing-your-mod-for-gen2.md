@@ -311,7 +311,7 @@ This is not a dev-mode feature; it installs on any Gold boot that has mods.
 | `src.pokemon.Boxes` | facade | over `src/core/gen2/Boxes.lua` | 22 / 0 / 0 |
 | `src.battle.BattleState` | facade | over `src/ui/gen2/BattleState.lua` | 16 / 2 / 39 |
 | `src.ui.PartyMenu` | facade | over `src/ui/gen2/PartyMenu.lua` | 15 / 2 / 16 |
-| `src.world.WorldAPI` | alias | `src/world/gen2/WorldAPI.lua` | 12 / 2 / 0 |
+| `src.world.WorldAPI` | alias | `src/world/gen2/WorldAPI.lua` | 14 / 2 / 0 |
 | `src.world.PikachuFollower` | alias | `src/world/gen2/Follower.lua` | 10 / 0 / 11 |
 | `src.script.ScriptRunner` | facade | over `src/script/gen2/Vm.lua` | 10 / 7 / 1 |
 | `src.ui.OptionsMenu` | facade | over `src/ui/gen2/OptionsMenu.lua` | 8 / 0 / 1 |
