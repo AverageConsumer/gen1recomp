@@ -63,6 +63,45 @@ overview = api:mapOverview()
 T.eq(#overview.markers, 1, "collected items disappear from the overview")
 T.eq(overview.markers[1].kind, "warp", "exits remain after collecting items")
 
+local ball = { x = 0, y = 1, itemball = { item = 15, quantity = 1 } }
+local gen2Map = {
+  id = "GEN2_MAP", widthCells = 2, heightCells = 2,
+  def = {
+    generation = 2,
+    warps = { { x = 1, y = 0 } },
+    objects = { ball },
+    bgEvents = { {
+      x = 1, y = 1, kind = 7,
+      hiddenItem = { item = 30, event = 123 },
+    } },
+  },
+}
+function gen2Map:isWarpTileCell(x, y) return x == 1 and y == 0 end
+function gen2Map:isWaterCell(x, y) return x == 0 and y == 1 end
+function gen2Map:isWalkableCell(x, y) return x == 0 and y == 0 end
+function gen2Map:tileAt(x) return x % 2 end
+local found = {}
+local gen2World = {
+  isOverworld = true,
+  map = gen2Map,
+  npcs = { {}, { def = ball } },
+  events = { get = function(_, event) return found[event] end },
+}
+api = WorldAPI.new({ save = {}, data = {},
+  stack = { states = { gen2World } } }, "tester")
+overview = api:mapOverview()
+T.eq(#overview.markers, 3,
+  "Gen 2 exits, visible item balls, and hidden items are marked")
+T.eq(overview.markers[2].kind, "item", "Gen 2 item balls are semantic")
+T.eq(overview.markers[3].kind, "hidden", "Gen 2 hidden items are semantic")
+
+gen2World.npcs = {}
+found[123] = true
+overview = api:mapOverview()
+T.eq(#overview.markers, 1,
+  "collected Gen 2 items disappear from the overview")
+
+api = WorldAPI.new(game, "tester")
 map.tileset = { image = "test.png", tilesPerRow = 2 }
 overview = api:mapOverview()
 T.eq(overview.tileWidth, 4, "tile overview reports its width")

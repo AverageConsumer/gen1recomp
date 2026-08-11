@@ -162,17 +162,34 @@ function WorldAPI:mapOverview()
     markers[#markers + 1] = { kind = "warp", x = warp.x, y = warp.y }
   end
   local game, save = self.game, self.game.save or {}
+  local visibleObjects
+  if not ow.objectVisible then
+    visibleObjects = {}
+    for _, npc in ipairs(ow.npcs or {}) do
+      if npc.def then visibleObjects[npc.def] = true end
+    end
+  end
   for _, obj in ipairs(def.objects or {}) do
-    if obj.item and obj.item ~= "0" and obj.item ~= 0
-        and ow.objectVisible(save, map.id, obj) then
+    local item = obj.item or (obj.itemball and obj.itemball.item)
+    local visible = ow.objectVisible
+      and ow.objectVisible(save, map.id, obj)
+      or visibleObjects and visibleObjects[obj]
+    if item and item ~= "0" and item ~= 0 and visible then
       markers[#markers + 1] = { kind = "item", x = obj.x, y = obj.y }
     end
   end
-  local hidden = game.data and game.data.field and game.data.field.hiddenItems
-  for _, item in ipairs(hidden and hidden[map.id] or {}) do
-    local key = map.id .. "_" .. item.x .. "_" .. item.y
-    if not (save.hiddenTaken and save.hiddenTaken[key]) then
+  if def.generation == 2 then
+    local hidden = require("src.world.gen2.HiddenItems").unfound(def, ow.events)
+    for _, item in ipairs(hidden) do
       markers[#markers + 1] = { kind = "hidden", x = item.x, y = item.y }
+    end
+  else
+    local hidden = game.data and game.data.field and game.data.field.hiddenItems
+    for _, item in ipairs(hidden and hidden[map.id] or {}) do
+      local key = map.id .. "_" .. item.x .. "_" .. item.y
+      if not (save.hiddenTaken and save.hiddenTaken[key]) then
+        markers[#markers + 1] = { kind = "hidden", x = item.x, y = item.y }
+      end
     end
   end
   local tileRows, tileDetailRows = mapTileRows(map)
