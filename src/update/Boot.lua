@@ -246,6 +246,8 @@ end
 -- chainloaded and the caller must return immediately; false means boot the
 -- bundled game as normal.
 function Boot.run(args)
+  local Version = require("src.core.Version")
+  if Version.selfUpdate == false then return false end
   -- Dev / source checkouts never self-update.
   if not (love.filesystem.isFused and love.filesystem.isFused()) then
     return false
