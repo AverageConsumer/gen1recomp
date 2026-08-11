@@ -94,25 +94,41 @@ do
   game.stack:update(1 / 60)
   T.eq(menu.updates, 1, "the hidden menu keeps its update ownership")
 
-  -- Gold's widescreen fast path must honor the same contract before it calls
-  -- a screen's drawWidescreen directly. Exercise both drawScene branches.
+  -- Gold keeps the overworld outside its state stack. A companion-opened
+  -- screen can therefore be the stack's only state; visibleBase() still
+  -- returns index 1, but that hidden state must not become the direct base.
   for _, boot in ipairs({ false, true }) do
-    game, base, menu = scene()
-    game.world = { map = {} }
+    local stack = setmetatable({}, { __index = StateStack })
+    stack:init()
+    local hidden = {
+      screenId = "BagMenu",
+      isOpaque = true,
+      draws = 0,
+      wideDraws = 0,
+      draw = function(self) self.draws = self.draws + 1 end,
+      drawsWidescreen = function() return true end,
+      drawWidescreen = function(self)
+        self.wideDraws = self.wideDraws + 1
+      end,
+    }
+    stack:push(hidden)
+    local world = {
+      map = {}, draws = 0,
+      draw = function(self) self.draws = self.draws + 1 end,
+      fitScale = function() return 1 end,
+    }
+    game = { stack = stack, world = world }
     game.inFillBoot = function() return boot end
     game.letterbox = function() end
-    menu.wideDraws = 0
-    menu.drawsWidescreen = function() return true end
-    menu.drawWidescreen = function(self)
-      self.wideDraws = self.wideDraws + 1
-    end
     setmetatable(game, { __index = Game2 })
 
     game:drawScene(1280, 720)
-    T.eq(menu.wideDraws, 0,
+    T.eq(hidden.wideDraws, 0,
       "Gold omits a hidden widescreen top (boot=" .. tostring(boot) .. ")")
-    T.eq(base.draws, 1,
-      "Gold reveals the state beneath it (boot=" .. tostring(boot) .. ")")
+    T.eq(hidden.draws, 0,
+      "Gold omits its hidden GB canvas (boot=" .. tostring(boot) .. ")")
+    T.eq(world.draws, boot and 0 or 1,
+      "Gold reveals its external world (boot=" .. tostring(boot) .. ")")
   end
   run.release()
 end

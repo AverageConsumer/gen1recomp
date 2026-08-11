@@ -109,6 +109,12 @@ local function makeStack()
   return StateStack
 end
 
+local function visibleBaseState(stack)
+  if not stack then return nil end
+  local state = stack.states[stack:visibleBase()]
+  return stack:renderVisible(state) and state or nil
+end
+
 local function loadGenerated(path)
   local chunk = love.filesystem.load(path)
   if not chunk then return nil end
@@ -1458,8 +1464,7 @@ end
 -- them but the Pokegear, whose paper is RGB 28,31,20.  Nil means white, which
 -- is what Font.drawBox does by default.
 function Game2:textboxPaper()
-  local base = self.stack and self.stack.states
-    and self.stack.states[self.stack:visibleBase()]
+  local base = visibleBaseState(self.stack)
   if base and base.paperColor then return base:paperColor() end
   return nil
 end
@@ -1472,7 +1477,7 @@ function Game2:drawScene(w, h)
 
   if self:inFillBoot() then
     local top = self.stack:top()
-    local base = self.stack.states[self.stack:visibleBase()]
+    local base = visibleBaseState(self.stack)
     -- Title (and friends) paint sky/clouds edge-to-edge; Oak speech and
     -- name pick paint a paper-white surround via drawWidescreen.
     local wide = (self.stack:renderVisible(top)
@@ -1525,7 +1530,7 @@ function Game2:drawScene(w, h)
     -- PARTY, PACK, #DEX, PC, DAY-CARE, MAILBOX and TRADE screens whenever a
     -- TextBox goes up over them.
     local top = self.stack:top()
-    local base = self.stack.states[self.stack:visibleBase()]
+    local base = visibleBaseState(self.stack)
     local wide = (self.stack:renderVisible(top)
       and top.drawsWidescreen and top:drawsWidescreen()
       and top.drawWidescreen) and top
