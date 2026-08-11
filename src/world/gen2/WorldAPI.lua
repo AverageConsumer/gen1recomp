@@ -27,6 +27,8 @@ local Movement = require("src.script.gen2.Movement")
 local Runtime = require("src.mods.Runtime")
 local Bike = require("src.world.gen2.Bike")
 local FieldMoves = require("src.world.gen2.FieldMoves")
+local HiddenItems = require("src.world.gen2.HiddenItems")
+local MapOverview = require("src.world.MapOverview")
 local Permissions = require("src.world.gen2.Permissions")
 
 local WorldAPI = {}
@@ -51,6 +53,31 @@ function WorldAPI:current()
   local p = world.player
   return { mapId = world.map.id, x = p and p.cellX, y = p and p.cellY,
            facing = p and p.facing }
+end
+
+-- The same read-only minimap contract as Gen 1, with Gold's object/event
+-- visibility rules supplying the semantic markers.
+function WorldAPI:mapOverview()
+  local world = self:overworld()
+  if not world or not world.map then return nil, NO_OVERWORLD end
+  local map, def, markers = world.map, world.map.def or {}, {}
+  for _, warp in ipairs(def.warps or {}) do
+    markers[#markers + 1] = { kind = "warp", x = warp.x, y = warp.y }
+  end
+  local visible = {}
+  for _, npc in ipairs(world.npcs or {}) do
+    if npc.def then visible[npc.def] = true end
+  end
+  for _, obj in ipairs(def.objects or {}) do
+    local item = obj.itemball and obj.itemball.item
+    if item and item ~= "0" and item ~= 0 and visible[obj] then
+      markers[#markers + 1] = { kind = "item", x = obj.x, y = obj.y }
+    end
+  end
+  for _, item in ipairs(HiddenItems.unfound(def, world.events)) do
+    markers[#markers + 1] = { kind = "hidden", x = item.x, y = item.y }
+  end
+  return MapOverview.build(map, markers)
 end
 
 local FIELD_ACTIONS = {

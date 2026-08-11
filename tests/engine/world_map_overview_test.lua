@@ -3,6 +3,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local T = require("tests.harness")
 local Assets = require("src.render.Assets")
 local WorldAPI = require("src.world.WorldAPI")
+local WorldAPI2 = require("src.world.gen2.WorldAPI")
 
 Assets.imageData = function()
   return { getPixel = function(_, x, y)
@@ -67,7 +68,6 @@ local ball = { x = 0, y = 1, itemball = { item = 15, quantity = 1 } }
 local gen2Map = {
   id = "GEN2_MAP", widthCells = 2, heightCells = 2,
   def = {
-    generation = 2,
     warps = { { x = 1, y = 0 } },
     objects = { ball },
     bgEvents = { {
@@ -87,8 +87,7 @@ local gen2World = {
   npcs = { {}, { def = ball } },
   events = { get = function(_, event) return found[event] end },
 }
-api = WorldAPI.new({ save = {}, data = {},
-  stack = { states = { gen2World } } }, "tester")
+api = WorldAPI2.new({ save = {}, data = {}, world = gen2World }, "tester")
 overview = api:mapOverview()
 T.eq(#overview.markers, 3,
   "Gen 2 exits, visible item balls, and hidden items are marked")

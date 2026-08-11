@@ -6,8 +6,8 @@
 -- stays unsupported; anything a mod legitimately needs belongs here.
 
 local Logger = require("src.core.Logger")
-local Assets = require("src.render.Assets")
 local MapLoader = require("src.world.MapLoader")
+local MapOverview = require("src.world.MapOverview")
 local Party = require("src.pokemon.Party")
 local Runtime = require("src.mods.Runtime")
 
@@ -15,59 +15,6 @@ local WorldAPI = {}
 WorldAPI.__index = WorldAPI
 
 local NO_OVERWORLD = "no overworld"
-local overviewShades = {}
-
-Assets.register(function() overviewShades = {} end)
-
-local function shadeDigit(sum, pixelCount)
-  return tostring(math.max(0, math.min(3,
-    math.floor((1 - sum / pixelCount) * 3 + 0.5))))
-end
-
-local function mapTileRows(map)
-  local tileset = map.tileset
-  if not (tileset and tileset.image and tileset.tilesPerRow) then return nil end
-  local cached = overviewShades[tileset.image]
-  if not cached then
-    local ok, pixels = pcall(Assets.imageData, tileset.image)
-    if not ok then return nil end
-    cached = { pixels = pixels, shades = {} }
-    overviewShades[tileset.image] = cached
-  end
-  local rows, detailRows, perRow = {}, {}, tileset.tilesPerRow
-  for ty = 0, map.heightCells * 2 - 1 do
-    local row, detailTop, detailBottom = {}, {}, {}
-    for tx = 0, map.widthCells * 2 - 1 do
-      local tile = map:tileAt(tx, ty)
-      local shades = cached.shades[tile]
-      if shades == nil then
-        local sums = { 0, 0, 0, 0 }
-        local ox, oy = (tile % perRow) * 8, math.floor(tile / perRow) * 8
-        for py = 0, 7 do
-          for px = 0, 7 do
-            local r, g, b = cached.pixels:getPixel(ox + px, oy + py)
-            local quadrant = math.floor(py / 4) * 2 + math.floor(px / 4) + 1
-            sums[quadrant] = sums[quadrant]
-              + r * 0.2126 + g * 0.7152 + b * 0.0722
-          end
-        end
-        shades = {
-          shadeDigit(sums[1] + sums[2] + sums[3] + sums[4], 64),
-          shadeDigit(sums[1], 16), shadeDigit(sums[2], 16),
-          shadeDigit(sums[3], 16), shadeDigit(sums[4], 16),
-        }
-        cached.shades[tile] = shades
-      end
-      row[#row + 1] = shades[1]
-      detailTop[#detailTop + 1] = shades[2] .. shades[3]
-      detailBottom[#detailBottom + 1] = shades[4] .. shades[5]
-    end
-    rows[#rows + 1] = table.concat(row)
-    detailRows[#detailRows + 1] = table.concat(detailTop)
-    detailRows[#detailRows + 1] = table.concat(detailBottom)
-  end
-  return rows, detailRows
-end
 
 local function acceptsMenuInput(game, ow)
   local stack = game and game.stack
@@ -147,60 +94,26 @@ end
 function WorldAPI:mapOverview()
   local ow = self:overworld()
   if not ow or not ow.map then return nil, NO_OVERWORLD end
-  local map, rows, markers = ow.map, {}, {}
-  for y = 0, map.heightCells - 1 do
-    local row = {}
-    for x = 0, map.widthCells - 1 do
-      row[#row + 1] = map:isWarpTileCell(x, y) and "+"
-        or map:isWaterCell(x, y) and "~"
-        or map:isWalkableCell(x, y) and "." or " "
-    end
-    rows[#rows + 1] = table.concat(row)
-  end
+  local map, markers = ow.map, {}
   local def = map.def or {}
   for _, warp in ipairs(def.warps or {}) do
     markers[#markers + 1] = { kind = "warp", x = warp.x, y = warp.y }
   end
   local game, save = self.game, self.game.save or {}
-  local visibleObjects
-  if not ow.objectVisible then
-    visibleObjects = {}
-    for _, npc in ipairs(ow.npcs or {}) do
-      if npc.def then visibleObjects[npc.def] = true end
-    end
-  end
   for _, obj in ipairs(def.objects or {}) do
-    local item = obj.item or (obj.itemball and obj.itemball.item)
-    local visible = ow.objectVisible
-      and ow.objectVisible(save, map.id, obj)
-      or visibleObjects and visibleObjects[obj]
-    if item and item ~= "0" and item ~= 0 and visible then
+    if obj.item and obj.item ~= "0" and obj.item ~= 0
+        and ow.objectVisible(save, map.id, obj) then
       markers[#markers + 1] = { kind = "item", x = obj.x, y = obj.y }
     end
   end
-  if def.generation == 2 then
-    local hidden = require("src.world.gen2.HiddenItems").unfound(def, ow.events)
-    for _, item in ipairs(hidden) do
+  local hidden = game.data and game.data.field and game.data.field.hiddenItems
+  for _, item in ipairs(hidden and hidden[map.id] or {}) do
+    local key = map.id .. "_" .. item.x .. "_" .. item.y
+    if not (save.hiddenTaken and save.hiddenTaken[key]) then
       markers[#markers + 1] = { kind = "hidden", x = item.x, y = item.y }
     end
-  else
-    local hidden = game.data and game.data.field and game.data.field.hiddenItems
-    for _, item in ipairs(hidden and hidden[map.id] or {}) do
-      local key = map.id .. "_" .. item.x .. "_" .. item.y
-      if not (save.hiddenTaken and save.hiddenTaken[key]) then
-        markers[#markers + 1] = { kind = "hidden", x = item.x, y = item.y }
-      end
-    end
   end
-  local tileRows, tileDetailRows = mapTileRows(map)
-  return { mapId = map.id, width = map.widthCells,
-           height = map.heightCells, rows = rows, markers = markers,
-           tileRows = tileRows,
-           tileWidth = tileRows and map.widthCells * 2,
-           tileHeight = tileRows and map.heightCells * 2,
-           tileDetailRows = tileDetailRows,
-           tileDetailWidth = tileDetailRows and map.widthCells * 4,
-           tileDetailHeight = tileDetailRows and map.heightCells * 4 }
+  return MapOverview.build(map, markers)
 end
 
 -- opts.arrive = "fly" | "teleport" picks the arrival FX; anything else
