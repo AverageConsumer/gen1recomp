@@ -25,6 +25,9 @@
 local Logger = require("src.core.Logger")
 local Movement = require("src.script.gen2.Movement")
 local Runtime = require("src.mods.Runtime")
+local Bike = require("src.world.gen2.Bike")
+local FieldMoves = require("src.world.gen2.FieldMoves")
+local Permissions = require("src.world.gen2.Permissions")
 
 local WorldAPI = {}
 WorldAPI.__index = WorldAPI
@@ -48,6 +51,134 @@ function WorldAPI:current()
   local p = world.player
   return { mapId = world.map.id, x = p and p.cellX, y = p and p.cellY,
            facing = p and p.facing }
+end
+
+local FIELD_ACTIONS = {
+  { id = "cut", move = "CUT" },
+  { id = "surf", move = "SURF" },
+  { id = "strength", move = "STRENGTH" },
+  { id = "flash", move = "FLASH" },
+  { id = "headbutt", move = "HEADBUTT" },
+  { id = "whirlpool", move = "WHIRLPOOL" },
+  { id = "waterfall", move = "WATERFALL" },
+  { id = "sweet_scent", move = "SWEET_SCENT" },
+  { id = "dig", move = "DIG" },
+  { id = "teleport", move = "TELEPORT" },
+}
+
+local function owned(inventory, id)
+  return (inventory and inventory[id] or 0) > 0
+end
+
+local function itemLabel(game, id)
+  local def = game and game.data and game.data.items
+    and game.data.items[id]
+  return (def and def.name) or id
+end
+
+-- Contextual shortcuts only: actions that would succeed here and now.  The
+-- record shape is the same one Gen 1 exposes, so a mod never copies Gold's
+-- badge, party-move or facing-tile rules.
+function WorldAPI:availableFieldActions()
+  local world, game, out = self:overworld(), self.game, {}
+  if not (world and game and game.save and world.map and world.player)
+      or world.battleActive or world:busy() then
+    return out
+  end
+  local inventory = game.save.inventory or {}
+  local function add(id, label)
+    out[#out + 1] = { id = id, label = label }
+    return out[#out]
+  end
+
+  if owned(inventory, "BICYCLE") then
+    local bike = Bike.tryBike({
+      state = world.playerState,
+      environment = world.map.def and world.map.def.environment,
+      collision = world:playerCollision(),
+      alwaysOnBike = world:alwaysOnBike(),
+    })
+    if bike == "mount" or bike == "dismount" then
+      add("bicycle", bike == "dismount" and "BIKE OFF" or "BICYCLE")
+    end
+  end
+
+  local ctx = world:fieldContext()
+  for _, row in ipairs(FIELD_ACTIONS) do
+    if not (row.move == "STRENGTH" and world.strengthActive) then
+      local mon = FieldMoves.partyMoveUser(ctx.party, row.move, ctx)
+      if mon then
+        ctx.mon = mon
+        local result = FieldMoves.fromMenu(row.move, ctx)
+        if result.ok then add(row.id, row.move) end
+      end
+    end
+  end
+
+  if not FieldMoves.isSurfing(world.playerState)
+      and Permissions.isWater(ctx.facingColl) then
+    local rods = {}
+    for _, id in ipairs({ "OLD_ROD", "GOOD_ROD", "SUPER_ROD" }) do
+      if owned(inventory, id) then
+        rods[#rods + 1] = { id = id, label = itemLabel(game, id) }
+      end
+    end
+    if #rods > 0 then add("fish", "FISH").rods = rods end
+  end
+
+  if owned(inventory, "SQUIRTBOTTLE")
+      and world:squirtbottleTreeScript() then
+    add("squirtbottle", itemLabel(game, "SQUIRTBOTTLE"))
+  end
+  return out
+end
+
+function WorldAPI:useFieldAction(id, opts)
+  local world = self:overworld()
+  if not world then return nil, NO_OVERWORLD end
+  local found
+  for _, action in ipairs(self:availableFieldActions()) do
+    if action.id == id then found = action break end
+  end
+  if not found then return nil, "field action unavailable" end
+
+  if id == "bicycle" then
+    local outcome = world:useFieldItem("BICYCLE")
+    if not outcome or outcome == "nowhere" then
+      return nil, "field action unavailable"
+    end
+    return true
+  elseif id == "fish" then
+    local rod = opts and opts.rod
+    if not rod and #found.rods == 1 then rod = found.rods[1].id end
+    local allowed = false
+    for _, choice in ipairs(found.rods or {}) do
+      if choice.id == rod then allowed = true break end
+    end
+    if not allowed then return nil, "fishing rod unavailable" end
+    local outcome = world:useFieldItem(rod)
+    if not outcome or outcome == "nowhere" then
+      return nil, "field action unavailable"
+    end
+    return true
+  elseif id == "squirtbottle" then
+    local outcome = world:useFieldItem("SQUIRTBOTTLE")
+    if not outcome or outcome == "nowhere" then
+      return nil, "field action unavailable"
+    end
+    return true
+  end
+
+  for _, row in ipairs(FIELD_ACTIONS) do
+    if row.id == id then
+      local ctx = world:fieldContext()
+      local mon = FieldMoves.partyMoveUser(ctx.party, row.move, ctx)
+      local result = mon and world:useFieldMove(row.move, mon)
+      if result and result.ok then return true end
+      return nil, "field action unavailable"
+    end
+  end
+  return nil, "field action unavailable"
 end
 
 -- opts is accepted for signature parity with the Gen 1 arm; Gold's arrival FX

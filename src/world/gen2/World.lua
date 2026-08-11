@@ -5150,6 +5150,7 @@ function World:fieldContext(mon)
     canEscapeRope = self:escapeRopeTarget() ~= nil,
     playerState = self.playerState,
     strengthActive = self.strengthActive,
+    alwaysOnBike = self:alwaysOnBike(),
     -- FlashFunction tests wTimeOfDayPalset, not the map header, so a
     -- PALETTE_DARK map that FLASH has already lit refuses a second FLASH.
     dark = Palettes.isDarkness(map.def, self:hour(), self.flashUsed),
