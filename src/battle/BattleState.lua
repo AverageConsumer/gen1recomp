@@ -157,6 +157,13 @@ function BattleState:caughtMarkerVisible()
                       function() return false end, self) == true
 end
 
+function BattleState:catchChance(ball, rateOverride)
+  if Runtime.wantsHook("catch.rate") then return nil end
+  return Catching.chance(ball, self.enemy.mon, self.enemy.def, rateOverride,
+    { ballDef = self:ballDef(ball), statuses = self.data.statuses,
+      battle = self })
+end
+
 function BattleState:moveGridNavigation()
   if self:wideLayout() then return true end
   if not Runtime.wantsHook("battle.move_grid_navigation") then return false end
