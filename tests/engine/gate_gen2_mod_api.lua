@@ -434,7 +434,8 @@ local GEN2_HOOKS = {
   -- pointer with the touch overlay given first refusal, the palette zone list
   -- handed to the present pass, the letterbox and the HUD rect.
   "input.step", "input.pointer",
-  "render.zones", "render.compose", "render.letterbox", "render.hud",
+  "render.zones", "render.compose", "render.output_enabled", "render.output",
+  "render.letterbox", "render.hud",
 }
 
 local function assertShared(name, sites, kind)
