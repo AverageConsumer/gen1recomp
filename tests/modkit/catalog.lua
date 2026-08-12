@@ -78,8 +78,8 @@ local INDIRECT_HOOKS = {
 function Catalog.hooks()
   if not hooks then
     hookSites = scan({ "src" }, {
-      'Runtime%.call%("([%w%._]+)"',
-      'hooks:call%("([%w%._]+)"',
+      'Runtime%.call%s*%(%s*"([%w%._]+)"',
+      'hooks:call%s*%(%s*"([%w%._]+)"',
     })
     for name, pattern in pairs(INDIRECT_HOOKS) do
       local list = hookSites[name] or {}
