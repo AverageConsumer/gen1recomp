@@ -4,6 +4,7 @@
 
 local BattleCheckpoint = {}
 local BattleState = require("src.battle.BattleState")
+local ScriptRunner = require("src.script.ScriptRunner")
 local BUILTIN_RULESETS = {
   gen1_faithful = require("src.battle.rulesets.gen1_faithful"),
   modern_clean = require("src.battle.rulesets.modern_clean"),
@@ -158,7 +159,9 @@ function BattleCheckpoint.validate(game, checkpoint)
   end
   local expectedOrigin = model.kind == "wild" and "wild_encounter"
     or model.kind == "trainer" and "trainer_encounter" or nil
-  if not expectedOrigin or model.origin.kind ~= expectedOrigin
+  local scripted = model.origin.kind == "script_battle"
+  if not expectedOrigin
+      or (model.origin.kind ~= expectedOrigin and not scripted)
       or model.origin.map ~= checkpoint.runtime.overworld.map then
     return nil, "battle_origin_unsupported",
       "Battle continuation data is unsupported or inconsistent."
@@ -167,7 +170,27 @@ function BattleCheckpoint.validate(game, checkpoint)
       or type(rulesets(game)[model.rulesetId]) ~= "table" then
     return nil, "invalid_content", "Battle ruleset is unavailable."
   end
-  if model.kind == "trainer" and (type(model.origin.npcId) ~= "string"
+  if scripted then
+    local origin = model.origin
+    local row = type(origin.script) == "table" and origin.script[origin.pc]
+    local allowed = { start_battle = true, static_battle = true, rival_battle = true }
+    if type(origin.pc) ~= "number" or origin.pc % 1 ~= 0
+        or type(row) ~= "table" or row[1] ~= origin.command
+        or not allowed[origin.command] or origin.battleKind ~= model.kind
+        or (model.kind == "trainer" and (origin.trainerClass ~= model.oppClass
+          or origin.partyIndex ~= (model.partyIndex or 1)))
+        or (model.kind == "wild" and (origin.wildSpecies ~= model.enemyMon.species
+          or origin.wildLevel ~= model.enemyMon.level))
+        or (origin.npcId ~= nil and type(origin.npcId) ~= "string") then
+      return nil, "battle_origin_unsupported",
+        "Script battle continuation data is incomplete or inconsistent."
+    end
+    local problems = ScriptRunner.validate(origin.script)
+    if #problems > 0 then
+      return nil, "battle_origin_unsupported",
+        "Script battle continuation commands are unavailable."
+    end
+  elseif model.kind == "trainer" and (type(model.origin.npcId) ~= "string"
       or model.origin.trainerClass ~= model.oppClass
       or model.origin.partyIndex ~= (model.partyIndex or 1)) then
     return nil, "battle_origin_unsupported",

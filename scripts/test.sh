@@ -77,6 +77,8 @@ run_tier "T0 NX Yellow/Blue boot (dynamic paths)" "$LUA" tests/engine/nx_yellow_
 run_tier "T0 touch-controls pad cursor" "$LUA" tests/engine/touch_controls_pad_cursor_test.lua
 run_tier "T1/T2 engine invariants + parity gates" "$LUA" tests/run_engine.lua
 run_tier "T4 mod-SDK" "$LUA" tests/run_modkit.lua
+run_tier "T4 title checkpoint cold restart" \
+  bash tests/integration/title_checkpoint_cold_start.sh
 
 # The modded-link desync suite (symmetric mod, handshake fail-closed,
 # extra-bag round trip) is ROM-free and runs inside the T4 tier above, as

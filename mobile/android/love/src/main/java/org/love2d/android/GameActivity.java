@@ -727,6 +727,45 @@ public class GameActivity extends SDLActivity {
      * The body lands in a .part file and is renamed only once complete, so a
      * dropped connection can never leave a half file the caller trusts.
      */
+    /**
+     * TLS client sockets, exposed as love.system.tls* and used by the
+     * Archipelago mod for wss:// rooms. LuaSocket speaks TCP only, so without
+     * these a hosted room -- every one of which is TLS-only -- is unreachable
+     * from the game. The work is in TlsSocket; these are the static entry
+     * points, because the JNI side resolves methods on the activity's own
+     * class (see love/src/common/android.cpp) and cannot see other classes
+     * from a worker thread.
+     */
+    @Keep
+    public static int tlsOpen(String host, int port) {
+        return TlsSocket.open(host, port);
+    }
+
+    @Keep
+    public static int tlsStatus(int handle) {
+        return TlsSocket.status(handle);
+    }
+
+    @Keep
+    public static int tlsSend(int handle, byte[] data) {
+        return TlsSocket.send(handle, data);
+    }
+
+    @Keep
+    public static byte[] tlsReceive(int handle, int max) {
+        return TlsSocket.receive(handle, max);
+    }
+
+    @Keep
+    public static String tlsError(int handle) {
+        return TlsSocket.error(handle);
+    }
+
+    @Keep
+    public static void tlsClose(int handle) {
+        TlsSocket.close(handle);
+    }
+
     @Keep
     public static boolean httpDownload(String url, String destPath, String userAgent, String accept) {
         if (url == null || destPath == null) return false;

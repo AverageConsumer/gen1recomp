@@ -53,6 +53,9 @@ local function handle(cmd)
     if cmd.channelPitches ~= nil then
       ChipSynth.setChannelPitches(cmd.channelPitches)
     end
+    if cmd.stereo ~= nil then
+      ChipSynth.setStereo(cmd.stereo)
+    end
     local ok, eng = pcall(ChipSynth.newEngine, data, cmd.header,
                           { allowLoops = cmd.allowLoops })
     if ok then
@@ -69,6 +72,7 @@ local function handle(cmd)
   elseif cmd.cmd == "channelMix" then
     if cmd.volumes ~= nil then ChipSynth.setChannelVolumes(cmd.volumes) end
     if cmd.pitches ~= nil then ChipSynth.setChannelPitches(cmd.pitches) end
+    if cmd.stereo ~= nil then ChipSynth.setStereo(cmd.stereo) end
   elseif cmd.cmd == "invalidate" then
     ChipSynth.invalidateBanks()
   elseif cmd.cmd == "quit" then

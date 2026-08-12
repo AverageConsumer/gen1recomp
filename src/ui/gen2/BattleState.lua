@@ -43,8 +43,9 @@ local BattleState = {}
 BattleState.__index = BattleState
 BattleState.isOpaque = true
 
--- How long a message stays before the next event runs, in logic steps.  The
--- cart waits for A on most lines; holding A skips faster, same as text boxes.
+-- Armed while a battle line waits for PromptButton (home/text.asm).  Any
+-- positive value means "hold until A/B"; the cart never times these out, so
+-- the victory jingle can keep looping through the post-win prompts.
 local MESSAGE_FRAMES = 48
 
 -- home/hm_moves.asm:17-25 IsHMMove's .HMMoves.
@@ -244,6 +245,7 @@ function BattleState.new(game, opts)
   -- was extracted has no `dudeBack`, and falls back to the player's own.
   self.showPlayerTrainer = true
   self.playerBackImage = nil
+  self.playerBackTrueColor = false
   local hudGfx = data.gen2MenuGfx and data.gen2MenuGfx.battleHud
   local backPath = hudGfx and hudGfx.playerBack
   if self.tutorial and hudGfx and hudGfx.dudeBack then
@@ -251,7 +253,11 @@ function BattleState.new(game, opts)
   end
   -- player.sprite, the same hook and payload Gen 1 raises for its own back pic
   -- (src/pokemon/Sprites.lua): the Dude's stand-in is the `demo` flag there.
-  backPath = Sprites.playerPic(backPath, {
+  -- Both return values matter here -- a mod's trueColor answer has to survive
+  -- to drawPic, or GbcPalette treats the replacement art as a grayscale 2bpp
+  -- sheet and remaps it through a palette instead of leaving it alone.
+  local backTrueColor
+  backPath, backTrueColor = Sprites.playerPic(backPath, {
     side = "back", kind = "battle", demo = self.tutorial and true or false,
     battle = self.battle, data = data,
   })
@@ -262,6 +268,7 @@ function BattleState.new(game, opts)
       -- Kept so battle_sprite_scales can be looked up for this pic too: it is
       -- not a species' pic, so its asset path is the only key it has.
       self.playerBackPath = backPath
+      self.playerBackTrueColor = backTrueColor and true or false
     end
   end
 
@@ -547,7 +554,10 @@ function BattleState:drawPic(mon, back)
   -- Before SendOutPlayerMon the player's box holds ChrisBackpic instead, in
   -- the same 6x6 box at hlcoord 2, 6 that the mon's backpic uses.
   local trainerBack = back and self.showPlayerTrainer and self.playerBackImage
-  if trainerBack then image, path = trainerBack, self.playerBackPath end
+  if trainerBack then
+    image, path = trainerBack, self.playerBackPath
+    trueColor = self.playerBackTrueColor
+  end
   -- And the enemy's box holds the trainer's own frontpic until EnemySwitch
   -- slides it out (InitEnemyTrainer, engine/battle/core.asm:7848).
   local enemyTrainer = (not back) and self.showEnemyTrainer
@@ -564,8 +574,10 @@ function BattleState:drawPic(mon, back)
   local px, py
   local boxTiles
   if back then
-    px = BattleState.PLAYER_PIC_TILE_X * 8
-    py = BattleState.PLAYER_PIC_TILE_Y * 8
+    -- pokegold engine/battle/core.asm:8569: 6x6 box, bottom-aligned/centred
+    local box = BattleState.PLAYER_PIC_TILES * 8
+    px = BattleState.PLAYER_PIC_TILE_X * 8 + math.floor((box - w) / 2)
+    py = BattleState.PLAYER_PIC_TILE_Y * 8 + (box - h)
     boxTiles = BattleState.PLAYER_PIC_TILES
   else
     -- Bottom-aligned and horizontally centred inside the 7x7 box.
@@ -872,8 +884,12 @@ function BattleState:startAnim(key, opts)
   if not self.anims.scripts[key] then return false end
   -- BattleAnimRunScript's own gate: `bit BATTLE_SCENE, [wOptions]` skips the
   -- move animation entirely, which is the OPTION screen's BATTLE SCENE row.
+  -- The check only applies to a real move id (wFXAnimID+1 == 0); non-move
+  -- ids (isMove unset here) branch straight to .not_move and always run.
   local options = self.game and self.game.options
-  if options and options.battleScene == false then return false end
+  if options and options.battleScene == false and opts and opts.isMove then
+    return false
+  end
   opts = opts or {}
   local data = (self.game and self.game.data) or {}
   local audio = data.audio or {}
@@ -930,11 +946,38 @@ function BattleState:startAnim(key, opts)
   return true
 end
 
+-- wBattleAfterAnim target for this attacker's turn
+-- (effect_commands.asm:1963-1972): player swing -> enemy shake, and reverse.
+function BattleState:afterAnimFor(side)
+  if side == "player" then return "ANIM_ENEMY_DAMAGE" end
+  return "ANIM_PLAYER_DAMAGE"
+end
+
 function BattleState:animForMove(moveId, side)
   local key = self.anims and self.anims.moves and self.anims.moves[moveId]
-  return self:startAnim(key, {
+  local started = self:startAnim(key, {
     turn = self:turnFor(side), animId = moveId, isMove = true,
   })
+  if started then
+    -- BattleAnimRunScript (anim_commands.asm:55-72): after the move script
+    -- restores HUDs it immediately runs wBattleAfterAnim (the hit shake).
+    -- Queue it so stepAnim chains without waiting on the next event.
+    self.pendingAfterAnim = { name = self:afterAnimFor(side), side = side }
+  end
+  return started
+end
+
+-- Kick off a queued after-anim; returns true when one is now running.
+function BattleState:startPendingAfterAnim()
+  local pending = self.pendingAfterAnim
+  if not pending then return false end
+  self.pendingAfterAnim = nil
+  if self:animForId(pending.name, pending.side) then
+    -- dealDamage's default ANIM_x_DAMAGE is this same shake; skip it there.
+    self.afterAnimPlayed = true
+    return true
+  end
+  return false
 end
 
 -- True while BattleAnimClearHud has that side's HUD blanked.
@@ -960,10 +1003,16 @@ function BattleState:stepAnim(input)
     -- tilemap is whatever they had got to and nothing is latched -- the
     -- explicit latches (a catch) are the only ones that survive a skip.
     self.anim = nil
+    -- Cart still reaches the after-anim arm after a move script ends; a skip
+    -- of the move should not drop the hit shake that follows it.
+    if self:startPendingAfterAnim() then return end
     return self:endSendOutAnim()
   end
   if not self.anim:step() then
-    self.anim = nil
+    -- pokegold data/moves/animations.asm .Click: anim_keepsprites means
+    -- the OAM outlives the script, so keep the runner for drawing too.
+    if not self.anim.keepSprites then self.anim = nil end
+    if self:startPendingAfterAnim() then return end
     return self:endSendOutAnim()
   end
 end
@@ -1094,7 +1143,14 @@ function BattleState:advanceQueue()
     -- until the next damage or heal event moved it.
     local battle = self.battle
     local mon = battle and battle.party and battle.party[event.index]
+    -- pokegold engine/battle/core.asm:7057-7069: every mon that leveled
+    -- gets the stats box, not just the mon currently on the field.
+    self.pendingStatsMon = mon
+    -- BattleText_StringBuffer1GrewToLevel ends in text_end (battle.asm:336-343),
+    -- and the active mon never even prints it (core.asm:7044-7056 jumps to the
+    -- stats box).  Either way there is no PromptButton before the stats box.
     if mon and mon == battle.player then
+      event.text = nil
       if self.shownHp then
         self.shownHp.player = mon.hp or 0
         if self.hpAnim and self.hpAnim.side == "player" then
@@ -1248,7 +1304,19 @@ function BattleState:advanceQueue()
   end
   if event.text then
     self.message = event.text
-    self.messageTimer = MESSAGE_FRAMES
+    -- Lines that must not hold the queue for A/B:
+    --   move   UsedMoveText -> text_end, then moveanim
+    --   level  GrewToLevel is text_end (battle.asm:336-343), then the stats
+    --          box's WaitPressAorB is the real hold
+    -- experience keeps the wait: _ExpPointsText ends in `prompt`
+    -- (common_1.asm:1660-1665).  update() runs stepExpAnim before that wait,
+    -- so the bar crawls under the line and A dismisses it before the battle
+    -- can end.
+    if event.kind == "move" or event.kind == "level" then
+      self.messageTimer = 0
+    else
+      self.messageTimer = MESSAGE_FRAMES
+    end
     -- BattleStartMessage's own line: the enemy HUD comes up on the step after
     -- it returns (engine/battle/core.asm:7808-7817), not with it.
     if event.intro then self.introTextShown = true end
@@ -1268,14 +1336,25 @@ function BattleState:advanceQueue()
     end
   end
   -- The move's own animation plays over its "used X!" line, which is where
-  -- PlayBattleAnim sits in the effect command list.  A damage event that
-  -- follows gets the shared hit animation instead.
+  -- PlayBattleAnim sits in the effect command list.  Its after-anim (the hit
+  -- shake) is chained by animForMove / stepAnim, matching BattleAnimRunScript.
   -- BattleCommand_MoveAnimNoSub (engine/battle/effect_commands.asm:1958) opens
   -- with `ld a, [wAttackMissed] / and a / jp nz, BattleCommand_MoveDelay`: a
   -- move that missed burns the delay and plays nothing.  Battle:markMissed sets
   -- event.missed on every wAttackMissed path.
   if event.kind == "move" and not event.missed then
-    self:animForMove(event.move, event.side)
+    self.afterAnimPlayed = nil
+    self.pendingAfterAnim = nil
+    if not self:animForMove(event.move, event.side) then
+      -- BATTLE SCENE off skips the move script but still runs wBattleAfterAnim
+      -- (anim_commands.asm:55-72 .disabled fallthrough).
+      local options = self.game and self.game.options
+      if options and options.battleScene == false then
+        if self:animForId(self:afterAnimFor(event.side), event.side) then
+          self.afterAnimPlayed = true
+        end
+      end
+    end
   elseif event.kind == "damage" and event.side then
     -- ANIM_x_DAMAGE is the MOVE's after-anim (effect_commands.asm:1963-1972),
     -- so only a move hit gets it; `animMove` is HandleWrap's (core.asm:1198-1203).
@@ -1284,10 +1363,25 @@ function BattleState:advanceQueue()
     if event.animMove then
       self:animForMove(event.animMove, from)
     elseif event.anim ~= false then
-      self:animForId(event.anim
+      local hit = event.anim
         or (event.side == "enemy" and "ANIM_ENEMY_DAMAGE"
-          or "ANIM_PLAYER_DAMAGE"), from)
+          or "ANIM_PLAYER_DAMAGE")
+      -- Already played as the move's after-anim; do not shake twice.
+      if self.afterAnimPlayed
+          and (hit == "ANIM_ENEMY_DAMAGE" or hit == "ANIM_PLAYER_DAMAGE") then
+        self.afterAnimPlayed = nil
+      else
+        self:animForId(hit, from)
+      end
     end
+  else
+    -- Status moves still chain the after-anim but emit no damage event to
+    -- consume the latch; drop it before the next unrelated line.
+    self.afterAnimPlayed = nil
+  end
+  if event.kind == "heal" and event.anim and event.side then
+    -- pokegold engine/battle/core.asm:4074 ItemRecoveryAnim
+    self:animForMove(event.anim, event.side)
   elseif event.kind == "send" and event.side then
     -- Every enemy send-out goes through ShowSetEnemyMonAndSendOutAnimation
     -- (engine/battle/core.asm:3354) -- the faint replacement out of
@@ -1584,7 +1678,9 @@ function BattleState:update(_dt)
 
   -- An animation owns the screen for as long as it runs, exactly the way
   -- RunBattleAnimScript owns the main loop.
-  if self.anim then
+  -- pokegold data/moves/animations.asm .Click: a finished keepsprites run
+  -- no longer owns the loop, just the OAM the draw path still reads.
+  if self.anim and not (self.anim:done() and self.anim.keepSprites) then
     self:stepAnim(input)
     return
   end
@@ -1602,29 +1698,42 @@ function BattleState:update(_dt)
       if Sound.isPlaying(self.waitSfx) then return end
       self.waitSfx = nil
     end
+    -- AnimateExpBar sits right after PrintText Text_MonGainedExpPoint
+    -- (core.asm:6881-6888), with that line still on screen.  Run the crawl
+    -- before any PromptButton wait so the bar does not sit frozen until A.
+    if self:stepExpAnim() then return end
     if self.messageTimer > 0 then
       if self.tutorial then
-        -- PromptButton really does wait for the button; MESSAGE_FRAMES is this
-        -- screen's shortcut for that, and the tutorial cannot take it.  The
-        -- DUDE's A lands on frame 0x51 (DudeAutoInput_A), so a line that timed
-        -- out at 48 would hand his press to whichever screen came next.
+        -- PromptButton waits for the button; the tutorial cannot press it, so
+        -- DudeAutoInput_A (frame 0x51) answers.  Never auto-timeout here: a
+        -- 48-frame skip would hand his press to the next screen.
         self:dudeInput(CatchTutorial.PROMPT_STREAM,
           "prompt:" .. tostring(self.message))
-      else
-        self.messageTimer = self.messageTimer - 1
       end
-      -- A is the page-advance, exactly like a text box.
+      -- PromptButton (home/text.asm): A/B pages; no frame countdown.
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
       return
     end
-    -- AnimateExpBar is called from GiveExperiencePoints AFTER
-    -- Text_MonGainedExpPoint has been read (engine/battle/core.asm:6884-6888),
-    -- so the crawl runs with that line still standing and the "grew to level"
-    -- line waits behind it.
-    if self:stepExpAnim() then return end
+    -- pokegold engine/battle/core.asm:7057-7069: the stats box shows once
+    -- the "grew to level" line has finished, held for A/B.
+    if self.pendingStatsMon then
+      self.statsBoxMon = self.pendingStatsMon
+      self.pendingStatsMon = nil
+      self.phase = "stats-box"
+      return
+    end
     self:advanceQueue()
+    return
+  end
+
+  -- pokegold engine/battle/core.asm:7069 (WaitPressAorB_BlinkCursor).
+  if self.phase == "stats-box" then
+    if input:wasPressed("a") or input:wasPressed("b") then
+      self.statsBoxMon = nil
+      self.phase = "resolving"
+    end
     return
   end
 
@@ -1644,6 +1753,8 @@ function BattleState:update(_dt)
 
   if self.phase == "menu" then
     -- 2x2 grid: left/right swap the column, up/down the row.
+    -- MenuClickSound / PlayClickSFX (home/menu.asm:746-762): SFX_READ_TEXT_2
+    -- on A/B only, never on D-pad.
     if input:wasPressed("left") or input:wasPressed("right") then
       self.menuIndex = self.menuIndex % 2 == 1 and self.menuIndex + 1
         or self.menuIndex - 1
@@ -1651,6 +1762,7 @@ function BattleState:update(_dt)
       self.menuIndex = self.menuIndex <= 2 and self.menuIndex + 2
         or self.menuIndex - 2
     elseif input:wasPressed("a") then
+      self:playSfx("Sfx_ReadText2")
       local choice = MENU[self.menuIndex]
       if choice == "FIGHT" then
         -- `call .CheckPlayerHasUsableMoves / ret z` (engine/battle/core.asm
@@ -1701,11 +1813,13 @@ function BattleState:update(_dt)
       end
     elseif input:wasPressed("b") then
       -- B leaves the list, and a mark never survives it
+      self:playSfx("Sfx_ReadText2")
       self.moveSwapIndex = nil
       self.phase = "menu"
     elseif input:wasPressed("a") then
       -- `xor a / ld [wSwappingMove], a` opens the A arm: choosing a move
       -- cancels a pending swap rather than performing it
+      self:playSfx("Sfx_ReadText2")
       self.moveSwapIndex = nil
       local move = moves[self.moveIndex]
       if not move then return end
@@ -1724,7 +1838,6 @@ function BattleState:update(_dt)
     -- AskGiveNicknameText ends on `done`, so the line stands while the box is
     -- up rather than paging away from under it.
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -1745,7 +1858,6 @@ function BattleState:update(_dt)
   -- straight through to the enemy's send-out (engine/battle/core.asm:3305-3310).
   if self.phase == "ask-shift" then
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -1766,7 +1878,6 @@ function BattleState:update(_dt)
 
   if self.phase == "refuse-shift" then
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -1788,7 +1899,6 @@ function BattleState:update(_dt)
   -- what ForcePickPartyMonInBattle's `jr c, .loop` does with the carry.
   if self.phase == "refuse-switch" then
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -1807,7 +1917,6 @@ function BattleState:update(_dt)
 
   if self.phase == "refuse-move" then
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -1820,7 +1929,6 @@ function BattleState:update(_dt)
 
   if self.phase == "learn-intro" then
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -1834,7 +1942,6 @@ function BattleState:update(_dt)
 
   if self.phase == "ask-forget" or self.phase == "stop-learning" then
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -1855,7 +1962,6 @@ function BattleState:update(_dt)
     -- MoveCantForgetHMText holds like any prompt, then `jr .loop` reprints
     -- MoveAskForgetText over the list (engine/pokemon/learn.asm:193-197).
     if self.messageTimer > 0 then
-      self.messageTimer = self.messageTimer - 1
       if input:wasPressed("a") or input:wasPressed("b") then
         self.messageTimer = 0
       end
@@ -3080,7 +3186,29 @@ function BattleState:drawPanel()
       Chrome.cursor(left + 1, index == 1 and 8 or 10)
     end
   end
+  if self.phase == "stats-box" and self.statsBoxMon then
+    self:drawStatsBox(self.statsBoxMon)
+  end
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- pokegold engine/pokemon/mon_stats.asm:118-124 (PrintTempMonStats.StatNames).
+local STATS_BOX_ROWS = {
+  { "ATTACK", "attack" }, { "DEFENSE", "defense" },
+  { "SPCL.ATK", "specialAttack" }, { "SPCL.DEF", "specialDefense" },
+  { "SPEED", "speed" },
+}
+
+-- pokegold engine/battle/core.asm:7060-7066 (box at hlcoord 9,0, stats at 11,y).
+function BattleState:drawStatsBox(mon)
+  local stats = mon and mon.stats
+  if not stats then return end
+  Chrome.textbox(9, 0, 9, 10)
+  for i, row in ipairs(STATS_BOX_ROWS) do
+    local ty = 1 + (i - 1) * 2
+    Chrome.print(Strings(row[1]), 11, ty)
+    Chrome.printRight(("%d"):format(stats[row[2]] or 0), 19, ty + 1)
+  end
 end
 
 -- The BG layer, plus whatever the animation is doing to it, plus the OBJ

@@ -100,7 +100,8 @@ local function oldMan2Talk(game, ow, npc, done)
     game.stack:push(TextBox.new(game, text(game).losingMyTouch, done))
     return
   end
-  ow.runner:run(oldMan2Rows(game, ow, npc), { npc = npc, onDone = done })
+  ow.runner:run(oldMan2Rows(game, ow, npc), { npc = npc, onDone = done,
+    checkpointOnDone = "release_npc" })
 end
 
 M.VIRIDIAN_CITY = {

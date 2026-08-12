@@ -241,7 +241,10 @@ function RomExtractorGen2:writeCompressedPic(label, tiles, relative)
   while #pixels < byteLength do pixels[#pixels + 1] = 0 end
   while #pixels > byteLength do table.remove(pixels) end
   pixels = ImageWriter.columnsToRows(pixels, tiles, tiles)
-  self:write2bpp(pixels, size, size, relative)
+  -- pokegold engine/battle/core.asm GetTrainerBackpic: no hardware masking,
+  -- so matte the white backdrop like Gen 1's writeCompressedPic does.
+  self:save(ImageWriter.matteColor0(
+    ImageWriter.decode2bpp(pixels, size, size)), relative)
 end
 
 function RomExtractorGen2:extractConstants()

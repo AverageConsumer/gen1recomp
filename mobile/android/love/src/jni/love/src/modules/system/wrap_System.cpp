@@ -145,6 +145,79 @@ int w_hasBackgroundMusic(lua_State *L)
 	return 1;
 }
 
+/*
+ * TLS sockets. Deliberately a handle-and-poll API rather than an object:
+ * the caller is a per-frame pump that must never block, and everything with
+ * a thread behind it lives on the Java side.
+ */
+int w_tlsOpen(lua_State *L)
+{
+	const char *host = luaL_checkstring(L, 1);
+	int port = (int) luaL_checknumber(L, 2);
+	lua_pushnumber(L, instance()->tlsOpen(host, port));
+	return 1;
+}
+
+int w_tlsStatus(lua_State *L)
+{
+	int handle = (int) luaL_checknumber(L, 1);
+	lua_pushnumber(L, instance()->tlsStatus(handle));
+	return 1;
+}
+
+int w_tlsSend(lua_State *L)
+{
+	int handle = (int) luaL_checknumber(L, 1);
+	size_t length = 0;
+	const char *data = luaL_checklstring(L, 2, &length);
+	lua_pushnumber(L, instance()->tlsSend(handle, data, (int) length));
+	return 1;
+}
+
+int w_tlsReceive(lua_State *L)
+{
+	int handle = (int) luaL_checknumber(L, 1);
+	int max = (int) luaL_optnumber(L, 2, 8192);
+	if (max <= 0)
+	{
+		lua_pushliteral(L, "");
+		return 1;
+	}
+	// A frame's worth of a busy room, on the C stack rather than the heap:
+	// this runs every frame and an allocation per poll is not worth it.
+	if (max > 65536)
+		max = 65536;
+	char buf[65536];
+	int got = instance()->tlsReceive(handle, buf, max);
+	if (got < 0)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_pushlstring(L, buf, (size_t) got);
+	return 1;
+}
+
+int w_tlsError(lua_State *L)
+{
+	int handle = (int) luaL_checknumber(L, 1);
+	char buf[512];
+	if (!instance()->tlsError(handle, buf, (int) sizeof(buf)))
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_pushstring(L, buf);
+	return 1;
+}
+
+int w_tlsClose(lua_State *L)
+{
+	int handle = (int) luaL_checknumber(L, 1);
+	instance()->tlsClose(handle);
+	return 0;
+}
+
 static const luaL_Reg functions[] =
 {
 	{ "getOS", w_getOS },
@@ -160,6 +233,12 @@ static const luaL_Reg functions[] =
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
 	{ "httpDownload", w_httpDownload },
+	{ "tlsOpen", w_tlsOpen },
+	{ "tlsStatus", w_tlsStatus },
+	{ "tlsSend", w_tlsSend },
+	{ "tlsReceive", w_tlsReceive },
+	{ "tlsError", w_tlsError },
+	{ "tlsClose", w_tlsClose },
 	{ "hasBackgroundMusic", w_hasBackgroundMusic },
 	{ 0, 0 }
 };

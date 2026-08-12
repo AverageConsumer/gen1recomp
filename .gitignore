@@ -68,3 +68,10 @@ mobile/ios/bundle_id.local
 /ports/uwp/build/
 /ports/uwp/third_party/*/source/
 /ports/uwp/third_party/angle/depot_tools/
+
+# Native TLS dialer build output (dotnet publish)
+/native/tls_dial/bin/
+/native/tls_dial/obj/
+/dist/native/
+/dist/win/
+/.bazinga/

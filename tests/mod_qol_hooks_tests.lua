@@ -193,6 +193,26 @@ do
     "battle status HUD returns when the hook is removed")
 end
 
+-- ------- battle.caught_marker_visible (caught wild marker)
+
+do
+  local BattleState = require("src.battle.BattleState")
+  local state = { kind = "wild", enemy = { mon = { species = "RATTATA" } },
+    game = { save = { pokedex = { owned = { RATTATA = true } } } } }
+  check(not BattleState.caughtMarkerVisible(state),
+    "caught marker is opt-in")
+  local unsub = wrap("battle.caught_marker_visible", function() return true end)
+  check(BattleState.caughtMarkerVisible(state),
+    "a mod can show a caught wild marker")
+  state.kind = "trainer"
+  check(not BattleState.caughtMarkerVisible(state),
+    "trainer battles never show a caught marker")
+  state.kind, state.game.save.pokedex.owned.RATTATA = "wild", false
+  check(not BattleState.caughtMarkerVisible(state),
+    "uncaught wild Pokemon have no marker")
+  unsub()
+end
+
 -- ------- grid navigation ownership (alternate menu renderers)
 
 do

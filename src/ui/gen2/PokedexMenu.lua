@@ -188,6 +188,22 @@ function PokedexMenu.new(game, opts)
     self.dexPalette = gfx.palette
   end
 
+  -- pokegold engine/pokegear/pokegear.asm Pokedex_GetArea: the AREA page
+  -- draws through the Pokegear's own town-map tiles and TownMapPals, not the
+  -- dex's PokedexLZ sheet.
+  local mapGfx = (opts.menuGfx or data.gen2MenuGfx or {}).pokegear
+  self.mapGfx = mapGfx
+  if mapGfx then
+    self.mapSheet = TileSheet.new({
+      path = mapGfx.tiles, wide = mapGfx.tilesWide or 16, firstTile = 0,
+      paletteFor = function(tile)
+        if not mapGfx.palettes then return nil end
+        if tile >= 0x60 then return mapGfx.palettes[1] end
+        return mapGfx.palettes[(mapGfx.palMap and mapGfx.palMap[tile + 1]) or 1]
+      end,
+    })
+  end
+
   -- Pokedex_LoadUnownFont: 27 tiles at vTiles2 tile FIRST_UNOWN_CHAR, live
   -- only while UNOWN MODE is on screen.  It is a sheet rather than a font
   -- page (see PokedexMenu:unownGlyph), and it draws through the dex palette
@@ -793,7 +809,7 @@ end
 function PokedexMenu:playerLandmark()
   local save = self.game and self.game.save
   local mapId = save and save.position and save.position.map
-  local def = mapId and self.data and self.data.maps and self.data.maps[mapId]
+  local def = mapId and self.data and self.data.gen2Maps and self.data.gen2Maps[mapId]
   return def and def.landmark
 end
 
@@ -803,11 +819,13 @@ end
 -- substitutes them), and borrowing Pokegear's would freeze the map's ink.
 function PokedexMenu:drawTilemap(cells)
   if type(cells) ~= "table" then return end
+  local sheet = self.mapSheet
+  if not sheet then return end
   local i = 1
   for ty = 0, Chrome.SCREEN_H - 1 do
     for tx = 0, Chrome.SCREEN_W - 1 do
       local id = cells[i]
-      if id then self:tile(id, tx, ty) end
+      if id then sheet:draw(id, tx, ty) end
       i = i + 1
     end
   end
@@ -837,7 +855,7 @@ function PokedexMenu:drawArea()
   -- uses. Without it (a cache imported before the town map was extracted) the
   -- page still lists the landmark NAMES, which is the information the screen
   -- exists to convey.
-  local maps = self.gfx and self.gfx.maps
+  local maps = self.mapGfx and self.mapGfx.maps
   local cells = maps and maps[region]
   if cells then
     self:drawTilemap(cells)

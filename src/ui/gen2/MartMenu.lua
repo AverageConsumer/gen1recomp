@@ -896,7 +896,7 @@ local function printPriceOpaque(amount, ty)
 end
 
 function MartMenu:drawBuyList()
-  Chrome.box(LIST_BOX_X, LIST_BOX_Y, LIST_BOX_W, LIST_BOX_H)
+  -- pokegold engine/menus/scrolling_menu.asm _InitScrollingMenu: no border for the buy list
   for row = 1, VISIBLE_ROWS do
     local i = row + self.scroll
     local ty = LIST_Y + (row - 1) * LIST_SPACING

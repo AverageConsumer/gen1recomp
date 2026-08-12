@@ -649,7 +649,9 @@ for name, registry in pairs(loader.content) do
         end
       end
       if patcher and not defined then
-        row("ORPHAN", name, id, patcher)
+        local gen2Routed = Schemas.targetFor(name, registry.spec, 2)
+          ~= registry.spec.target
+        row("ORPHAN", name, id, patcher, tostring(gen2Routed))
       end
     end
   end
@@ -696,6 +698,77 @@ def classify_error(message, fallback="MK100"):
     return fallback
 
 
+def _generated_data_dir_ok(path):
+    # 'true' when path looks like rom-derived generated data
+    # pokemon.lua preserves the existing imported-dataset probe;
+    # data:load is authority for the rest, including optional namespaces e.g. audio
+    return bool(path) and os.path.isfile(os.path.join(path, "pokemon.lua"))
+
+
+def _love_user_data_root():
+    # get desktop save root
+    identity = os.environ.get("POKEPORT_IDENTITY") or "pokemon-love2d"
+
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        return os.path.join(appdata, "LOVE", identity) if appdata else None
+
+    if sys.platform == "darwin":
+        return os.path.join(
+            os.path.expanduser("~"),
+            "Library", "Application Support", "LOVE", identity)
+
+    if sys.platform.startswith(("linux", "freebsd")):
+        data_home = os.environ.get("XDG_DATA_HOME")
+        if not data_home:
+            data_home = os.path.join(os.path.expanduser("~"), ".local", "share")
+        return os.path.join(data_home, "love", identity)
+
+    return None
+
+
+def imported_data_dir(repo):
+    # locate datasets that would be used at runtime
+    # priority:
+    # 1 explicit POKEPORT_DATA_DIR
+    # 2 versioned portable/source-adjacent cache
+    # 3 versioned LOVE user cache
+    # 4 historical source-tree/generated dev dataset
+    # POKEPORT_VERSION defaults to red
+    explicit = os.environ.get("POKEPORT_DATA_DIR")
+    if explicit:
+        path = os.path.abspath(os.path.expanduser(explicit))
+        return path if _generated_data_dir_ok(path) else None
+
+    version = (os.environ.get("POKEPORT_VERSION") or "red").lower()
+    if version not in ("red", "blue", "yellow"):
+        version = "red"
+
+    candidates = [
+        os.path.join(repo, version, "data", "generated"),
+    ]
+
+    user_root = _love_user_data_root()
+    if user_root:
+        candidates.append(os.path.join(
+            user_root, version, "data", "generated"))
+
+    # preserve old source-tree developer data as final fallback
+    # we prefer the real versioned cache first
+    # because a checkout may have a partially generated dataset
+    candidates.append(os.path.join(repo, "data", "generated"))
+
+    seen = set()
+    for path in candidates:
+        path = os.path.abspath(path)
+        if path in seen:
+            continue
+        seen.add(path)
+        if _generated_data_dir_ok(path):
+            return path
+    return None
+
+
 FIXTURE_BASE = 'require("tests.fixture_data").load()'
 IMPORTED_BASE = ('(function() local D = require("src.core.Data") '
                  'D:load() return D end)()')
@@ -708,11 +781,11 @@ def resolve_base(repo, choice):
     is skipped instead of reported."""
     if choice != "auto":
         return choice
-    imported = os.path.join(repo, "data", "generated", "pokemon.lua")
-    return "imported" if os.path.isfile(imported) else "fixture"
+    return "imported" if imported_data_dir(repo) else "fixture"
 
 
-def run_loader(repo, mod_dir, findings, base="fixture", notes=None):
+def run_loader(repo, mod_dir, findings, base="fixture", notes=None,
+               manifest=None):
     """Drive the engine loader headlessly with the mod mounted; the base
     dataset is the ROM-free fixture, or the imported cache with
     --base imported (for mods that reference vanilla Red content).
@@ -775,8 +848,9 @@ def run_loader(repo, mod_dir, findings, base="fixture", notes=None):
             if "unknown permission" in parts[1]:
                 continue
             add(Finding(classify_error(parts[1], "MK001"), "error", parts[1]))
-        elif kind == "ORPHAN" and len(parts) >= 4:
+        elif kind == "ORPHAN" and len(parts) >= 5:
             registry, target, owner = parts[1], parts[2], parts[3]
+            gen2_routed = parts[4] == "true"
             # only the imported dataset owns the real vanilla id space.  The
             # fixture stands in for three species, so "not in base data" there
             # is a fact about the fixture, not about the mod -- MK103 has no
@@ -784,6 +858,11 @@ def run_loader(repo, mod_dir, findings, base="fixture", notes=None):
             # warning instead would still refuse the package, because pack and
             # --strict promote every warning to fatal.
             if base != "imported":
+                skipped.add("MK103")
+                continue
+            if gen2_routed and declares_gen2(repo, manifest):
+                # tools/build_data.py never writes a Gen 2 cache, so the
+                # imported dataset has no Gold/Crystal ground truth either.
                 skipped.add("MK103")
                 continue
             add(Finding(
@@ -834,7 +913,7 @@ def cmd_validate(args, repo):
         findings.extend(gh_findings)
         notes.extend(gh_notes)
         findings.extend(check_permissions(repo, manifest))
-        run_loader(repo, mod_dir, findings, args.base, notes)
+        run_loader(repo, mod_dir, findings, args.base, notes, manifest)
         findings.extend(check_requires(repo, mod_dir, manifest))
         findings.extend(lint_dir(repo, mod_dir, manifest))
     name = manifest.get("id") if manifest else os.path.basename(mod_dir)
@@ -1130,7 +1209,7 @@ def cmd_pack(args, repo):
         return 1
     findings = list(check_permissions(repo, manifest))
     notes = []
-    run_loader(repo, mod_dir, findings, args.base, notes)
+    run_loader(repo, mod_dir, findings, args.base, notes, manifest)
     findings.extend(check_requires(repo, mod_dir, manifest))
     findings.extend(lint_dir(repo, mod_dir, manifest))
     # pack runs validate --strict (20-developer-tooling.md 5), so a warning
@@ -3553,6 +3632,17 @@ def main(argv):
               "(looked for tools/rom_manifest.json)")
         return 2
     repo = os.path.abspath(repo)
+
+    # Normal game boot mounts the selected version's private ROM cache before
+    # Data:load(). modkit runs outside LÖVE, so reproduce that dataset
+    # selection through Data.lua's existing POKEPORT_DATA_DIR override.
+    #
+    # Setting it once here means validate, pack, and translation all inherit
+    # the same imported dataset in their LuaJIT child processes.
+    if hasattr(args, "base") and resolve_base(repo, args.base) == "imported":
+        data_dir = imported_data_dir(repo)
+        if data_dir:
+            os.environ["POKEPORT_DATA_DIR"] = data_dir
 
     handler = {
         "scaffold": cmd_scaffold,

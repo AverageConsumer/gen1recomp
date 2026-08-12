@@ -74,7 +74,10 @@ function ChoiceBox:draw()
   if r and r.setUIAnchor then
     r:setUIAnchor(tx * 8, ty * 8, tw * 8, th * 8, self.anchor)
   end
-  Font.drawBox(tx, ty, tw, th)
+  -- pokegold home/menu.asm YesNoBox: font-page tiles take the screen's own
+  -- BG palette 0 colour 0, same as TextBox.lua's paper fold.
+  local paper = self.game and self.game.textboxPaper and self.game:textboxPaper()
+  Font.drawBox(tx, ty, tw, th, paper)
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(Strings("YES"), (tx + 2) * 8, (ty + 1) * 8)
   Font.draw(Strings("NO"), (tx + 2) * 8, (ty + 3) * 8)

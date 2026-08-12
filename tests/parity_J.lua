@@ -452,4 +452,50 @@ do
         "the caught Weedle is NOT added to the dex")
 end
 
+-- (5b) Yellow's SimulatedInputBattleItemList (core.asm:2316-2319) drops
+-- the same canned bag to a single POKé BALL, x1 -- pokered's
+-- OldManItemList (core.asm:2212-2214, checked above) stays x50.  Only
+-- the item count changes; the scripted no-input menu flow is identical
+-- and already covered above, so this jumps straight to the bag.
+do
+  local GameVersion = require("src.core.GameVersion")
+  local oldVersion = GameVersion.get()
+  GameVersion.set("yellow")
+  local ok, err = pcall(function()
+    local pressed = {}
+    local stack = { states = {} }
+    function stack:push(s) table.insert(self.states, s) end
+    function stack:pop() return table.remove(self.states) end
+    function stack:top() return self.states[#self.states] end
+    local fg = {
+      data = Data,
+      save = require("src.core.SaveData").newGame(),
+      input = { wasPressed = function(_, k) return pressed[k] or false end,
+                isDown = function(_, k) return pressed[k] or false end },
+      stack = stack,
+    }
+    fg.save.party = { Pokemon.new(Data, "BULBASAUR", 20) }
+    local demo = BattleState.newWild(fg, "PIKACHU", 5)
+    demo:makeOldManDemo("PROF.OAK")
+    stack:push(demo)
+    demo:enter()
+    for _ = 1, 300 do
+      if demo.phase == "menu" then break end
+      pressed.a = true
+      demo:update(1 / 60)
+    end
+    pressed.a = false
+    eq(demo.phase, "menu", "Yellow: the demo reaches the battle menu")
+    for _ = 1, 200 do
+      if stack:top() ~= demo then break end
+      demo:update(1 / 60)
+    end
+    local bag = stack:top()
+    eq(bag.items and bag.items[1] and bag.items[1].right, "x1",
+       "Yellow's old-man-style bag lists x1 (SimulatedInputBattleItemList)")
+  end)
+  GameVersion.set(oldVersion)
+  if not ok then error(err, 0) end
+end
+
 S.finish()

@@ -13,6 +13,7 @@
 local Commands = require("src.script.Commands")
 local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
+local SaveSerializer = require("src.core.SaveSerializer")
 local Strings = require("src.core.Strings")
 
 local unpack = table.unpack or unpack -- LuaJIT (LÖVE) compatibility
@@ -116,7 +117,7 @@ function ScriptRunner:makeContext(extra)
   return ctx
 end
 
-function ScriptRunner:run(script, extra)
+function ScriptRunner:run(script, extra, startPc)
   assert(not self:isRunning(), "script already running")
   local ctx = self:makeContext(extra)
   self.ctx = ctx
@@ -124,7 +125,7 @@ function ScriptRunner:run(script, extra)
     Runtime.emit("script.started", { ctx = ctx })
   end
   self.co = coroutine.create(function()
-    self:exec(script, ctx)
+    self:exec(script, ctx, startPc)
     -- Commands can defer a game action until the script's own dialogue is
     -- done. start_battle uses this for win-path evolutions, which must not
     -- be covered by post-battle trainer text.
@@ -140,11 +141,13 @@ end
 -- Execute a command list.  Supports labels via jump commands: a script is
 -- an array of rows; control commands return a new program counter, as a
 -- row number or a label name.
-function ScriptRunner:exec(script, ctx)
+function ScriptRunner:exec(script, ctx, startPc)
   local labels = ScriptRunner.scanLabels(script)
   local data = self.game and self.game.data
-  local pc = 1
+  local pc = startPc or 1
+  self.script = script
   while pc <= #script do
+    self.pc = pc
     local row = script[pc]
     local name = row[1]
     local fn, meta = Commands.resolve(data, name)
@@ -187,6 +190,60 @@ function ScriptRunner:exec(script, ctx)
       end
     end
   end
+end
+
+local CHECKPOINT_BATTLE_COMMANDS = {
+  start_battle = true,
+  static_battle = true,
+  rival_battle = true,
+}
+
+local function dataCopy(value)
+  local ok, encoded = pcall(SaveSerializer.encode, value)
+  if not ok then return nil end
+  return SaveSerializer.decode(encoded)
+end
+
+-- Return a detached semantic continuation only for built-in battle commands
+-- whose post-yield behavior can be replayed from the current row. The live
+-- coroutine and arbitrary completion callbacks never cross this boundary.
+function ScriptRunner:battleCheckpointOrigin(battle)
+  local row = self.script and self.script[self.pc]
+  if not self:isRunning() or type(row) ~= "table"
+      or not CHECKPOINT_BATTLE_COMMANDS[row[1]] then
+    return nil
+  end
+  local ctx = self.ctx or {}
+  if ctx.onDone ~= nil and ctx.checkpointOnDone ~= "release_npc" then
+    return nil
+  end
+  local npcId = ctx.npc and ctx.npc.id or nil
+  if ctx.checkpointOnDone == "release_npc" and type(npcId) ~= "string" then
+    return nil
+  end
+  local map = self.overworld and self.overworld.map and self.overworld.map.id
+  if type(map) ~= "string" then return nil end
+  local origin = {
+    kind = "script_battle",
+    map = map,
+    script = self.script,
+    pc = self.pc,
+    command = row[1],
+    npcId = npcId,
+    source = ctx.source,
+    battleKind = battle and battle.kind,
+    trainerClass = battle and battle.oppClass or nil,
+    partyIndex = battle and battle.partyIndex or nil,
+    wildSpecies = battle and battle.enemy and battle.enemy.mon
+      and battle.enemy.mon.species or nil,
+    wildLevel = battle and battle.enemy and battle.enemy.mon
+      and battle.enemy.mon.level or nil,
+  }
+  return dataCopy(origin)
+end
+
+function ScriptRunner:isCheckpointBattle(battle)
+  return self.checkpointBattle == battle and self:isRunning()
 end
 
 -- Called by blocking commands from inside the coroutine.

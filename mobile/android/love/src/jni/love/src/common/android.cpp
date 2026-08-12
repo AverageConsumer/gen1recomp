@@ -23,6 +23,7 @@
 #ifdef LOVE_ANDROID
 
 #include <cerrno>
+#include <cstring>
 #include <unordered_map>
 
 #include <SDL.h>
@@ -332,6 +333,182 @@ bool is24HourClock()
 	jboolean result = env->CallStaticBooleanMethod(activity, method);
 	env->DeleteLocalRef(activity);
 	return result;
+}
+
+/*
+ * TLS sockets. Same resolution rule as httpDownload above -- the activity's
+ * own class, never FindClass -- and the same tolerance for an old APK: a
+ * missing method answers like a platform without TLS instead of aborting.
+ */
+static jclass tlsActivityClass(JNIEnv *env)
+{
+	jobject activityObj = (jobject) SDL_AndroidGetActivity();
+	if (activityObj == nullptr)
+		return nullptr;
+	jclass activity = env->GetObjectClass(activityObj);
+	env->DeleteLocalRef(activityObj);
+	return activity;
+}
+
+int tlsOpen(const char *host, int port)
+{
+	if (host == nullptr)
+		return -1;
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = tlsActivityClass(env);
+	if (activity == nullptr)
+		return -1;
+
+	jmethodID method = env->GetStaticMethodID(activity, "tlsOpen", "(Ljava/lang/String;I)I");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return -1;
+	}
+
+	jstring jhost = env->NewStringUTF(host);
+	jint result = env->CallStaticIntMethod(activity, method, jhost, (jint) port);
+	env->DeleteLocalRef(jhost);
+	env->DeleteLocalRef(activity);
+	return (int) result;
+}
+
+int tlsStatus(int handle)
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = tlsActivityClass(env);
+	if (activity == nullptr)
+		return -1;
+
+	jmethodID method = env->GetStaticMethodID(activity, "tlsStatus", "(I)I");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return -1;
+	}
+
+	jint result = env->CallStaticIntMethod(activity, method, (jint) handle);
+	env->DeleteLocalRef(activity);
+	return (int) result;
+}
+
+int tlsSend(int handle, const char *data, int length)
+{
+	if (data == nullptr || length <= 0)
+		return 0;
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = tlsActivityClass(env);
+	if (activity == nullptr)
+		return -1;
+
+	jmethodID method = env->GetStaticMethodID(activity, "tlsSend", "(I[B)I");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return -1;
+	}
+
+	jbyteArray payload = env->NewByteArray((jsize) length);
+	if (payload == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return -1;
+	}
+	env->SetByteArrayRegion(payload, 0, (jsize) length, (const jbyte*) data);
+
+	jint result = env->CallStaticIntMethod(activity, method, (jint) handle, payload);
+	env->DeleteLocalRef(payload);
+	env->DeleteLocalRef(activity);
+	return (int) result;
+}
+
+int tlsReceive(int handle, char *buf, int max)
+{
+	if (buf == nullptr || max <= 0)
+		return 0;
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = tlsActivityClass(env);
+	if (activity == nullptr)
+		return -1;
+
+	jmethodID method = env->GetStaticMethodID(activity, "tlsReceive", "(II)[B");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return -1;
+	}
+
+	jobject result = env->CallStaticObjectMethod(activity, method, (jint) handle, (jint) max);
+	env->DeleteLocalRef(activity);
+	if (result == nullptr)
+		return 0;
+
+	jbyteArray bytes = (jbyteArray) result;
+	jsize length = env->GetArrayLength(bytes);
+	if (length > max)
+		length = max;
+	env->GetByteArrayRegion(bytes, 0, length, (jbyte*) buf);
+	env->DeleteLocalRef(result);
+	return (int) length;
+}
+
+bool tlsError(int handle, char *buf, int max)
+{
+	if (buf == nullptr || max <= 0)
+		return false;
+	buf[0] = '\0';
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = tlsActivityClass(env);
+	if (activity == nullptr)
+		return false;
+
+	jmethodID method = env->GetStaticMethodID(activity, "tlsError", "(I)Ljava/lang/String;");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return false;
+	}
+
+	jobject result = env->CallStaticObjectMethod(activity, method, (jint) handle);
+	env->DeleteLocalRef(activity);
+	if (result == nullptr)
+		return false;
+
+	jstring text = (jstring) result;
+	const char *utf = env->GetStringUTFChars(text, nullptr);
+	if (utf != nullptr)
+	{
+		strncpy(buf, utf, (size_t) max - 1);
+		buf[max - 1] = '\0';
+		env->ReleaseStringUTFChars(text, utf);
+	}
+	env->DeleteLocalRef(result);
+	return buf[0] != '\0';
+}
+
+void tlsClose(int handle)
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = tlsActivityClass(env);
+	if (activity == nullptr)
+		return;
+
+	jmethodID method = env->GetStaticMethodID(activity, "tlsClose", "(I)V");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return;
+	}
+
+	env->CallStaticVoidMethod(activity, method, (jint) handle);
+	env->DeleteLocalRef(activity);
 }
 
 /*

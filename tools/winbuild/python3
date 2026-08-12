@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Windows ships a python3.exe under WindowsApps that exists purely to advertise
+# the Microsoft Store, so `command -v python3` succeeds and running it fails.
+# build_android.sh calls python3 three times (the Yellow manifest check, the
+# gradle.properties rewrite and the manifest permission trim), and this puts a
+# real interpreter behind that name for the length of the build.
+exec py "$@"

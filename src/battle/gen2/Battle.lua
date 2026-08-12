@@ -1246,14 +1246,14 @@ function Battle:dealDamage(attacker, defender, damage, opts)
   return damage
 end
 
-function Battle:heal(mon, amount)
+function Battle:heal(mon, amount, opts)
   local maxHp = mon.maxHp or (mon.stats and mon.stats.hp) or 1
   local before = mon.hp or 0
   mon.hp = math.min(maxHp, before + math.max(0, math.floor(amount or 0)))
   local healed = mon.hp - before
   if healed > 0 then
     self:emit({ kind = "heal", side = self:sideOf(mon), amount = healed,
-      hp = mon.hp })
+      hp = mon.hp, anim = opts and opts.anim })
   end
   return healed
 end
@@ -2598,6 +2598,35 @@ Battle.MOVE_EFFECTS.EFFECT_FORCE_SWITCH = function(self, attacker, defender,
   self:spikesDamage(incoming)
   -- wForcedSwitch: the round ends here, skipping the between-turn effects.
   self.forcedSwitch = true
+end
+
+-- BattleCommand_Teleport (engine/battle/move_effects/teleport.asm).  Fails
+-- outright for BATTLETYPE_FORCESHINY/TRAP, for a trapped user, and in any
+-- TRAINER battle; in a WILD battle the level ladder is identical to
+-- EFFECT_FORCE_SWITCH's.  Without an entry here TELEPORT fell through to
+-- the (0-power) damage path and never ended the battle.
+Battle.MOVE_EFFECTS.EFFECT_TELEPORT = function(self, attacker, defender)
+  if self.battleType == Battle.BATTLETYPE_FORCESHINY
+      or self.battleType == Battle.BATTLETYPE_TRAP
+      or self:volatile(defender).trapsTarget then
+    return fail(self)
+  end
+  if not self.wild then return fail(self) end
+
+  local userLevel = attacker.level or 1
+  local targetLevel = defender.level or 1
+  local succeeds = userLevel >= targetLevel
+  if not succeeds then
+    local roll = self:rollBelow(math.min(256, userLevel + targetLevel + 1))
+    succeeds = roll >= math.floor(targetLevel / 4)
+  end
+  if not succeeds then return fail(self) end
+
+  self.over = true
+  self.outcome = "fled"
+  self.forcedSwitch = true
+  self:emit({ kind = "run", side = self:sideOf(attacker),
+    text = self:monName(attacker) .. " fled from battle!" })
 end
 
 -- -------------------------------------------------------- the move effects
@@ -4442,7 +4471,8 @@ function Battle:tickHeldItem(mon)
   end
 
   if effect == "HELD_BERRY" and (mon.hp or 0) * 2 <= maxHp then
-    self:heal(mon, parameter > 0 and parameter or 10)
+    -- pokegold engine/battle/core.asm:4074 ItemRecoveryAnim
+    self:heal(mon, parameter > 0 and parameter or 10, { anim = "RECOVER" })
     mon.item = nil
     self:emit({ kind = "message",
       text = name .. " ate the " .. (def.name or "BERRY") .. "!" })

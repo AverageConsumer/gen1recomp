@@ -203,7 +203,8 @@ function ChipAudio.playMusic(data, header, allowLoops)
   cmdCh:push({ cmd = "play", gen = gen, header = header,
                allowLoops = allowLoops, audio = slimAudio(data),
                channelVolumes = ChipSynth.getChannelVolumes(),
-               channelPitches = ChipSynth.getChannelPitches() })
+               channelPitches = ChipSynth.getChannelPitches(),
+               stereo = ChipSynth.getStereo() })
   currentMusic = { source = source, gen = gen, threaded = true,
                    started = false, finished = false }
   -- playback starts in update() once the first buffer arrives (~1 frame)
@@ -214,7 +215,8 @@ local function pushChannelMix()
   if workerReady and cmdCh then
     cmdCh:push({ cmd = "channelMix",
                  volumes = ChipSynth.getChannelVolumes(),
-                 pitches = ChipSynth.getChannelPitches() })
+                 pitches = ChipSynth.getChannelPitches(),
+                 stereo = ChipSynth.getStereo() })
   end
 end
 
@@ -350,6 +352,15 @@ function ChipAudio.shutdown()
   if worker then pcall(function() worker:wait() end) end
   worker, cmdCh, outCh = nil, nil, nil
   workerReady = false
+end
+
+function ChipAudio.setStereo(enabled)
+  ChipSynth.setStereo(enabled)
+  pushChannelMix()
+end
+
+function ChipAudio.getStereo()
+  return ChipSynth.getStereo()
 end
 
 -- Runtime mix for one hardware channel (1..4).  Takes effect on the next

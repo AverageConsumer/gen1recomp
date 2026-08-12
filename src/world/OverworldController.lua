@@ -453,9 +453,10 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   -- walks out of the warp, not beside him (#863)
   require("src.world.PikachuFollower").onMapEntered(Game, self, opts, true)
 
-  -- opts.keepMusic: the Oak-escort warp keeps MUSIC_MEET_PROF_OAK
-  -- playing into the lab (BIT_NO_MAP_MUSIC in wStatusFlags7);
-  -- keepMusicOnce is the play_music opts.keep one-shot of the same bit
+  -- opts.keepMusic preserves the Oak-escort song across the lab warp,
+  -- matching BIT_NO_MAP_MUSIC: MUSIC_MUSEUM_GUY in Yellow and
+  -- MUSIC_MEET_PROF_OAK in Red/Blue. keepMusicOnce is the equivalent
+  -- one-shot set by play_music opts.keep.
   local keepMusic = (opts and opts.keepMusic) or self.keepMusicOnce
   self.keepMusicOnce = nil
   if not keepMusic then
@@ -3394,6 +3395,7 @@ function OverworldState:showMapText(textConst, npc, onDone)
     -- the winning contribution's rows run as their owner (09 §4.4): mod:
     -- field routing, strict dispatch and error reports all read the source
     self.runner:run(script, { npc = npc, onDone = onDone,
+      checkpointOnDone = onDone and "release_npc" or nil,
       source = mapScripts.talkSource(self.map.id, textConst) })
     return
   end
@@ -4064,6 +4066,30 @@ function OverworldState:restoreBattleContinuation(battle, origin)
   end
   if origin.kind == "wild_encounter" and battle.kind == "wild" then
     battle.onFinish = function(result) self:afterBattle(result, battle) end
+    return true
+  end
+  if origin.kind == "script_battle" then
+    if origin.battleKind ~= battle.kind
+        or (battle.kind == "trainer" and (origin.trainerClass ~= battle.oppClass
+          or origin.partyIndex ~= (battle.partyIndex or 1)))
+        or type(origin.script) ~= "table" or type(origin.pc) ~= "number" then
+      return false
+    end
+    local npc = origin.npcId and self.npcPool and self.npcPool[origin.npcId] or nil
+    if origin.npcId and not npc then return false end
+    battle.onFinish = function(result)
+      local runner = self.runner
+      if not runner or runner:isRunning() then
+        runner = ScriptRunner.new(game, self)
+        self.runner = runner
+      end
+      runner:run(origin.script, {
+        npc = npc,
+        source = origin.source,
+        resumeBattle = { result = result, battle = battle },
+      }, origin.pc)
+    end
+    battle.checkpointScriptContinuation = true
     return true
   end
   if origin.kind ~= "trainer_encounter" or battle.kind ~= "trainer"

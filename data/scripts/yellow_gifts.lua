@@ -36,7 +36,8 @@ M.CERULEAN_MELANIES_HOUSE = {
         rows[#rows + 1] = { "label", "declined" }
         rows[#rows + 1] = { "show_text", "MelanieText5" }
       end
-      ow.runner:run(rows, { npc = npc, onDone = done })
+      ow.runner:run(rows, { npc = npc, onDone = done,
+        checkpointOnDone = "release_npc" })
     end,
     -- pet flavor: the text with the species' cry over it
     TEXT_CERULEANMELANIESHOUSE_BULBASAUR = {
@@ -105,7 +106,8 @@ M.VERMILION_CITY = {
         rows[#rows + 1] = { "label", "declined" }
         rows[#rows + 1] = { "show_text", "_OfficerJennyText4" }
       end
-      ow.runner:run(rows, { npc = npc, onDone = done })
+      ow.runner:run(rows, { npc = npc, onDone = done,
+        checkpointOnDone = "release_npc" })
     end,
   },
 }

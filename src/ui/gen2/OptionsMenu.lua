@@ -86,6 +86,10 @@ local ROWS = {
   --
   -- The two volume rows clamp at the ends rather than wrapping, the way
   -- pokered's text-speed cursor does, so holding left reaches OFF and stays.
+  { id = "controls", label = "CONTROLS", port = true,
+    activate = function(game)
+      require("src.ui.Screens").push(game, "BindingsMenu")
+    end },
   { label = "MUSIC VOL", key = "musicVol", port = true,
     cycle = function(options, delta)
       options.musicVol = stepVolume(options.musicVol, delta)

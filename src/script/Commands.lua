@@ -280,10 +280,44 @@ function Commands.save_end_battle_text(ctx, textId)
   ctx.endBattleText = TextBox.substitute(ctx.game, text or textId)
 end
 
+-- Route scripted battles through the standard entry transition. In the
+-- originals, InitWildBattle (engine/battle/init_battle.asm) always calls
+-- DoBattleTransitionAndInitBattleVariables (engine/battle/core.asm), with
+-- no old-man or Pikachu-demo exception; BattleTransition then selects the
+-- wipe for the battle kind. Some tests provide only a partial overworld
+-- double, so retain a logged fallback even though it skips the transition
+-- and battle music.
+function Commands.pushBattle(ctx, battle)
+  if ctx.overworld and ctx.overworld.pushBattle then
+    ctx.overworld:pushBattle(battle)
+  else
+    Logger.warn("pushBattle: no overworld:pushBattle, skipping the transition wipe")
+    ctx.game.stack:push(battle)
+  end
+end
+
 -- start_battle "wild" species level | start_battle "trainer" OPP_CLASS partyIndex
 function Commands.start_battle(ctx, kind, a, b)
   local BattleState = require("src.battle.BattleState")
   local runner = ctx.runner
+  local resumed = ctx.resumeBattle
+  if resumed then
+    ctx.resumeBattle = nil
+    local result, restoredBattle = resumed.result, resumed.battle
+    ctx.lastBattleResult = result
+    ctx.lastCheck = result == "win"
+    if ctx.overworld then
+      if result == "win" then
+        ctx.afterScript = ctx.afterScript or {}
+        table.insert(ctx.afterScript, function()
+          ctx.overworld:afterBattle(result, restoredBattle)
+        end)
+      else
+        ctx.overworld:afterBattle(result, restoredBattle)
+      end
+    end
+    return
+  end
   local battle
   if kind == "wild" then
     battle = BattleState.newWild(ctx.game, a, b)
@@ -293,6 +327,10 @@ function Commands.start_battle(ctx, kind, a, b)
   -- one SaveEndBattleTextPointers arms one battle; leaving it set would leak
   -- the line into the next scripted fight
   battle.endBattleText, ctx.endBattleText = ctx.endBattleText, nil
+  if runner and runner.battleCheckpointOrigin then
+    battle.checkpointOrigin = runner:battleCheckpointOrigin(battle)
+    if battle.checkpointOrigin then runner.checkpointBattle = battle end
+  end
   battle.onFinish = function(result)
     ctx.lastBattleResult = result
     ctx.lastCheck = result == "win"
@@ -312,19 +350,8 @@ function Commands.start_battle(ctx, kind, a, b)
     end
     runner:resume()
   end
-  -- Every battle enters through the transition wipe, script-driven ones
-  -- included: BattleTransition (engine/battle/battle_transitions.asm:1) runs
-  -- from DoBattleTransitionAndInitBattleVariables for all of them, and
-  -- GetBattleTransitionID_WildOrTrainer picks the style from the battle kind.
-  -- Pushing the BattleState straight onto the stack skipped the wipe
-  -- entirely, so every scripted trainer -- gym leaders, the rival, Giovanni --
-  -- and every scripted wild battle simply cut to the battle screen.  The
-  -- trainer-sight path already went through pushBattle; this one did not.
-  if ctx.overworld and ctx.overworld.pushBattle then
-    ctx.overworld:pushBattle(battle)
-  else
-    ctx.game.stack:push(battle)
-  end
+  -- A direct stack push would skip the battle-entry transition.
+  Commands.pushBattle(ctx, battle)
   runner:yield()
 end
 
@@ -818,15 +845,7 @@ function Commands.old_man_demo(ctx, outcome)
   local battle = BattleState.newWild(ctx.game, om.species, om.level)
   battle:makeOldManDemo(nil, outcome == "fail")
   battle.onFinish = function() runner:resume() end
-  -- InitWildBattle calls DoBattleTransitionAndInitBattleVariables
-  -- unconditionally (core.asm:6699) -- there is no BATTLE_TYPE_OLD_MAN
-  -- special case -- so the catch tutorial gets the wipe like any other
-  -- wild battle
-  if ctx.overworld and ctx.overworld.pushBattle then
-    ctx.overworld:pushBattle(battle)
-  else
-    ctx.game.stack:push(battle)
-  end
+  Commands.pushBattle(ctx, battle)
   runner:yield()
 end
 

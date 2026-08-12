@@ -236,6 +236,12 @@ local function runCmd(self, cmd, op)
     if self.hidePicFn then self.hidePicFn() end
   elseif op == "writetext" or op == "farwritetext" then
     self:showText(cmd.text)
+    if self.nextOp == "playsound" then
+      -- pokegold home/joypad.asm PromptButton: the real press this box's
+      -- own close absorbed plays SFX_READ_TEXT_2; drain it before the
+      -- script's own playsound or Sound.lua's priority gate drops it.
+      coroutine.yield({ kind = "waitsfx" })
+    end
   elseif op == "rawtext" then
     -- NOT a cart opcode.  `writetext`'s operand is a KEY into text.lua, and
     -- text.lua only holds strings the extractor reached through a script
@@ -384,9 +390,12 @@ local function runCmd(self, cmd, op)
     local scene = self.getMapSceneFn and self.getMapSceneFn(group, mapNum)
     self.scriptVar = scene or 0xff
   elseif op == "turnobject" then
+    -- engine/events/std_scripts.asm: turnobject LAST_TALKED resolves to the NPC last talked to
     local facing = Movement.dir(cmd.facing or 0)
+    local object = cmd.object or 0
+    if object == LAST_TALKED then object = self.lastTalked end
     if self.turnObjectFn then
-      self.turnObjectFn(cmd.object or 0, facing)
+      self.turnObjectFn(object, facing)
     end
   elseif op == "applymovement" or op == "applymovementlasttalked" then
     local object = cmd.object or 0

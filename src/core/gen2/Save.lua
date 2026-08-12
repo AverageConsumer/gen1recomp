@@ -127,6 +127,9 @@ end
 Save.filenames = saveNames
 
 local function fs()
+  -- portable.txt: same standard/portable root as Gen 1 (SaveData.persistenceFs).
+  local ok, SaveData = pcall(require, "src.core.SaveData")
+  if ok and SaveData.persistenceFs then return SaveData.persistenceFs() end
   return love.filesystem
 end
 

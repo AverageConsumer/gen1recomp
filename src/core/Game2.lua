@@ -146,7 +146,7 @@ Game2.anchorNewGameClock = anchorNewGameClock
 
 function Game2.new()
   local self = setmetatable({
-    speedOverride = 1,
+    speedOverride = nil,
     capturePath = nil,
     world = nil,
     status = nil,
@@ -981,27 +981,9 @@ function Game2:load()
   local Pipelines = require("src.render.Pipelines")
   Pipelines.install(self.data)
   Pipelines.applyOptions(self.options)
-  -- Gold composites the WHOLE-FRAME half of a pipeline (`present`) and not the
-  -- world half: its overworld draws straight to the window rather than into a
-  -- canvas the way src/world/OverworldController.lua:4827 hands one to
-  -- Pipelines.drawWorld, so there is nothing here for drawWorld to replace yet.
-  -- A restored level for a world-only pipeline is retired rather than left
-  -- switched on, because on Gold it would render nothing AND hold TILT off
-  -- (Pipelines.setLevel's tilt exclusion).  The stored level in
-  -- options.pipelines is left untouched, so the mode comes back the day Gold
-  -- grows a world canvas; Tilt is re-applied from the option the exclusion just
-  -- cleared.
-  local retired = false
-  for _, entry in ipairs(Pipelines.list()) do
-    if entry.def.drawWorld and not entry.def.present
-        and Pipelines.level(entry.id) > 0 then
-      Pipelines.setLevel(entry.id, 0)
-      retired = true
-    end
-  end
-  if retired then
-    require("src.render.Tilt").applyOptions(self.options)
-  end
+  -- Both halves run on Gold now: `present` folds over the composite in
+  -- Game2:draw, `drawWorld` owns the world pass in World:drawPipeline.  So a
+  -- restored world level stays switched on, as it does for Gen 1.
 
   -- After the merge, so a font override and a translation mod's catalog
   -- (#501) are both in Data before the first screen draws a glyph.  Gen 1
@@ -1118,19 +1100,20 @@ function Game2:update(dt)
   -- reason and at the same place Gen 1 ticks them (src/core/Game.lua:265):
   -- they are presentational, so fast-forward must not speed them up.
   require("src.render.Pipelines").update(dt)
-  if self.phase == "boot" then
-    FixedStep.maxAccum = 0.25
-    FixedStep:update(dt)
-    return
-  end
-  if not self.world or not self.world.map then return end
   -- GAME SPEED scales the logic clock only, exactly as the Gen 1 path does:
   -- audio runs off its own real-time accumulator, so music and sfx keep their
   -- tempo at every multiplier.  speedOverride is the driver/CLI hook and wins
   -- over the saved option.
+  -- pokegold engine/menus/intro_menu.asm:848 IntroSequence: boot cinema runs on the same clock as the overworld
   local speed = math.max(1,
     tonumber(self.speedOverride) or tonumber(self.options and self.options.speed)
     or 1)
+  if self.phase == "boot" then
+    FixedStep.maxAccum = math.max(0.25, speed / 60 + 0.05)
+    FixedStep:update(dt * speed)
+    return
+  end
+  if not self.world or not self.world.map then return end
   FixedStep.maxAccum = math.max(0.25, speed / 60 + 0.05)
   FixedStep:update(dt * speed)
 end
@@ -1928,6 +1911,8 @@ function Game2:applyOptions()
   -- the mod pipeline ladder rides options.pipelines and restores with the rest
   -- of the display block, as it does in src/core/Game.lua:1041
   require("src.render.Pipelines").applyOptions(options)
+  -- src/core/Game.lua:1121 mirrors this call for Gen 1
+  Input:applyBindings(options.bindings)
   -- options.touchControls (the launcher editor's per-orientation layouts) and
   -- options.haptics, the same two keys Gen 1 hands over here
   -- (src/core/Game.lua:1073).  One options.lua serves both games, so the pad a

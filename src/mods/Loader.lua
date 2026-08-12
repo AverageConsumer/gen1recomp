@@ -6,6 +6,7 @@ local GameVersion = require("src.core.GameVersion")
 local Version = require("src.core.Version")
 local Assets = require("src.render.Assets")
 local ModUI = require("src.ui.ModUI")
+local DateTime = require("src.core.DateTime")
 local AssetTransform = require("src.mods.AssetTransform")
 local Manifest = require("src.mods.Manifest")
 local Merge = require("src.mods.Merge")
@@ -22,6 +23,8 @@ local Loader = {}
 Loader.__index = Loader
 
 local MOD_STATE_FILE = "mod_state.lua" -- legacy migration only
+local OPTION_SCHEMAS_FILENAME = "mod_option_schemas.json"
+local OPTION_SCHEMAS_VERSION = 1
 
 -- The working tree's engine version is the "0.0.0-dev" placeholder that CI
 -- restamps into the packed game.love (src/core/Version.lua:7), and it sorts
@@ -336,6 +339,57 @@ function Loader:_saveState()
     SaveData.setModForced(options, id, self.gen2Forced[id] == true, version)
   end
   SaveData.saveOptions(options, self.fs)
+end
+
+-- Export the runtime option schemas after mod entry chunks have run.  This
+-- is an optional, data-only handoff for native launchers: they must not run
+-- arbitrary mod code before boot just to discover settings.  The snapshot is
+-- deliberately written beside options.lua so every platform's native shell
+-- can use the same filesystem contract.
+function Loader:_writeOptionSchemas()
+  if not self.fs.write then return end
+
+  local mods = {}
+  for id, mod in pairs(self.mods) do
+    if mod.enabled and not mod.failed then
+      local schema = self.optionSchemas[id]
+      -- Keep the legacy manifest options_schema path visible to native
+      -- consumers too. ManagerState loads this same data-only chunk on
+      -- demand; using it here means older mods do not need to migrate to
+      -- mod.options:define just to appear in a launcher settings screen.
+      if schema == nil and mod.manifest.options_schema and self.fs.load then
+        local chunk = self.fs.load(mod.path .. "/" .. mod.manifest.options_schema)
+        if chunk then
+          local ok, rows = pcall(chunk)
+          if ok and type(rows) == "table" then schema = rows end
+        end
+      end
+      if schema ~= nil then
+        mods[id] = schema
+      end
+    end
+  end
+
+  -- Do not create storage on a fresh mod-free boot, but do overwrite an old
+  -- snapshot when the current boot has no schemas so disabled/failed mods do
+  -- not leave stale native settings rows behind.
+  if next(mods) == nil
+      and not (self.fs.getInfo and self.fs.getInfo(OPTION_SCHEMAS_FILENAME)) then
+    return
+  end
+
+  local ok, encoded = pcall(Json.encode, {
+    schema_version = OPTION_SCHEMAS_VERSION,
+    mods = mods,
+  })
+  if not ok then
+    Logger.warn("mod option schema export: failed to encode: %s", tostring(encoded))
+    return
+  end
+  local written, err = self.fs.write(OPTION_SCHEMAS_FILENAME, encoded)
+  if not written then
+    Logger.warn("mod option schema export: failed to write: %s", tostring(err))
+  end
 end
 
 function Loader:setEnabled(id, enabled)
@@ -917,6 +971,16 @@ function Loader:_api(mod)
     -- the widget toolkit facade (12 4.5) is one shared surface, not
     -- per-mod state; each widget inside it loads on first touch
     ui = ModUI,
+    -- Read-only shared timestamp presentation using current options.lua
+    -- preferences. The live game supplies only the current option context;
+    -- checkpoint/save data never changes as a side effect.
+    datetime = {
+      date = function(_, game, timestamp) return DateTime.date(game, timestamp) end,
+      time = function(_, game, timestamp) return DateTime.time(game, timestamp) end,
+      dateTime = function(_, game, timestamp)
+        return DateTime.dateTime(game, timestamp)
+      end,
+    },
     -- namespaced per mod; M11 backs these with save.modData /
     -- options.modOptions, the shape mods compile against is already final
     save = {
@@ -940,6 +1004,7 @@ function Loader:_api(mod)
     -- callers never receive paths or a raw filesystem handle.
     storage = {
       context = function(_, game) return storage:context(game) end,
+      selected = function(_, game) return storage:selected(game) end,
       write = function(_, game, key, value) return storage:write(game, key, value) end,
       read = function(_, game, key) return storage:read(game, key) end,
       list = function(_, game, prefix) return storage:list(game, prefix) end,
@@ -952,6 +1017,12 @@ function Loader:_api(mod)
       capture = function(_, game) return Checkpoint.capture(game) end,
       restore = function(_, game, checkpoint)
         return Checkpoint.restore(game, checkpoint)
+      end,
+      resume = function(_, game, checkpoint)
+        return Checkpoint.resume(game, checkpoint)
+      end,
+      ensureNormalSave = function(_, game, checkpoint)
+        return Checkpoint.ensureNormalSave(game, checkpoint, loader.fs)
       end,
     },
     options = {
@@ -1411,6 +1482,7 @@ function Loader:load(data)
   -- which resolves every path to itself (14 §asset resolution).
   Assets.installLoader(self)
   self.events:emit("mods.loaded", { loader = self, data = data })
+  self:_writeOptionSchemas()
   self.initialized = true
   return #self.errors == 0
 end

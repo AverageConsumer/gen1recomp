@@ -96,7 +96,7 @@ function Nests.landmark(data, index)
 end
 
 local function landmarkOfMap(data, mapId)
-  local def = data and data.maps and data.maps[mapId]
+  local def = data and data.gen2Maps and data.gen2Maps[mapId]
   return def and def.landmark
 end
 
@@ -131,7 +131,7 @@ function Nests.find(data, species, region, save)
     out[#out + 1] = landmark
   end
 
-  local enc = data and data.encounters
+  local enc = data and data.gen2Encounters
   for _, key in ipairs({ "grass", "water" }) do
     for mapId, entry in pairs((enc and enc[key]) or {}) do
       if tableHasSpecies(entry, species) then

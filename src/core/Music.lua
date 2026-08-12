@@ -460,6 +460,8 @@ end
 function Music.applyOptions(opts)
   Music.setVolumeLevel(opts and opts.musicVol or 7)
   Music.setFilterLevel(opts and opts.musicFilter or 0)
+  -- engine/menus/options_menu.asm SOUND row (wOptions STEREO bit)
+  require("src.core.ChipAudio").setStereo(opts and opts.sound == "STEREO")
 end
 
 local function sourceStopped(src)

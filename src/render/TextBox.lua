@@ -19,6 +19,8 @@ TextBox.isTextBox = true
 -- construction time, so an unthemed boot stays byte-identical
 local BOX_TX, BOX_TY, BOX_TW, BOX_TH = 0, 12, 20, 6
 local MAX_COLS = 18
+-- pokegold constants/ram_constants.asm: TEXT_DELAY_FAST/MED/SLOW = 1/3/5
+local NAME_DELAYS = { FAST = 1, MID = 3, SLOW = 5 }
 
 -- opts.choice: when the last page has typed out, a YES/NO ChoiceBox pops
 -- up over the still-visible text (YesNoChoicePokeCenter and friends);
@@ -362,7 +364,8 @@ function TextBox:update(dt)
   -- typewriter cadence: one character every N frames, N = the OPTION
   -- text speed (TextSpeedOptionData frame delays 1/3/5); holding A/B
   -- prints every frame like the original's held-button fast path
-  local delay = (self.game.save.options and self.game.save.options.textSpeed) or 3
+  local rawSpeed = self.game.save.options and self.game.save.options.textSpeed
+  local delay = NAME_DELAYS[rawSpeed] or rawSpeed or 3
   if delay ~= 1 and delay ~= 3 and delay ~= 5 then delay = 3 end
   if input:isDown("a") or input:isDown("b") then delay = 1 end
   self.charTimer = (self.charTimer or 0) + 1

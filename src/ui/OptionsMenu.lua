@@ -49,6 +49,30 @@ local Rulesets = {
   modern_clean = require("src.battle.rulesets.modern_clean"),
 }
 local FILTERS = { "OFF", "1X", "2X", "3X" }
+local DATE_FORMATS = {
+  { "device", "DEVICE" }, { "dmy", "DD-MM-YYYY" },
+  { "mdy", "MM-DD-YYYY" }, { "ymd", "YYYY-MM-DD" },
+}
+local TIME_FORMATS = {
+  { "device", "DEVICE" }, { "24h", "24 HOUR" }, { "12h", "12 HOUR" },
+}
+
+local function preferenceIndex(rows, value)
+  for index, row in ipairs(rows) do
+    if row[1] == value then return index end
+  end
+  return 1
+end
+
+local function preferenceStep(rows, value, direction)
+  local index = preferenceIndex(rows, value)
+  direction = direction and direction < 0 and -1 or 1
+  return rows[((index - 1 + direction) % #rows) + 1][1]
+end
+
+local function preferenceLabel(rows, value)
+  return rows[preferenceIndex(rows, value)][2]
+end
 
 local function speedIndex(game)
   -- default matches InitOptions' TEXT_DELAY_MEDIUM in wOptions
@@ -438,6 +462,24 @@ local function buildRows(game)
     { id = "controls", label = Strings("CONTROLS"),
       activate = function(g)
         require("src.ui.Screens").push(g, "BindingsMenu")
+      end },
+    { id = "dateFormat", label = Strings("DATE FORMAT"),
+      value = function(g)
+        return Strings(preferenceLabel(DATE_FORMATS, g.save.options.dateFormat))
+      end,
+      step = function(g, dir)
+        g.save.options.dateFormat = preferenceStep(
+          DATE_FORMATS, g.save.options.dateFormat, dir)
+        return true
+      end },
+    { id = "timeFormat", label = Strings("TIME FORMAT"),
+      value = function(g)
+        return Strings(preferenceLabel(TIME_FORMATS, g.save.options.timeFormat))
+      end,
+      step = function(g, dir)
+        g.save.options.timeFormat = preferenceStep(
+          TIME_FORMATS, g.save.options.timeFormat, dir)
+        return true
       end },
     -- permanent on-screen pad toggle (#327); layout editing stays in the
     -- launcher.  Hidden where the overlay never appears (desktop without

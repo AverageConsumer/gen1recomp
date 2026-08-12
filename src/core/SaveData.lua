@@ -341,6 +341,12 @@ function SaveData.defaultOptions()
     -- gets the tick without going looking for the row.  Inert wherever the
     -- overlay never appears (desktop) or LOVE has no vibrator.
     haptics = "light",
+    -- Shared UI/mod timestamp presentation. DEVICE follows the process time
+    -- locale where the platform exposes one; otherwise DateTime falls back to
+    -- DD-MM-YYYY and 24-hour time. Kept in options.lua so checkpoints never
+    -- rewind presentation preferences.
+    dateFormat = "device", -- device | dmy | mdy | ymd
+    timeFormat = "device", -- device | 24h | 12h
   }
 end
 
@@ -760,6 +766,15 @@ local function tryMigrateLegacy(version, fs)
   local opts = SaveData.loadOptions(fs)
   opts.saveSlots = opts.saveSlots or {}
   opts.saveSlots[version] = { list = { id }, active = id }
+  -- A tool may have allocated the legacy scope before the player made their
+  -- first ordinary SAVE. Promoting that flat save into slot1 must preserve the
+  -- same opaque identity; otherwise title-selected mod storage becomes
+  -- unreachable after the migration even though every durable record exists.
+  local ids = opts.playthroughIds and opts.playthroughIds[version]
+  if type(ids) == "table" and type(ids.legacy) == "string" and ids.legacy ~= "" then
+    if type(ids[id]) ~= "string" or ids[id] == "" then ids[id] = ids.legacy end
+    ids.legacy = nil
+  end
   SaveData.saveOptions(opts, fs)
   return id
 end
@@ -785,9 +800,9 @@ end
 
 -- (body for the forward-declared saveNames.)  Resolves the ACTIVE slot for
 -- the version, falling back to the flat legacy names when no slot is in use.
-function saveNames(version)
+function saveNames(version, injectedFs)
   version = version or GameVersion.get()
-  local fs = persistFs(nil)
+  local fs = persistFs(injectedFs)
   ensureVersionSlots(version, fs)
   local slot = activeSlotCache[version]
   if slot then return slotNames(version, slot) end
@@ -1075,7 +1090,17 @@ local function rememberPlaythroughId(save, opts, injectedFs)
   if type(id) ~= "string" or id == "" then return opts, false end
   local version = save.version or GameVersion.get()
   local scope = playthroughScope(version, injectedFs)
-  opts = opts or SaveData.loadOptions(injectedFs)
+  local persisted = SaveData.loadOptions(injectedFs)
+  if opts then
+    -- Slot selection and opaque playthrough routing are engine-owned launcher
+    -- state. A live game may carry an options snapshot from before a legacy
+    -- save was promoted to slot1; writing that stale snapshot must not erase
+    -- the freshly persisted routing and strand tool storage on next boot.
+    opts.saveSlots = deepCopy(persisted.saveSlots)
+    opts.playthroughIds = deepCopy(persisted.playthroughIds)
+  else
+    opts = persisted
+  end
   opts.playthroughIds = opts.playthroughIds or {}
   opts.playthroughIds[version] = opts.playthroughIds[version] or {}
   local changed = opts.playthroughIds[version][scope] ~= id
@@ -1108,6 +1133,65 @@ function SaveData.ensurePlaythroughId(save, injectedFs)
   end
   save.meta.playthroughId = id
   return id
+end
+
+-- Resolve the already-selected playthrough without changing the supplied save
+-- or allocating a replacement id. Title tools use this before a normal SAVE:
+-- Game:load intentionally owns a fresh skeleton there, while the selected
+-- launcher slot's durable tool data remains bound by the engine-owned mapping.
+-- This does not make arbitrary identities addressable; callers still need a
+-- higher-level engine capability that decides when selected resolution is safe.
+function SaveData.selectedPlaythroughId(save, injectedFs)
+  if type(save) ~= "table" then
+    return nil, "not_in_playthrough", "No selected playthrough is available."
+  end
+  local version = save.version or GameVersion.get()
+  if not knownVersion(version) then
+    return nil, "unknown_game", "The selected game version is unavailable."
+  end
+  local id = save.meta and save.meta.playthroughId
+  if type(id) == "string" and id ~= "" then return id end
+
+  -- Resolve the selected scope first. That may perform the one-time legacy
+  -- save-to-slot migration, which also moves the opaque identity mapping; only
+  -- then read options so this lookup never observes the pre-migration table.
+  local scope = playthroughScope(version, injectedFs)
+  local opts = SaveData.loadOptions(injectedFs)
+  local byVersion = opts.playthroughIds and opts.playthroughIds[version]
+  id = byVersion and byVersion[scope] or nil
+  if type(id) ~= "string" or id == "" then
+    return nil, "no_selected_playthrough",
+      "The selected playthrough has no durable tool state."
+  end
+  return id
+end
+
+-- Read only the chronology of the ordinary selected save for title tools.
+-- This intentionally returns no canonical progress, slot id, path, or raw
+-- save handle. A legacy pre-id normal save is valid when the selected scope's
+-- engine-owned mapping identifies it; a stamped id must match exactly.
+function SaveData.selectedNormalSaveInfo(save, injectedFs)
+  local playthroughId, code, message = SaveData.selectedPlaythroughId(save, injectedFs)
+  if not playthroughId then return nil, code, message end
+  local version = save and (save.version or GameVersion.get())
+  local fs = persistFs(injectedFs)
+  local main, backup, staged = saveNames(version, injectedFs)
+  local normal = readTable(fs, main)
+    or readTable(fs, staged)
+    or readTable(fs, backup)
+  if type(normal) ~= "table" or normal.version ~= version then
+    return { exists = false, savedAt = nil }
+  end
+  local normalId = normal.meta and normal.meta.playthroughId
+  if type(normalId) == "string" and normalId ~= "" and normalId ~= playthroughId then
+    return { exists = false, savedAt = nil }
+  end
+  local savedAt = normal.meta and normal.meta.savedAt
+  if type(savedAt) ~= "number" or savedAt < 0 or savedAt ~= savedAt
+      or savedAt == math.huge or savedAt == -math.huge then
+    savedAt = nil
+  end
+  return { exists = true, savedAt = savedAt }
 end
 
 -- ------- meta

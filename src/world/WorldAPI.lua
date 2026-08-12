@@ -16,6 +16,22 @@ WorldAPI.__index = WorldAPI
 
 local NO_OVERWORLD = "no overworld"
 
+local function acceptsMenuInput(game, ow)
+  local stack = game and game.stack
+  local runner = ow and ow.runner
+  return ow and stack and stack.top and stack:top() == ow
+    and not ow.transitioning and not ow.flyAnim and not ow.teleportOut
+    and not ow.engaging and not ow.emote and not ow.pikaHop and not ow.healAnim
+    and not (ow.player and (ow.player.moving or ow.player.inputLocked))
+    and not (runner and runner.isRunning and runner:isRunning())
+    and #(ow.scriptMoves or {}) == 0
+end
+
+local function validPartySlot(party, slot)
+  return type(slot) == "number" and slot == math.floor(slot)
+    and party[slot] ~= nil
+end
+
 function WorldAPI.new(game, modId)
   return setmetatable({ game = game, modId = modId }, WorldAPI)
 end
@@ -43,6 +59,31 @@ function WorldAPI:current()
   local p = ow.player
   return { mapId = ow.map.id, x = p and p.cellX, y = p and p.cellY,
            facing = p and p.facing }
+end
+
+-- Companion UIs may offer party ordering while the player is in free roam.
+-- The same guard that makes opening a menu safe keeps scripts, transitions,
+-- movement and screens above the overworld from observing a mid-action swap.
+function WorldAPI:canReorderParty()
+  local game, ow = self.game, self:overworld()
+  local party = game and game.save and game.save.party or {}
+  return #party > 1 and not not acceptsMenuInput(game, ow)
+end
+
+function WorldAPI:reorderParty(fromSlot, toSlot)
+  local game, ow = self.game, self:overworld()
+  if not ow then return nil, NO_OVERWORLD end
+  if not acceptsMenuInput(game, ow) then return nil, "world is busy" end
+  local party = game.save and game.save.party or {}
+  if not validPartySlot(party, fromSlot)
+      or not validPartySlot(party, toSlot) then
+    return nil, "invalid party slot"
+  end
+  if fromSlot ~= toSlot then
+    party[fromSlot], party[toSlot] = party[toSlot], party[fromSlot]
+    require("src.core.Sound").play(game.data, "Swap")
+  end
+  return true
 end
 
 -- A compact, read-only view of the active map for minimaps and companion UIs.

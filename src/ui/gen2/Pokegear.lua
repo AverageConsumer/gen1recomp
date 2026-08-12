@@ -1537,6 +1537,9 @@ function Pokegear:callContact(id)
       text = self:phoneText("GearOutOfService") }
     return
   end
+  -- pokegold engine/pokegear/pokegear.asm:883-889: SFX_CALL rings before the call connects.
+  local world = self.game and self.game.world
+  if world then world:playSfxNamed("Sfx_Call", 106) end
   local call = Phone.call(self.save, id, context)
   local name, className = Phone.contactName(id, self.trainers)
   call.name, call.className = name, className
@@ -1562,6 +1565,11 @@ end
 
 -- HangUp: the click, the boops, and back to "Whom do you want to call?".
 function Pokegear:hangUp()
+  -- pokegold engine/phone/phone.asm:517-519: HangUp_Beep plays SFX_HANG_UP.
+  if self.call and self.call.kind ~= "nosignal" then
+    local world = self.game and self.game.world
+    if world then world:playSfxNamed("Sfx_HangUp", 107) end
+  end
   self.call = nil
 end
 
@@ -1768,14 +1776,13 @@ function Pokegear:loadArrowSheet()
   self.arrow = false
   local gfx = self.gfx
   if gfx and gfx.sprites then
+    self:loadPlayerIcon()
     self.arrow = TileSheet.new({
       path = gfx.sprites, wide = gfx.spritesWide or 2, firstTile = 0,
-      -- The icon strip's palette (cream / orange / brown / black), not BG
-      -- palette 0's greys: the arrow is an OBJ and the cart tints it to match
-      -- the card icons it points at.  The extract carries the gear's BG
-      -- palettes only, and palMap gives every icon-strip tile this same index,
-      -- so it is the one that reproduces the cart rather than a guess.
-      palette = gfx.palettes and (gfx.palettes[4] or gfx.palettes[1]),
+      -- pokegold data/sprite_anims/oam.asm .OAMData_RedWalk: STILL_CURSOR's
+      -- oamset reuses RED_WALK's OAM data, so this wears PAL_OW_RED.
+      palette = (self.playerIcon and self.playerIcon.objColors)
+        or (gfx.palettes and gfx.palettes[1]),
     })
   end
 end

@@ -79,6 +79,64 @@ function Storage:_scope(game)
            base = base, fs = fs }
 end
 
+local function isTitleSession(game)
+  local states = game and game.stack and game.stack.states
+  if type(states) ~= "table" then return false end
+  for _, state in ipairs(states) do
+    if type(state) == "table" and state.screenId == "TitleState" then return true end
+  end
+  return false
+end
+
+-- Bind this mod only to the engine-selected existing playthrough while the
+-- title session is active. Unlike _scope this must never allocate an identity:
+-- browsing history before the first normal SAVE is a read of durable state,
+-- not the start of a New Game. The returned facade closes over its private
+-- proxy game, so callers cannot substitute another playthrough id or path.
+function Storage:selected(game)
+  if not isTitleSession(game) then
+    return failure("not_at_title",
+      "Selected playthrough storage is available only from the title session.")
+  end
+  local save = game and game.save
+  local version = save and save.version
+  if not validSegment(version) then
+    return failure("not_in_playthrough",
+      "The title session has no selected game version.")
+  end
+  local playthroughId, code, message =
+    SaveData.selectedPlaythroughId(save, self.injectedFs)
+  if not validSegment(playthroughId) then return failure(code, message) end
+
+  local selectedGame = {
+    save = { version = version, meta = { playthroughId = playthroughId } },
+  }
+  local context = {
+    engineVersion = Version.engine,
+    gameVersion = version,
+    playthroughId = playthroughId,
+  }
+  local normal = SaveData.selectedNormalSaveInfo(save, self.injectedFs)
+  if type(normal) == "table" and normal.savedAt ~= nil then
+    context.normalSavedAt = normal.savedAt
+  end
+  return {
+    context = function()
+      local copy = {
+        engineVersion = context.engineVersion,
+        gameVersion = context.gameVersion,
+        playthroughId = context.playthroughId,
+      }
+      if context.normalSavedAt ~= nil then copy.normalSavedAt = context.normalSavedAt end
+      return copy
+    end,
+    read = function(_, key) return self:read(selectedGame, key) end,
+    write = function(_, key, value) return self:write(selectedGame, key, value) end,
+    list = function(_, prefix) return self:list(selectedGame, prefix) end,
+    delete = function(_, key) return self:delete(selectedGame, key) end,
+  }
+end
+
 function Storage:context(game)
   local scope, code, message = self:_scope(game)
   if not scope then return nil, code, message end

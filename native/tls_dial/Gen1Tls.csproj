@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Desktop TLS dialer for mods that need outbound WSS/TLS (e.g. multiworld
+    clients). Native AOT so the game gets a plain C ABI DLL with no .NET
+    runtime to install. Windows uses Schannel via SslStream; Linux and macOS
+    use their platform backends the same way.
+
+    Publish examples:
+      dotnet publish -c Release -r win-x64 -o ../../dist/native/win-x64
+      dotnet publish -c Release -r linux-x64 -o ../../dist/native/linux-x64
+      dotnet publish -c Release -r osx-x64 -o ../../dist/native/osx-x64
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <StripSymbols>true</StripSymbols>
+    <AssemblyName>gen1tls</AssemblyName>
+    <RootNamespace>Gen1Tls</RootNamespace>
+  </PropertyGroup>
+</Project>

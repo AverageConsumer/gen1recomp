@@ -15,7 +15,8 @@ local StateStack = require("src.core.StateStack")
 
 local Data = Fixtures.fresh()
 
-local function makeGame()
+local function makeGame(kind)
+  kind = kind or "wild"
   local save = SaveData.newGame()
   save.meta.playthroughId = "battle-playthrough"
   save.party = { Pokemon.new(Data, "FIXMON_A", 20) }
@@ -29,12 +30,24 @@ local function makeGame()
     runner = { isRunning = function() return false end },
     parallelRunners = {}, pendingScripts = {}, parallelQueue = {}, scriptMoves = {},
   }
+  function overworld:captureSave(progress)
+    progress.player.map = self.map.id
+    progress.player.x = self.player.cellX
+    progress.player.y = self.player.cellY
+    progress.player.facing = self.player.facing
+  end
   local game = { data = Data, save = save, stack = stack, overworld = overworld }
   stack.states[1] = overworld
-  local battle = BattleState.newWild(game, "FIXMON_B", 12)
+  local battle = kind == "trainer"
+    and BattleState.newTrainer(game, "OPP_FIX_YOUNGSTER", 1)
+    or BattleState.newWild(game, "FIXMON_B", 12)
   battle.phase = "menu"
   battle.queue = {}
-  battle.checkpointOrigin = { kind = "wild_encounter" }
+  battle.checkpointOrigin = kind == "trainer"
+    and { kind = "trainer_encounter", map = save.player.map,
+      npcId = "TRAINER_1", trainerClass = "OPP_FIX_YOUNGSTER", partyIndex = 1,
+      event = "EVENT_BEAT_TRAINER_1" }
+    or { kind = "wild_encounter" }
   battle.onFinish = function() end
   stack.states[2] = battle
   return game, overworld, battle
@@ -44,6 +57,42 @@ local game, overworld, battle = makeGame()
 T.same(Checkpoint.inspect(game), {
   canCapture = true, canRestore = true, kind = "battle",
 }, "settled standard wild battle is a checkpoint boundary")
+
+local function settleRealBattle(kind)
+  local liveGame, _, liveBattle = makeGame(kind)
+  liveBattle.phase, liveBattle.queue = nil, {}
+  liveGame.input = {
+    wasPressed = function(_, button) return button == "a" end,
+    isDown = function(_, button) return button == "a" end,
+  }
+  liveBattle:enter()
+  local frames = 0
+  while liveBattle.phase ~= "menu" and frames < 10000 do
+    frames = frames + 1
+    liveBattle:update(1 / 60)
+  end
+  T.eq(liveBattle.phase, "menu", "the real battle intro reaches its command menu")
+  return liveGame
+end
+
+local realGame = settleRealBattle("wild")
+T.same(Checkpoint.inspect(realGame), {
+  canCapture = true, canRestore = true, kind = "battle",
+}, "the completed real battle intro is a checkpoint boundary")
+local oldGetRandomState, oldSetRandomState =
+  love.math.getRandomState, love.math.setRandomState
+love.math.getRandomState = function() return "real-boundary-rng" end
+love.math.setRandomState = function() end
+local realSnapshot, realCaptureCode = Checkpoint.capture(realGame)
+T.check(type(realSnapshot) == "table" and realSnapshot.kind == "battle",
+  "the first real command decision captures for deferred tools: "
+    .. tostring(realCaptureCode))
+love.math.getRandomState, love.math.setRandomState =
+  oldGetRandomState, oldSetRandomState
+local realTrainerGame = settleRealBattle("trainer")
+T.same(Checkpoint.inspect(realTrainerGame), {
+  canCapture = true, canRestore = true, kind = "battle",
+}, "the completed real trainer intro is a checkpoint boundary")
 
 local function refused(mutator, code, label)
   local game2, ow2, battle2 = makeGame()
@@ -64,7 +113,7 @@ refused(function(_, _, b) b.enemy.mon.hp = b.enemy.mon.hp - 1 end,
 refused(function(_, _, b) b.player.mustRecharge = true end,
   "battle_phase_busy", "automatic locked action is rejected")
 refused(function(_, ow) ow.runner = { isRunning = function() return true end } end,
-  "script_busy", "suspended script beneath battle is rejected")
+  "script_busy", "unknown suspended script beneath battle is rejected")
 refused(function(_, _, b) b.checkpointOrigin = nil end,
   "battle_origin_unsupported", "unknown completion closure is rejected")
 refused(function(_, _, b) b.safari = { balls = 30, steps = 10 } end,

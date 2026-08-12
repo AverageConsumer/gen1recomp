@@ -68,6 +68,14 @@ optional visual `tileRows` at 2x resolution, and optional `tileDetailRows` at
 `warp`, visible `item`, and untaken `hidden` locations. All fields are
 read-only snapshots; mods choose which layers to render.
 
+## Party ordering
+
+Companion UIs and alternate party screens can call
+`mod.world:canReorderParty()` before offering a reorder action, then
+`mod.world:reorderParty(fromSlot, toSlot)` with one-based party slots. The
+operation is accepted only during idle overworld play; menus, movement,
+scripts, battles, and transitions leave the party untouched.
+
 ## Rendering pipelines
 
 Most registries hand the engine *content*. `render_pipelines` hands it
@@ -231,7 +239,18 @@ local deleted, code, message = mod.storage:delete(game, "history/quick/q0001")
 
 `context` returns `{ engineVersion, gameVersion, playthroughId }`. The engine
 version is compatibility metadata; physical launcher-slot and path identity stays
-private.
+private. A title-selected context may additionally contain `normalSavedAt`, the
+validated matching ordinary-save chronology only; it never exposes normal-save
+progress or a slot/path handle.
+
+At the title screen only, `mod.storage:selected(game)` returns a bound storage
+facade for the launcher-selected existing playthrough, or `nil, code, message`.
+Resolving this facade is read-only: it never allocates an identity, adopts a
+fresh New Game, or exposes a slot id/path. Its `context()`, `read(key)`,
+`write(key, value)`, `list(prefix)`, and `delete(key)` methods have the same
+data-only and transaction contract as `mod.storage`, but remain restricted to
+the calling mod's selected existing namespace. It is intended for title tools
+that need to browse or manage durable history before the first normal SAVE.
 
 Values must be tables containing serializable data only. Keys are conservative
 slash-separated segments (letters, digits, `_`, `-`); paths and filesystem
@@ -250,13 +269,21 @@ if capability.canCapture then
 end
 
 local ok, code, message = mod.checkpoints:restore(game, checkpoint)
+
+-- After the tool has durably committed its first checkpoint, make a
+-- never-saved playthrough reachable through ordinary title boot exactly once.
+local anchored, anchorCode, anchorMessage =
+  mod.checkpoints:ensureNormalSave(game, checkpoint)
 ```
 
 Checkpoint format 1 supports settled overworld control and proven battle
-player-decision safe points. Battle checkpoints are limited to ordinary
-single-player wild/trainer origins with no suspended script; link, Safari,
-ghost, demo, scripted, animation, message, queue, and forced-action phases fail
-closed. New checkpoints preserve gameplay RNG, while legacy overworld records
+player-decision safe points. Ordinary single-player wild/trainer encounters are
+supported. Scripted story battles are also supported when the engine can detach
+their current built-in battle command and data-only row continuation, rebind any
+NPC by stable id, and resume the story through a fresh runner. The suspended Lua
+coroutine is never serialized. Link, Safari, ghost, demo, opaque callback,
+non-data-only script, animation, message, queue, concurrent-script, and
+forced-action phases fail closed. New checkpoints preserve gameplay RNG, while legacy overworld records
 without RNG remain loadable. Capture excludes global options and runtime
 objects. Restore validates format, game/playthrough identity, content,
 coordinates, battle relationships, continuation, and RNG before mutation;
@@ -293,7 +320,25 @@ private state. A mod that deliberately stores progress-coupled truth in
 cannot distinguish it safely from independent history, configuration, or cache
 data.
 
-See RFC 0003, RFC 0004, and RFC 0005 for exact contracts and error codes.
+`mod.checkpoints:resume(game, checkpoint)` is the title-session counterpart to
+live `restore`. It validates the same data-only checkpoint against the
+engine-selected existing playthrough, reconstructs only after all validation
+passes, preserves current options, and verifies by recapture. A title session
+has no live gameplay rollback state: if reconstruction or verification fails,
+the engine rebuilds a usable title session and returns `false, code, message`.
+It never rewrites a normal Pokémon save. It is unavailable outside title and does
+not broaden capture or arbitrary-frame support.
+
+`mod.checkpoints:ensureNormalSave(game, checkpoint)` is a separate live-runtime
+operation for durable checkpoint tools. It creates ordinary progress only when
+none exists, only after validating that the supplied checkpoint is the exact
+current safe runtime, and through the normal atomic save lifecycle. Once an
+ordinary save exists it returns `true, "already_exists"` without writing, so
+subsequent checkpoints and the player's later SAVE commands remain independent.
+Call it only after the tool's own checkpoint/index commit; treat an anchoring
+failure as a failed first checkpoint rather than claiming restart safety.
+See RFC 0003, RFC 0004, RFC 0005, and RFC 0006 for exact contracts and error
+codes.
 
 ## Developer console
 
@@ -449,3 +494,23 @@ platform-bridge mod bundled only with that build's launcher, for example).
 Neither hook needs a `Runtime.wantsHook` guard before calling it: `Hooks:call`
 already falls straight through to the vanilla function when no mod has
 wrapped the name, at negligible cost.
+
+## Shared date and time presentation
+
+The global Options menu owns `DATE FORMAT` (`DEVICE`, `DD-MM-YYYY`,
+`MM-DD-YYYY`, `YYYY-MM-DD`) and `TIME FORMAT` (`DEVICE`, `24 HOUR`, `12 HOUR`).
+These preferences live in `options.lua`, so checkpoint restore never rewinds
+them. `DEVICE` uses the process time locale when the platform provides one;
+the portable fallback is `DD-MM-YYYY` plus 24-hour time.
+
+Mods format captured timestamps through the read-only public facade:
+
+```lua
+local date = mod.datetime:date(game, createdAt)
+local time = mod.datetime:time(game, createdAt)
+local both = mod.datetime:dateTime(game, createdAt)
+```
+
+The live `game` supplies only the current option context. Formatting never
+mutates the save, options, or timestamp, and invalid timestamps return
+`"----"`.

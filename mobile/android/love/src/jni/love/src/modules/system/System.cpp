@@ -253,6 +253,72 @@ bool System::httpDownload(const char *url, const char *destPath,
 #endif
 }
 
+int System::tlsOpen(const char *host, int port) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::tlsOpen(host, port);
+#else
+	LOVE_UNUSED(host);
+	LOVE_UNUSED(port);
+	return -1;
+#endif
+}
+
+int System::tlsStatus(int handle) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::tlsStatus(handle);
+#else
+	LOVE_UNUSED(handle);
+	return -1;
+#endif
+}
+
+int System::tlsSend(int handle, const char *data, int length) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::tlsSend(handle, data, length);
+#else
+	LOVE_UNUSED(handle);
+	LOVE_UNUSED(data);
+	LOVE_UNUSED(length);
+	return -1;
+#endif
+}
+
+int System::tlsReceive(int handle, char *buf, int max) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::tlsReceive(handle, buf, max);
+#else
+	LOVE_UNUSED(handle);
+	LOVE_UNUSED(buf);
+	LOVE_UNUSED(max);
+	return -1;
+#endif
+}
+
+bool System::tlsError(int handle, char *buf, int max) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::tlsError(handle, buf, max);
+#else
+	LOVE_UNUSED(handle);
+	LOVE_UNUSED(buf);
+	LOVE_UNUSED(max);
+	return false;
+#endif
+}
+
+void System::tlsClose(int handle) const
+{
+#ifdef LOVE_ANDROID
+	love::android::tlsClose(handle);
+#else
+	LOVE_UNUSED(handle);
+#endif
+}
+
 bool System::hasBackgroundMusic() const
 {
 #if defined(LOVE_ANDROID)

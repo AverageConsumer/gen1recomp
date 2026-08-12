@@ -538,6 +538,10 @@ function TradeAnimView:drawStats(record, offset)
   G.push()
   G.translate(offset, WINDOW_Y)
   Chrome.textbox(PANEL_X, PANEL_Y, PANEL_INNER_W, PANEL_INNER_H)
+  -- pokegold engine/movie/trade_animation.asm:883-897,925-929: PlaceString
+  -- and PrintNum overwrite the border's own tile at cols 4-12, row 0.
+  G.setColor(1, 1, 1, 1)
+  G.rectangle("fill", (PANEL_X + 1) * 8, PANEL_Y * 8, 9 * 8, 8)
   for _, row in ipairs(TEMPLATE_ROWS) do
     Chrome.print(row.text, PANEL_X + 1, row.row)
   end

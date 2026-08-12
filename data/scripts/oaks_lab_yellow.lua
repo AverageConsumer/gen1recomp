@@ -203,7 +203,8 @@ return {
       rows[#rows + 1] = { "set_field", "pikachuInBall", true }
       rows[#rows + 1] = { "set_flag", "EVENT_GOT_STARTER" }
       rows[#rows + 1] = { "set_flag", "EVENT_CHOSE_PIKACHU" }
-      ow.runner:run(rows, { npc = npc, onDone = done })
+      ow.runner:run(rows, { npc = npc, onDone = done,
+        checkpointOnDone = "release_npc" })
     end,
 
     TEXT_OAKSLAB_RIVAL = {

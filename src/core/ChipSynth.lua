@@ -29,6 +29,18 @@ ChipSynth.SAMPLE_RATE = SAMPLE_RATE
 ChipSynth.MUSIC_BUFFER_SAMPLES = MUSIC_BUFFER_SAMPLES
 ChipSynth.MUSIC_BUFFER_COUNT = MUSIC_BUFFER_COUNT
 
+-- Gen 2 SOUND option (MONO/STEREO): gates Music_StereoPanning's per-song
+-- panning byte (audio/engine.asm:1987 wOptions STEREO bit).
+local stereoEnabled = false
+
+function ChipSynth.setStereo(enabled)
+  stereoEnabled = not not enabled
+end
+
+function ChipSynth.getStereo()
+  return stereoEnabled
+end
+
 -- Runtime mix per hardware channel (1 pulse, 2 pulse, 3 wave, 4 noise).
 -- Volume: 1 = authentic GB, 0 = mute.  Pitch: 1 = authentic, 2 = +1 octave,
 -- 0.5 = -1 octave.  Applied at sample time so a live change reaches the next
@@ -760,11 +772,14 @@ function Channel:nextEventGen2()
       -- no-op for the PCM renderer
     elseif command == 0xEE then -- unknownmusic0xee
       self:word()
-    elseif command == 0xEF then -- stereo_panning (honor always; options.stereo)
+    elseif command == 0xEF then
+      -- audio/engine.asm:1987 Music_StereoPanning: apply only when STEREO is on
       local packed = self:byte()
-      local mask = bit.lshift(1, self.hardware - 1)
-      local default = bit.bor(bit.lshift(mask, 4), mask)
-      self.tracks = bit.band(packed, default)
+      if stereoEnabled then
+        local mask = bit.lshift(1, self.hardware - 1)
+        local default = bit.bor(bit.lshift(mask, 4), mask)
+        self.tracks = bit.band(packed, default)
+      end
     elseif command == 0xF0 then -- sfx_toggle_noise
       if self.noiseSampling then
         self.noiseSampling = false

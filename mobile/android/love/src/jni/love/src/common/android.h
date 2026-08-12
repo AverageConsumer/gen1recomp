@@ -100,6 +100,27 @@ bool httpDownload(const char *url, const char *destPath, const char *userAgent, 
 
 bool is24HourClock();
 
+/**
+ * TLS client sockets (GameActivity.tls*, implemented by TlsSocket.java).
+ * LuaSocket, which is what LOVE ships, does TCP only, so wss:// is otherwise
+ * unreachable -- and an Archipelago room hosted on archipelago.gg accepts a
+ * plain connection only to drop it. The platform has both a TLS stack and the
+ * system trust store, so this borrows them rather than vendoring mbedTLS.
+ *
+ * tlsOpen returns a handle immediately and connects on its own thread: poll
+ * tlsStatus for 0 connecting / 1 open / 2 closed, and -1 for a handle that
+ * does not exist. Bytes given to tlsSend before the handshake finishes are
+ * queued rather than refused. tlsReceive fills buf and returns how much it
+ * took, 0 when nothing is waiting. A closed connection keeps both its reason
+ * (tlsError) and whatever arrived before it closed until tlsClose.
+ **/
+int tlsOpen(const char *host, int port);
+int tlsStatus(int handle);
+int tlsSend(int handle, const char *data, int length);
+int tlsReceive(int handle, char *buf, int max);
+bool tlsError(int handle, char *buf, int max);
+void tlsClose(int handle);
+
 /*
  * Helper functions for the filesystem module
  */

@@ -46,6 +46,7 @@ local Music = require("src.core.Music")
 local NPC = require("src.world.gen2.Npc")
 local Party = require("src.pokemon.Party")
 local Permissions = require("src.world.gen2.Permissions")
+local Pipelines = require("src.render.Pipelines")
 local Player = require("src.world.gen2.Player")
 local Pokerus = require("src.core.gen2.Pokerus")
 local Roamers = require("src.core.gen2.Roamers")
@@ -9556,11 +9557,13 @@ function World:stepBody()
   -- is a scripted step under World:busy, which returns above this line.
   local dir = self.heldDir
   if not p.moving then
-    local current = Permissions.currentDirection(self:playerCollision())
+    local coll = self:playerCollision()
+    local current = Permissions.currentDirection(coll)
+      or Permissions.doorForcedDirection(coll)
     if current then
       dir = current
     elseif self.turningDirection
-        and Permissions.isIce(self:playerCollision()) then
+        and Permissions.isIce(coll) then
       dir = self.turningDirection
     elseif not dir then
       self.turningDirection = nil
@@ -9616,7 +9619,17 @@ function World:drawGround(s)
   -- clear colour.  LoadMetatiles fills it with wMapBorderBlock instead, and
   -- the connection strips and the map draw straight over the top of it.
   if self.map then
-    local bw, bh = G.getDimensions()
+    -- Destination size must be the CURRENT canvas (tilt grows it past the
+    -- window).  getDimensions() is always the window, so a grown tilt capture
+    -- used to tile the void against the wrong view and the fill drifted off
+    -- the map grid as the camera moved.
+    local canvas = G.getCanvas()
+    local bw, bh
+    if canvas then
+      bw, bh = canvas:getDimensions()
+    else
+      bw, bh = G.getDimensions()
+    end
     BorderFill.draw(self, self:borderImageFor(self.map.id),
       cam.x, cam.y, bw, bh, s, self.map.id)
   end
@@ -9692,50 +9705,102 @@ function World:drawPeople(s, billboard)
     end
   end
 
-  if self.emote and self.emote.image then
-    local e = self.emote
-    local ex = math.floor((e.entity.px - cam.x) * s)
-    local ey = math.floor((e.entity.py - 16 - cam.y) * s)
-    -- SpawnEmote.EmoteObject (engine/overworld/map_objects.asm:2029) spawns the
-    -- bubble as an OBJ on PAL_OW_EMOTE, which LoadMapPals resolves to the
-    -- "silver" row of gfx/overworld/npc_sprites.pal (white / white / RGB
-    -- 13,13,13 / black).  That row is byte-identical in all four daytime
-    -- blocks, so the bubble is the same at any hour, but it still goes through
-    -- the daytime lookup because that is what LoadMapPals does and it keeps the
-    -- emote on the same path as every other OW sprite.  Blitting the extracted
-    -- sheet raw left the interior at the DMG ramp's shade 1 (170 grey) instead
-    -- of white: the Gen 2 repeat of #505.
-    local emoteColors = Palettes.spritePalette(self.palettes,
-      self.daytime or Palettes.daytimeFor(self.map and self.map.def,
-        self:hour(), self.flashUsed),
-      { paletteId = 5 })
-    local function blit()
-      G.setColor(1, 1, 1, 1)
-      G.draw(e.image, ex, ey, 0, s, s)
-    end
-    local function body()
-      -- GbcPalette.with, not useRaw: the DMG and CLASSIC colour modes still
-      -- have to collapse the row to their own ramps, and it restores whatever
-      -- shader the billboard pass had set rather than assuming none.
-      if emoteColors and GbcPalette.available() then
-        GbcPalette.with(emoteColors, blit)
-      else
-        blit()
-      end
-    end
-    if billboard then
-      billboard(ex + 8 * s, ey + 32 * s, body)
+  self:drawEmote(s, billboard)
+  self:drawHealAnim(s, billboard)
+end
+
+-- Split out of drawPeople so World:drawPipeline composites the one copy the
+-- flat and tilt paths draw, not a second transcription of it.
+function World:drawEmote(s, billboard)
+  if not (self.emote and self.emote.image) then return end
+  local G = love.graphics
+  local cam = self.camera
+  local e = self.emote
+  local ex = math.floor((e.entity.px - cam.x) * s)
+  local ey = math.floor((e.entity.py - 16 - cam.y) * s)
+  -- SpawnEmote.EmoteObject (engine/overworld/map_objects.asm:2029) spawns the
+  -- bubble as an OBJ on PAL_OW_EMOTE, which LoadMapPals resolves to the
+  -- "silver" row of gfx/overworld/npc_sprites.pal (white / white / RGB
+  -- 13,13,13 / black).  That row is byte-identical in all four daytime
+  -- blocks, so the bubble is the same at any hour, but it still goes through
+  -- the daytime lookup because that is what LoadMapPals does and it keeps the
+  -- emote on the same path as every other OW sprite.  Blitting the extracted
+  -- sheet raw left the interior at the DMG ramp's shade 1 (170 grey) instead
+  -- of white: the Gen 2 repeat of #505.
+  local emoteColors = Palettes.spritePalette(self.palettes,
+    self.daytime or Palettes.daytimeFor(self.map and self.map.def,
+      self:hour(), self.flashUsed),
+    { paletteId = 5 })
+  local function blit()
+    G.setColor(1, 1, 1, 1)
+    G.draw(e.image, ex, ey, 0, s, s)
+  end
+  local function body()
+    -- GbcPalette.with, not useRaw: the DMG and CLASSIC colour modes still
+    -- have to collapse the row to their own ramps, and it restores whatever
+    -- shader the billboard pass had set rather than assuming none.
+    if emoteColors and GbcPalette.available() then
+      GbcPalette.with(emoteColors, blit)
     else
-      body()
+      blit()
     end
   end
-
-  self:drawHealAnim(s, billboard)
+  if billboard then
+    billboard(ex + 8 * s, ey + 32 * s, body)
+  else
+    body()
+  end
 end
 
 function World:drawWorldBody(s)
   self:drawGround(s)
   self:drawPeople(s)
+end
+
+-- Gold's half of the world-pipeline seam: same ctx keys, same order and the
+-- same nil-falls-back-to-2D rule as src/world/OverworldController.lua:4867.
+function World:drawPipeline(id, w, h, s)
+  local G = love.graphics
+  local cam = self.camera
+  local ctx = {
+    state = self, cam = cam,
+    vw = self.viewW, vh = self.viewH,
+    -- No BG-only shake here: World:draw slides the whole frame through
+    -- camera.y, so the ground row IS the camera row.
+    bgY = cam.y,
+    width = w, height = h, scale = s,
+    level = Pipelines.level(id),
+    -- imageFor keys its bakes by GbcPalette.mode, so the colour is already in
+    -- the art: nil, like Gen 1 returns in its true-colour modes.
+    paletteFor = function() return nil end,
+    spriteColors = function() return nil end,
+    -- Gold's only standing effects; it has no dust/cutTree/bird/rod overlay,
+    -- and Gen 1's `at` skips a nil body, so those keys are simply absent.
+    fx = {
+      emote = function() self:drawEmote(1, nil) end,
+      heal = function() self:drawHealAnim(1, nil) end,
+    },
+  }
+  -- `project(wx, wy)` -> canvas pixels, nil behind the camera.  s = 1 lays the
+  -- closures out in world pixels off the flat foot, the unit Gen 1 uses.
+  ctx.drawFx = function(project, scale)
+    scale = scale or s
+    local function at(fx, fy, body)
+      local sx, sy = project(fx + cam.x, fy + cam.y)
+      if not sx then return end          -- behind the camera
+      G.push()
+      G.scale(scale, scale)
+      G.translate(sx / scale - fx, sy / scale - fy)
+      body()
+      G.pop()
+    end
+    self:drawEmote(1, at)
+    self:drawHealAnim(1, at)
+  end
+  local override = Pipelines.drawWorld(id, ctx)
+  -- world post-processes fold in here, so they never touch the text box on top
+  if override then override = Pipelines.worldPresent(override, ctx) end
+  return override
 end
 
 -- The perspective quad TILT draws the ground onto.  The shader and the
@@ -9749,21 +9814,25 @@ function World:tiltMesh()
   return mesh, shader
 end
 
-function World:drawTilted(w, h, s)
+-- `gw, gh` are the grown capture size from World:draw (Tilt.viewGrowth),
+-- matching Renderer:worldViewSize.  Camera is already followed for that view.
+function World:drawTilted(w, h, s, gw, gh)
   local mesh, shader = self:tiltMesh()
   if not mesh then
     self:drawWorldBody(s)
     return
   end
   local G = love.graphics
+  gw = gw or w
+  gh = gh or h
   -- Linear sampling on the tilt canvas softens the shimmer the perspective
   -- warp would otherwise put on every pixel edge; the flat path keeps nearest.
-  if not self.tiltCanvas or self.tiltCanvas:getWidth() ~= w
-      or self.tiltCanvas:getHeight() ~= h then
+  if not self.tiltCanvas or self.tiltCanvas:getWidth() ~= gw
+      or self.tiltCanvas:getHeight() ~= gh then
     if self.tiltCanvas and self.tiltCanvas.release then
       self.tiltCanvas:release()
     end
-    self.tiltCanvas = G.newCanvas(w, h)
+    self.tiltCanvas = G.newCanvas(gw, gh)
     self.tiltCanvas:setFilter("linear", "linear")
   end
 
@@ -9779,11 +9848,14 @@ function World:drawTilted(w, h, s)
   G.setCanvas(previous)
 
   mesh:setTexture(self.tiltCanvas)
-  mesh:setVertices(Tilt.meshCorners(w, h))
+  mesh:setVertices(Tilt.meshCorners(gw, gh))
+  G.push()
+  G.translate((w - gw) / 2, (h - gh) / 2)
   G.setColor(1, 1, 1, 1)
   G.setShader(shader)
   G.draw(mesh)
   G.setShader()
+  G.pop()
 
   -- ...and the standing things over it, each translated from its flat foot
   -- onto that foot's projection.  Nothing here is sheared or resized: tilt
@@ -9792,10 +9864,10 @@ function World:drawTilted(w, h, s)
     -- The ground quad carries the flat canvas and nothing else, so a foot
     -- outside it has no ground under it; drawing it anyway put NPCs from two
     -- screens away over the border fill, where the map stops being drawn.
-    if not Tilt.onGround(fx, fy, w, h, 32 * s) then return end
-    local sx, sy = Tilt.groundPoint(fx, fy, w, h)
+    if not Tilt.onGround(fx, fy, gw, gh, 32 * s) then return end
+    local sx, sy = Tilt.groundPoint(fx, fy, gw, gh)
     G.push()
-    G.translate(sx - fx, sy - fy)
+    G.translate(sx - fx + (w - gw) / 2, sy - fy + (h - gh) / 2)
     body()
     G.pop()
   end)
@@ -9833,8 +9905,18 @@ function World:draw()
   end
 
   local s = self:zoomScale()
-  local vw = math.ceil(w / s)
-  local vh = math.ceil(h / s)
+  -- Decided before sizing the view: a world pipeline wins over tilt, and tilt
+  -- grows the capture the way Renderer:worldViewSize does on Gen 1 so the
+  -- camera, BorderFill and tilt canvas all share one grid.
+  local pipelineId = Pipelines.worldPipeline()
+  local tilt = (not pipelineId) and Tilt.active() and self:tiltMesh() ~= nil
+  local gw, gh = w, h
+  if tilt then
+    local g = Tilt.viewGrowth()
+    gw, gh = math.ceil(w * g), math.ceil(h * g)
+  end
+  local vw = math.ceil(gw / s)
+  local vh = math.ceil(gh / s)
   if vw % 2 ~= 0 then vw = vw + 1 end
   if vh % 2 ~= 0 then vh = vh + 1 end
   if vw ~= self.viewW or vh ~= self.viewH then
@@ -9851,12 +9933,18 @@ function World:draw()
     self.camera.y = self.camera.y + (self.shake.phase or 0)
   end
 
+  local override = pipelineId and self:drawPipeline(pipelineId, w, h, s) or nil
+
   -- TILT projects the finished world frame, so with it on the map, people and
   -- emote go into a canvas first and that canvas is drawn as a perspective
   -- quad.  Everything after -- the encounter pic and the survey HUD -- stays
-  -- flat, the same split the Gen 1 renderer makes.
-  if Tilt.active() and self:tiltMesh() then
-    self:drawTilted(w, h, s)
+  -- flat, the same split the Gen 1 renderer makes; a pipeline's finished image
+  -- lands in exactly the same place.
+  if override then
+    G.setColor(1, 1, 1, 1)
+    G.draw(override, 0, 0)
+  elseif tilt then
+    self:drawTilted(w, h, s, gw, gh)
   else
     self:drawWorldBody(s)
   end

@@ -140,6 +140,9 @@ function Player:facingCell()
 end
 
 function Player:walkPhase()
+  -- pokegold engine/overworld/map_objects.asm StepFunction_Turn: forces the
+  -- walking leg frame for the whole 4-frame turn-in-place.
+  if self.turnTimer > 0 then return 1 end
   if not self.moving then return 0 end
   local p = self.animClock % STEP_FRAMES
   return (p >= 4 and p < 12) and 1 or 0
@@ -167,9 +170,9 @@ function Player:update()
   self.px = self.cellX * 16 + dx * adv
   self.py = self.cellY * 16 + dy * adv
   if self.jumping then
-    -- The hop arc.  Cosmetic: the grid position is the straight-line
-    -- interpolation above, only the drawn pixels rise.
-    self.py = self.py - math.floor(6 * math.sin(math.pi * self.progress / frames))
+    -- pokegold engine/overworld/map_objects.asm: UpdateJumpPosition's
+    -- y_offsets table peaks at -12.
+    self.py = self.py - math.floor(12 * math.sin(math.pi * self.progress / frames))
   end
   if self.progress >= frames then
     self.cellX, self.cellY = self.targetX, self.targetY

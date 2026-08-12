@@ -146,6 +146,17 @@ function BattleState:statusHUDVisible()
                       self) ~= false
 end
 
+function BattleState:caughtMarkerVisible()
+  local dex = self.game and self.game.save and self.game.save.pokedex
+  if not self.enemy or (self.kind ~= "wild" and self.kind ~= "safari")
+      or not (dex and dex.owned and dex.owned[self.enemy.mon.species]) then
+    return false
+  end
+  if not Runtime.wantsHook("battle.caught_marker_visible") then return false end
+  return Runtime.call("battle.caught_marker_visible",
+                      function() return false end, self) == true
+end
+
 function BattleState:moveGridNavigation()
   if self:wideLayout() then return true end
   if not Runtime.wantsHook("battle.move_grid_navigation") then return false end
@@ -1962,9 +1973,18 @@ function BattleState:update(dt)
     -- its own has no slide to wait for.
     if (self.introSlide or 0) > 0 then return end
     if not self:updateQueue() then
-      if self.afterQueue == "menu" then
+      local destination = self.afterQueue
+      -- These fields are queue/presentation cursors, not durable battle
+      -- state. Once the queue has drained, keeping their terminal values
+      -- makes the real command menu look busy to BattleSafety even though
+      -- every message, wait and intro animation has settled.
+      self.afterQueue = nil
+      self.nextInsert = nil
+      self.waitFrames = nil
+      if destination == "menu" then
+        self.introSlide = nil
         self.phase = "menu"
-      elseif self.afterQueue == "finish" then
+      elseif destination == "finish" then
         self:finish()
       end
     end
@@ -2234,8 +2254,13 @@ function BattleState:openOldManBag()
   self.afterQueue = "menu"
   self:ui(function()
     local list
+    -- The canned bag (POKE_BALL, not read from the player's real
+    -- inventory) differs by version: pokered's OldManItemList has 50
+    -- POKé BALLs; pokeyellow's SimulatedInputBattleItemList, shared by
+    -- the Viridian tutorial and Oak's catch, has one.
+    local qty = require("src.core.GameVersion").isYellow() and "x1" or "x50"
     list = ListMenu.new(game, "ITEMS", {
-      { value = "POKE_BALL", label = Strings("POKé BALL"), right = "x50" },
+      { value = "POKE_BALL", label = Strings("POKé BALL"), right = qty },
     }, {
       script = function(l)
         l.scriptTimer = (l.scriptTimer or 0) + 1
@@ -4819,7 +4844,7 @@ end
 -- Party pokeball row (SetupPokeballs tiles: ball / status ball /
 -- fainted ball / empty), 6 slots stepping dx from (x,y).
 local ballQuads
-function BattleState:drawBallRow(party, x, y, dx)
+local function balls()
   if ballQuads == nil then
     local ok, img = pcall(love.graphics.newImage, "assets/generated/battle/balls.png")
     if ok then
@@ -4831,11 +4856,23 @@ function BattleState:drawBallRow(party, x, y, dx)
       ballQuads = false
     end
   end
-  if not ballQuads then return end
+  return ballQuads or nil
+end
+
+function BattleState:drawCaughtBall(x, y)
+  local quads = balls()
+  if not quads then return end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(quads.img, quads[0], x, y)
+end
+
+function BattleState:drawBallRow(party, x, y, dx)
+  local quads = balls()
+  if not quads then return end
   for i = 1, 6 do
     local mon = party[i]
     local tile = not mon and 3 or mon.hp <= 0 and 2 or mon.status and 1 or 0
-    love.graphics.draw(ballQuads.img, ballQuads[tile], x + (i - 1) * dx, y)
+    love.graphics.draw(quads.img, quads[tile], x + (i - 1) * dx, y)
   end
 end
 
@@ -5551,7 +5588,12 @@ function BattleState:drawHUDs(slide)
       love.graphics.translate(hudShake, 0)
     end
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(self.enemy.name, nameX(1, self.enemy.name), 0)
+    local enemyNameX = nameX(1, self.enemy.name)
+    local enemyNameWidth = Font.draw(self.enemy.name, enemyNameX, 0)
+    if self:caughtMarkerVisible() then
+      self:drawCaughtBall(enemyNameX + enemyNameWidth, 0)
+      love.graphics.setColor(0, 0, 0, 1)
+    end
     if self.enemy.shownStatus then
       Font.draw(self:statusLabel({ status = self.enemy.shownStatus }), 40, 8)
     else

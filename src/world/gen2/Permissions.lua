@@ -175,6 +175,20 @@ function Permissions.currentDirection(coll)
   return CURRENT_DIR[coll % 4]
 end
 
+-- DoPlayerMovement .CheckTile, HI_NYBBLE_WARPS arm (.warps): landing on a
+-- door/staircase/cave forces a walk DOWN off it (engine/overworld/player_movement.asm).
+local DOOR_FORCED = {
+  [0x71] = true, -- COLL_DOOR
+  [0x79] = true, -- COLL_DOOR_79 (unused)
+  [0x7a] = true, -- COLL_STAIRCASE
+  [0x7b] = true, -- COLL_CAVE
+}
+
+function Permissions.doorForcedDirection(coll)
+  if DOOR_FORCED[coll] then return "down" end
+  return nil
+end
+
 -- CheckCutCollision (engine/overworld/tile_events.asm): the collisions CUT is
 -- allowed to swing at.  Both grasses are in it, which is why CUT mows a patch
 -- of tall grass down to bare ground and not only trees.

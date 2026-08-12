@@ -43,6 +43,7 @@
 local Assets = require("src.render.Assets")
 local Boxes = require("src.core.gen2.Boxes")
 local Chrome = require("src.ui.gen2.Chrome")
+local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Mail = require("src.core.gen2.Mail")
 local Palettes = require("src.world.gen2.Palettes")
@@ -73,6 +74,14 @@ local PARTY_BOX = 0
 -- it belongs to BillsPC_WithdrawMenu's four rows -- so nothing on this screen
 -- can destroy a mon.
 local MOVE_SUBMENU = { "MOVE", "STATS", "CANCEL" }
+
+-- engine/pokemon/bills_pc.asm:472-478: BillsPC_Withdraw's menu rows.
+local WITHDRAW_SUBMENU = { "WITHDRAW", "STATS", "RELEASE", "CANCEL" }
+
+function BoxMenu:submenuRows()
+  if self.mode == "move" then return MOVE_SUBMENU end
+  return WITHDRAW_SUBMENU
+end
 
 -- MovePKMNWithoutMail_InsertMon's .Saving_LeaveOn, printed for 20 frames while
 -- the mon is written into its new home.  It stays up here until a button
@@ -164,14 +173,16 @@ end
 -- The cart's own prompts (PCString_*): short, because the box they print in
 -- is one row of 18 columns.
 function BoxMenu:prompt()
-  if self.mode == "deposit" then return "Deposit which one?" end
+  -- engine/pokemon/bills_pc.asm:356-369: PrepSubmenu places PCString_WhatsUp.
+  if self.phase == "submenu" then return "What's up?" end
   if self.mode == "move" then
-    -- .Init, .PrepSubmenu and .PrepInsertCursor each place their own string.
+    -- .Init and .PrepInsertCursor each place their own string.
     if self.phase == "insert" then return "Move to where?" end
-    if self.phase == "submenu" then return "What's up?" end
     return "Choose a <PK><MN>."
   end
-  return "Choose a POKéMON."
+  -- PCString_ChooseaPKMN: _DepositPKMN.Init and BillsPC_Withdraw.Init both
+  -- place this exact string (engine/pokemon/bills_pc.asm:2185).
+  return "Choose a <PK><MN>."
 end
 
 function BoxMenu:total()
@@ -208,21 +219,15 @@ function BoxMenu:act()
     if self.onClose then self.onClose() end
     return
   end
-  -- .a_button: the move screen never acts on the list itself.  It checks that
-  -- the row really is a mon and steps to $2, .PrepSubmenu.
-  if self.mode == "move" then
+  -- engine/pokemon/bills_pc.asm:336-344: withdraw and move both PrepSubmenu.
+  if self.mode == "move" or self.mode == "withdraw" then
     if not self:selected() then return end
     self.phase = "submenu"
     -- `ld a, $1 / ld [wMenuCursorY], a`: the submenu always opens on MOVE.
     self.submenuIndex = 1
     return
   end
-  local ok, result
-  if self.mode == "deposit" then
-    ok, result = Boxes.deposit(self.save, self.index, self.boxIndex)
-  else
-    ok, result = Boxes.withdraw(self.save, self.boxIndex, self.index)
-  end
+  local ok, result = Boxes.deposit(self.save, self.index, self.boxIndex)
   if not ok then
     self.message = result
     return
@@ -294,12 +299,28 @@ function BoxMenu:openStats()
   })
 end
 
+-- engine/pokemon/bills_pc.asm:397-411: failed withdraw stays on the submenu.
+function BoxMenu:doWithdraw()
+  local ok, result = Boxes.withdraw(self.save, self.boxIndex, self.index)
+  if not ok then
+    self.message = result
+    return
+  end
+  self.message = nil
+  self.phase = nil
+  self:clampIndex()
+end
+
 function BoxMenu:chooseSubmenu()
-  local row = MOVE_SUBMENU[self.submenuIndex]
+  local row = self:submenuRows()[self.submenuIndex]
   if row == "MOVE" then
     self:beginMove()
+  elseif row == "WITHDRAW" then
+    self:doWithdraw()
   elseif row == "STATS" then
     self:openStats()
+  elseif row == "RELEASE" then
+    self:askRelease()
   else
     -- .Cancel: `ld a, $0 / ld [wJumptableIndex], a`.
     self.phase = nil
@@ -417,11 +438,12 @@ function BoxMenu:update(_dt)
 
   -- .MoveMonWOMailSubmenu, a VerticalMenu: up/down, A picks, B is its carry.
   if self.phase == "submenu" then
+    local submenu = self:submenuRows()
     if input:wasPressed("up") then
       self.submenuIndex = self.submenuIndex > 1 and self.submenuIndex - 1
-        or #MOVE_SUBMENU
+        or #submenu
     elseif input:wasPressed("down") then
-      self.submenuIndex = self.submenuIndex < #MOVE_SUBMENU
+      self.submenuIndex = self.submenuIndex < #submenu
         and self.submenuIndex + 1 or 1
     elseif input:wasPressed("a") then
       self:chooseSubmenu()
@@ -518,6 +540,7 @@ function BoxMenu:askRelease()
       return
     end
     self.message = name .. " was released."
+    self.phase = nil
     self:clampIndex()
   end, { defaultNo = true }))
 end
@@ -644,12 +667,12 @@ end
 
 -- The PC does not mark the selected row with a ▶: BillsPC_UpdateSelectionCursor
 -- lays 20 OBJs as a frame *around* the row -- ten tiles wide by two tall, top
--- left at pixel (71, 31), stepping 16 pixels per row.  Those cursor tiles are
+-- left at pixel (71, 25), stepping 16 pixels per row.  Those cursor tiles are
 -- not extracted, so the frame is drawn as an outline at exactly those pixels,
 -- which is what the sprite frame looks like.
 function BoxMenu:drawSelectionFrame(row)
   local G = love.graphics
-  local x, y = 71, 31 + (row - 1) * 16
+  local x, y = 71, 25 + (row - 1) * 16
   G.setColor(0, 0, 0, 1)
   G.setLineWidth(1)
   G.rectangle("line", x + 0.5, y + 0.5, 80 - 1, 16 - 1)
@@ -679,6 +702,9 @@ function BoxMenu:panelMon()
 end
 
 function BoxMenu:drawPanel()
+  -- BillsPC_InitGFX loads FontsBattleExtra once for the whole screen and
+  -- never restores the standard font (engine/pokemon/bills_pc.asm:2169).
+  local wasBattle = Font.useBattleExtra(true)
   Chrome.clear()
 
   -- Box name header, then the list box hanging off it.  BillsPC_BoxName is a
@@ -686,6 +712,11 @@ function BoxMenu:drawPanel()
   Chrome.box(8, 0, 12, 3)
   Chrome.print(self:title(), 10, 1)
   Chrome.box(8, 2, 12, 12)
+  -- BillsPC_RefreshTextboxes overwrites its own top corners with '└'/'┘'
+  -- (engine/pokemon/bills_pc.asm:1204-1211) so the list reads as hanging
+  -- off the name box above it.
+  Font.drawCode(Font.BORDER.bl, 8 * 8, 2 * 8)
+  Font.drawCode(Font.BORDER.br, 19 * 8, 2 * 8)
 
   local list = self:list()
   local inserting = self.phase == "insert"
@@ -724,7 +755,9 @@ function BoxMenu:drawPanel()
       self:drawEggPic(mon)
     else
       self:drawPic(mon)
-      Chrome.print(":L" .. tostring(mon.level or 1), PIC_X, 12)
+      -- PrintLevel always writes the single bold glyph, not ":L"
+      -- (home/pokemon.asm:178-183).
+      Chrome.print("<LV>" .. tostring(mon.level or 1), PIC_X, 12)
       if mon.gender == "male" then
         Chrome.print("\xe2\x99\x82", 5, 12)
       elseif mon.gender == "female" then
@@ -756,13 +789,14 @@ function BoxMenu:drawPanel()
   -- top spacing puts MOVE at (11,6), one row per two tiles.
   if self.phase == "submenu" then
     Chrome.box(9, 4, 11, 10)
-    for i, label in ipairs(MOVE_SUBMENU) do
+    for i, label in ipairs(self:submenuRows()) do
       local ty = 6 + (i - 1) * 2
       if i == self.submenuIndex then Chrome.cursor(10, ty) end
       Chrome.print(label, 11, ty)
     end
   end
   love.graphics.setColor(1, 1, 1, 1)
+  Font.useBattleExtra(wasBattle)
 end
 
 function BoxMenu:draw()

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Stands in for Info-ZIP's `zip`, which Git for Windows does not ship.  Put
+# this directory first on PATH before running scripts/build_android.sh; see
+# zip_impl.py for what is and is not supported.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec py "$here/zip_impl.py" "$@"

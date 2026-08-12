@@ -152,6 +152,20 @@ public:
 		const char *userAgent = nullptr, const char *accept = nullptr) const;
 
 	/**
+	 * TLS client sockets (Android only; every call fails elsewhere, where
+	 * LuaSec or another provider is the answer). Non-blocking by contract:
+	 * tlsOpen returns a handle and connects on its own thread, tlsStatus
+	 * reports 0 connecting / 1 open / 2 closed / -1 unknown, and bytes sent
+	 * before the handshake completes are queued rather than refused.
+	 **/
+	virtual int tlsOpen(const char *host, int port) const;
+	virtual int tlsStatus(int handle) const;
+	virtual int tlsSend(int handle, const char *data, int length) const;
+	virtual int tlsReceive(int handle, char *buf, int max) const;
+	virtual bool tlsError(int handle, char *buf, int max) const;
+	virtual void tlsClose(int handle) const;
+
+	/**
 	 * Gets if the user is playing music on background.
 	 * Throws an exception on unsupported platforms.
 	 *
