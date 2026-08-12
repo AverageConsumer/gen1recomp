@@ -140,7 +140,10 @@ local files = {
     '{"id":"probe","name":"probe","version":"1.0.0",'
       .. '"entry":"main.lua","api":2,"profile":"content"}',
   ["mods/probe/main.lua"] = [[
-return function(mod) _G.MOD_CHECKPOINTS = mod.checkpoints end
+return function(mod)
+  _G.MOD_CHECKPOINTS = mod.checkpoints
+  _G.MOD_HOOKS = mod.hooks
+end
 ]],
 }
 local game, ow = makeGame()
@@ -433,9 +436,28 @@ if battleSnapshot then
     "public battle capture/restore/capture is a normalized differential roundtrip")
 end
 
+-- The mod receives the normal public hook facade, never BattleState. START
+-- at the restored safe decision reaches its semantic auxiliary action without
+-- selecting a native command.
+local auxiliaryCalls = 0
+_G.MOD_HOOKS:wrap("battle.menu_auxiliary", function(nextFn, liveGame, context)
+  auxiliaryCalls = auxiliaryCalls + 1
+  T.check(liveGame == battleGame, "public battle auxiliary action receives the game")
+  T.same(context, { kind = "wild" }, "public auxiliary context is data-only")
+  return true
+end)
+battleGame.input = { wasPressed = function(_, button) return button == "start" end }
+local boundary = battleGame.stack:top()
+local originalMenuIndex = boundary.menuIndex
+boundary:update(1 / 60)
+T.eq(auxiliaryCalls, 1, "public mod hook receives START at the checkpoint boundary")
+T.eq(boundary.phase, "menu", "public auxiliary hook does not advance the turn")
+T.eq(boundary.menuIndex, originalMenuIndex, "public auxiliary hook preserves cursor")
+
 Runtime.events, Runtime.hooks = savedEvents, savedHooks
 Runtime.currentMod = nil
 _G.MOD_CHECKPOINTS = nil
+_G.MOD_HOOKS = nil
 love.math.getRandomState = oldGetRandomState
 love.math.setRandomState = oldSetRandomState
 

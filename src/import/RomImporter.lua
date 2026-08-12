@@ -1372,6 +1372,10 @@ function RomImporter.new(onComplete, opts)
     end
   end
 
+  if GameVersion.VERSIONS[self.tab] then
+    self.modScope = self.tab
+  end
+
   return self
 end
 
@@ -2629,6 +2633,9 @@ function RomImporter:_switchTab(id)
   self.tab = id
   self._findSearchFocus = false
   self:_disarmTextInput()
+  if GameVersion.VERSIONS[id] then
+    self:_setModScope(id)
+  end
 end
 
 function RomImporter:_toggleFindSearchFocus()
@@ -2939,6 +2946,13 @@ function RomImporter:_refreshMods()
     end
   end
   self.mods = LauncherMods.list(self.modScope) or {}
+  if self.modScope then
+    local kept = {}
+    for _, m in ipairs(self.mods) do
+      if m.targetsHere ~= false then kept[#kept + 1] = m end
+    end
+    self.mods = kept
+  end
   self:_syncModUpdateInfo(false)
 end
 
@@ -3588,7 +3602,7 @@ function RomImporter:_findRows()
   -- index, query, or category actually changed.
   local c = self._findRowsCache
   if c and c.src == all and c.query == self.findQuery
-      and c.category == self.findCategory then
+      and c.category == self.findCategory and c.scope == self.modScope then
     return c.rows
   end
   local ModIndex = require("src.mods.ModIndex")
@@ -3596,8 +3610,33 @@ function RomImporter:_findRows()
     query = self.findQuery,
     category = self.findCategory,
   })
+  if self.modScope then
+    local gen = GameVersion.generation(self.modScope)
+    local kept = {}
+    for _, entry in ipairs(rows) do
+      local has1, has2 = false, false
+      local function note(s)
+        s = tostring(s or ""):lower()
+        if s == "gen1" or s == "gen 1" or s == "red" or s == "blue"
+            or s == "yellow" then
+          has1 = true
+        end
+        if s == "gen2" or s == "gen 2" or s == "gold" then
+          has2 = true
+        end
+      end
+      for _, cat in ipairs(entry.categories or {}) do note(cat) end
+      for _, tag in ipairs(entry.tags or {}) do note(tag) end
+      if (not has1 and not has2)
+          or (gen == 2 and has2)
+          or (gen ~= 2 and has1) then
+        kept[#kept + 1] = entry
+      end
+    end
+    rows = kept
+  end
   self._findRowsCache = { src = all, query = self.findQuery,
-    category = self.findCategory, rows = rows }
+    category = self.findCategory, scope = self.modScope, rows = rows }
   return rows
 end
 

@@ -22,6 +22,7 @@ local GbcPalette = require("src.render.GbcPalette")
 local HpBar = require("src.battle.gen2.HpBar")
 local Logger = require("src.core.Logger")
 local Mail = require("src.core.gen2.Mail")
+local Mon = require("src.battle.gen2.Mon")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 
@@ -90,11 +91,20 @@ function PartyMenu.new(game, opts)
   self.save = save
   self.party = opts.party or (save and save.party) or {}
   local data = game and game.data or {}
+  -- engine/pokemon/move_mon.asm:1402
+  for i = 1, #self.party do
+    Mon.refreshStats(self.party[i], data)
+  end
   self.icons = opts.icons or data.gen2Icons
   self.palettes = opts.palettes or data.gen2Palettes
   self.pokemon = opts.pokemon or data.pokemon
   self.prompt = PartyMenu.PROMPTS[opts.prompt or "choose"] or opts.prompt
     or PartyMenu.PROMPTS.choose
+  -- engine/pokemon/party_menu.asm:297
+  self.tmhm = opts.tmhm
+  if self.tmhm and (opts.prompt == nil or opts.prompt == "teach") then
+    self.prompt = PartyMenu.PROMPTS.teach
+  end
   self.onChoose = opts.onChoose
   self.onCancel = opts.onCancel
   self.moves = opts.moves or data.moves
@@ -469,7 +479,14 @@ function PartyMenu:update(_dt)
     elseif self.wantsSubmenu or self.wantsBattleSubmenu then
       self:openSubmenu()
     elseif self.onChoose then
-      self.onChoose(self.index, self.party[self.index])
+      local mon = self.party[self.index]
+      if self.tmhm and mon and mon.isEgg then
+        -- engine/items/tmhm.asm:104
+        local world = self.game and self.game.world
+        if world and world.playSfxNamed then world:playSfxNamed("Sfx_Wrong") end
+        return
+      end
+      self.onChoose(self.index, mon)
     end
   elseif input:wasPressed("b") then
     self:storeCursor()
@@ -674,6 +691,18 @@ function PartyMenu.rowFor(mon)
   }
 end
 
+-- engine/pokemon/party_menu.asm:331
+function PartyMenu:tmhmAble(mon)
+  if not mon or mon.isEgg then return nil end
+  local move = self.tmhm and self.tmhm.move
+  if not move then return nil end
+  local species = self.pokemon and self.pokemon[mon.species]
+  for _, id in ipairs((species and species.tmhm) or {}) do
+    if id == move then return "ABLE" end
+  end
+  return "NOT ABLE"
+end
+
 -- WritePartyMenuTilemap, jumptable entry by jumptable entry.  Every coordinate
 -- below is the hlcoord the matching PARTYMENUQUALITY_* routine uses, and each
 -- steps 2 * SCREEN_WIDTH per mon:
@@ -712,10 +741,15 @@ function PartyMenu:drawPanel()
     self:drawIcon(mon, self:iconX(i), 4 + (i - 1) * 16 + self:iconBob(i))
     local row = PartyMenu.rowFor(mon)
     Chrome.print(row.name, 3, nameY)
-    if row.hp then Chrome.print(row.hp, 13, nameY) end
+    if self.tmhm then
+      local able = self:tmhmAble(mon)
+      if able then Chrome.print(able, 12, dataY) end
+    else
+      if row.hp then Chrome.print(row.hp, 13, nameY) end
+      if row.hp then self:drawHpBar(mon, 11, dataY) end
+    end
     if row.status then Chrome.print(row.status, 5, dataY) end
     if row.level then Chrome.print(row.level, 8, dataY) end
-    if row.hp then self:drawHpBar(mon, 11, dataY) end
   end
 
   -- .end does `dec hl` twice from the row past the last nickname, so CANCEL

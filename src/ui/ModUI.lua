@@ -12,6 +12,7 @@ local MODULES = {
   QuantityBox = "src.ui.QuantityBox",
   NamingScreen = "src.ui.NamingScreen",
   PicBox = "src.ui.PicBox",
+  PokemonIcon = "src.ui.PokemonIcon",
   TextBox = "src.render.TextBox",
   Font = "src.render.Font",
   Theme = "src.ui.Theme",

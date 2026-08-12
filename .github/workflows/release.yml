@@ -1,8 +1,9 @@
 name: Release
 
 # Builds the macOS, Windows, and Linux desktop apps, an Android APK, an iOS
-# IPA, a Nintendo Switch SD-ready zip (experimental), Xbox UWP, and the Anbernic
-# RG34XXSP (Stock OS 64-bit MOD / PortMaster) port, then publishes them as a
+# IPA, a Nintendo Switch SD-ready zip (experimental), Xbox UWP, the Anbernic
+# RG34XXSP (Stock OS 64-bit MOD / PortMaster) and Linux ARM SBC PortMaster
+# handheld ports on the self-hosted Mac runner, and publishes them as a
 # GitHub Release.
 #
 # Versioning:
@@ -355,6 +356,20 @@ jobs:
           # runtime from PortMaster-GUI, so it needs no signing/notarization.
           ./build-rg34xxsp.sh --version "${{ needs.version.outputs.version }}"
 
+      - name: Build Linux ARM SBC PortMaster port
+        env:
+          # The release workflow must package the commit being released. The
+          # script defaults to the latest published release for standalone
+          # builds, while this explicit local override keeps CI source-aligned.
+          GEN1RECOMP_SOURCE_DIR: ${{ github.workspace }}
+          GEN1RECOMP_RELEASE_TAG: v${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Same aarch64 PortMaster-style pack for Linux ARM SBC PortMaster. The build
+          # keeps its own cache because the two scripts use different staging
+          # layouts and runtime package paths.
+          ./build-linux-arm-sbc.sh --version "${{ needs.version.outputs.version }}"
+
       - name: Notarize & staple macOS app
         if: github.repository == 'bryanthaboi/gen1recomp'
         run: |
@@ -448,6 +463,11 @@ jobs:
           rg34="dist/rg34xxsp/gen1recomp-rg34xxsp-stockos64-mod.zip"
           [ -f "$rg34" ] || { echo "::error::$rg34 not found (expected from ./build-rg34xxsp.sh)"; exit 1; }
           cp "$rg34" "$outdir/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip"
+
+          # Linux ARM SBC PortMaster handheld port.
+          sbc="dist/linux-arm-sbc/gen1recomp-sbc-portmaster.zip"
+          [ -f "$sbc" ] || { echo "::error::$sbc not found (expected from ./build-linux-arm-sbc.sh)"; exit 1; }
+          cp "$sbc" "$outdir/gen1recomp-${v}-sbc-portmaster.zip"
 
           # Platform-independent update payload, built alongside the desktop
           # apps above (same game.love that gets fused into each of them).
@@ -564,6 +584,7 @@ jobs:
             "dist/release/gen1recomp-${v}-switch.zip"
             "dist/release/gen1recomp-${v}-xbox-uwp.zip"
             "dist/release/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip"
+            "dist/release/gen1recomp-${v}-sbc-portmaster.zip"
             "dist/release/gen1recomp-${v}.love"
             "dist/release/sha256sums.txt"
           )

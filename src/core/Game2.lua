@@ -1926,11 +1926,10 @@ function Game2:applyOptions()
   require("src.render.Pipelines").applyOptions(options)
   -- src/core/Game.lua:1121 mirrors this call for Gen 1
   Input:applyBindings(options.bindings)
-  -- options.touchControls (the launcher editor's per-orientation layouts) and
-  -- options.haptics, the same two keys Gen 1 hands over here
-  -- (src/core/Game.lua:1073).  One options.lua serves both games, so the pad a
-  -- player laid out for Red is already the pad Gold draws.
-  TouchControls:applyOptions(options)
+  TouchControls:applyOptions({
+    touchControls = options.touchControls,
+    haptics = options.haptics,
+  })
   local GBCFX = require("src.render.GBCFX")
   if GBCFX.applyOptions(options) and self.save then
     -- applyOptions returns true when it had to clear an unsupported level.

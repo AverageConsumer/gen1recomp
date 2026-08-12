@@ -1,6 +1,7 @@
 -- YES/NO choice box (InitYesNoTextBoxParameters: above the text box, right).
 
 local Font = require("src.render.Font")
+local UIVisibility = require("src.battle.UIVisibility")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
 local Timing = require("src.core.Timing")
@@ -67,6 +68,7 @@ function ChoiceBox:update(dt)
 end
 
 function ChoiceBox:draw()
+  if not UIVisibility.bottomVisible(self, false) then return end
   local tx, ty, tw, th = self.tx, self.ty, self.tw, self.th
   -- rides the same bottom anchor as the dialogue box it sits above, so the
   -- pair travels together (the anchor keeps each element's gap from the edge)

@@ -275,6 +275,8 @@ Save.DEFAULT_OPTIONS = {
   musicVol = 7,             -- 0-7, like the GB's NR50 master volume
   sfxVol = 7,               -- 0-7
   musicFilter = 0,          -- low-pass steps, 0 = off
+  haptics = "light",
+  touchControls = { enabled = true },
 }
 
 function Save.defaultOptions()
@@ -719,6 +721,13 @@ end
 -- copy is the witness that survives a crash mid-replace.
 function Save.save(save)
   if type(save) ~= "table" then return false, "no save" end
+  if (save.version or "gold") == "gold" then
+    local ok, SaveData = pcall(require, "src.core.SaveData")
+    if ok and SaveData.activeSlot and not SaveData.activeSlot("gold") then
+      local id = SaveData.createSlot and SaveData.createSlot("gold")
+      if id and SaveData.setActiveSlot then SaveData.setActiveSlot("gold", id) end
+    end
+  end
   local main, backup, tmp = saveNames(save.version)
   local f = fs()
   if not f then return false, "no filesystem" end

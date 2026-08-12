@@ -7,7 +7,7 @@
 -- the text is exhausted and A is pressed, then calls onDone.
 
 local Font = require("src.render.Font")
-local Runtime = require("src.mods.Runtime")
+local UIVisibility = require("src.battle.UIVisibility")
 local Theme = require("src.ui.Theme")
 local Timing = require("src.core.Timing")
 
@@ -403,11 +403,7 @@ function TextBox:update(dt)
 end
 
 function TextBox:draw()
-  if Runtime.wantsHook("battle.bottom_ui_visible")
-      and Runtime.call("battle.bottom_ui_visible", function() return true end,
-                       self) == false then
-    return
-  end
+  if not UIVisibility.bottomVisible(self, true) then return end
   -- The dialogue box belongs against the bottom of the screen, not floating
   -- in the middle of a zoomed-out letterbox.  Declared per frame; the
   -- renderer blits this region to the screen edge and the rest of the UI

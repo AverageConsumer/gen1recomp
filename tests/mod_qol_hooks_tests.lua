@@ -12,6 +12,7 @@ local Zoom = require("src.render.Zoom")
 local ListMenu = require("src.ui.ListMenu")
 local NamingScreen = require("src.ui.NamingScreen")
 local TextBox = require("src.render.TextBox")
+local ChoiceBox = require("src.ui.ChoiceBox")
 local PartyMenu = require("src.ui.PartyMenu")
 local Player = require("src.world.Player")
 local Music = require("src.core.Music")
@@ -185,6 +186,23 @@ do
   text:draw()
   check(seen == text, "pushed text boxes use the same visibility hook")
   unsub()
+
+  local battle = setmetatable({ isBattle = true }, BattleState)
+  local game = { stack = { states = {} } }
+  text = setmetatable({ game = game }, TextBox)
+  local choice = setmetatable({ game = game }, ChoiceBox)
+  game.stack.states = { battle, text, choice }
+  local queried = {}
+  unsub = wrap("battle.bottom_ui_visible", function(_, state)
+    queried[#queried + 1] = state
+    return state ~= battle
+  end)
+  text:draw()
+  choice:draw()
+  check(queried[1] == battle and queried[2] == battle and #queried == 2,
+    "battle overlays inherit a hidden bottom layer without drawing backings")
+  unsub()
+
   check(BattleState.bottomUIVisible({ phase = "moveSelect" }),
     "battle bottom UI returns when the hook is removed")
   check(Gen2BattleState.bottomUIVisible({ phase = "moves" }),

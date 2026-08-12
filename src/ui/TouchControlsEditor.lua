@@ -49,17 +49,29 @@ end
 function Editor.load(opts)
   opts = opts or {}
   Editor.onClose = opts.onClose
+  Editor.version = opts.version
+  Editor.hostPoll = opts.hostPoll == true
   Editor.drag = nil
   Editor.rects = {}
+  Editor._hostMouse = false
+  Editor._hostTouches = nil
   Editor.fonts = {
     title = love.graphics.newFont(28),
     body = love.graphics.newFont(16),
     btn = love.graphics.newFont(18),
   }
   local optsTbl = SaveData.loadOptions()
+  local applied = optsTbl
+  if opts.version == "gold" then
+    local gold = type(optsTbl.gold) == "table" and optsTbl.gold or {}
+    applied = {
+      touchControls = gold.touchControls,
+      haptics = gold.haptics or optsTbl.haptics,
+    }
+  end
   TouchControls:init()
   TouchControls:ensureImages()
-  TouchControls:applyOptions(optsTbl)
+  TouchControls:applyOptions(applied)
   TouchControls:setPreview(true)
   Editor.enabled = TouchControls.enabled ~= false
   PadCursor.reset()
@@ -71,17 +83,24 @@ function Editor.unload()
   PadCursor.reset()
   Editor.drag = nil
   Editor.onClose = nil
+  Editor.version = nil
+  Editor._hostMouse = false
+  Editor._hostTouches = nil
 end
 
 local function persist()
   local opts = SaveData.loadOptions()
   local cfg = TouchControls:config()
-  -- replaces the whole table, so a pre-#633 top-level positions key is
-  -- dropped once the player saves under the new shape
-  opts.touchControls = {
+  local block = {
     enabled = cfg.enabled,
     layouts = cfg.layouts,
   }
+  if Editor.version == "gold" then
+    opts.gold = type(opts.gold) == "table" and opts.gold or {}
+    opts.gold.touchControls = block
+  else
+    opts.touchControls = block
+  end
   SaveData.saveOptions(opts)
 end
 
@@ -104,9 +123,7 @@ end
 
 function Editor.update(dt)
   PadCursor.update(dt or 0)
-  -- drag follows the live pointer when love.touch / mouse / pad is available;
-  -- touchmoved / mousemoved also update, so this is a belt-and-suspenders
-  -- path for Android where move events can be thin
+  if Editor.hostPoll then Editor.pollHostPointers() end
   if not Editor.drag then return end
   local x, y
   if Editor.drag.touchId == "pad" then
@@ -297,6 +314,45 @@ local function endDrag(id)
   Editor.drag = nil
 end
 
+function Editor.pollHostPointers()
+  local down = love.mouse and love.mouse.isDown and love.mouse.isDown(1)
+  if down then
+    local x, y = love.mouse.getPosition()
+    if not Editor._hostMouse then
+      Editor._hostMouse = true
+      beginDrag("mouse", x, y)
+    else
+      moveDrag("mouse", x, y)
+    end
+  elseif Editor._hostMouse then
+    Editor._hostMouse = false
+    endDrag("mouse")
+  end
+  if not (love.touch and love.touch.getTouches and love.touch.getPosition) then
+    return
+  end
+  Editor._hostTouches = Editor._hostTouches or {}
+  local seen = {}
+  for _, id in ipairs(love.touch.getTouches()) do
+    seen[id] = true
+    local ok, tx, ty = pcall(love.touch.getPosition, id)
+    if ok and tx then
+      if not Editor._hostTouches[id] then
+        Editor._hostTouches[id] = true
+        beginDrag(id, tx, ty)
+      else
+        moveDrag(id, tx, ty)
+      end
+    end
+  end
+  for id in pairs(Editor._hostTouches) do
+    if not seen[id] then
+      Editor._hostTouches[id] = nil
+      endDrag(id)
+    end
+  end
+end
+
 function Editor.mousepressed(x, y, button)
   if button ~= 1 then return end
   -- Finger / mouse tap yields the Joy-Con pointer so the click lands where
@@ -389,6 +445,37 @@ function Editor.keypressed(key)
   elseif key == "=" or key == "+" or key == "kp+" then
     TouchControls:nudgeScale(TouchControls.SCALE_STEP)
   end
+end
+
+function Editor.new(game)
+  local state = { game = game, isOpaque = true }
+  Editor.hostPoll = true
+  Editor.load({
+    version = "gold",
+    hostPoll = true,
+    onClose = function()
+      Editor.hostPoll = false
+      if game.options then
+        game.options.touchControls = TouchControls:config()
+      end
+      if game.stack and game.stack:top() == state then
+        game.stack:pop()
+      end
+      if game.applyOptions then game:applyOptions() end
+    end,
+  })
+  function state:wantsFillScale() return true end
+  function state:drawsWidescreen() return true end
+  function state:update(dt)
+    Editor.update(dt)
+    local input = self.game and self.game.input
+    if input and input:wasPressed("b") then close() end
+  end
+  function state:draw() end
+  function state:drawWidescreen(_w, _h)
+    Editor.draw()
+  end
+  return state
 end
 
 return Editor

@@ -91,11 +91,14 @@ mkdir -p "$GAME_SRC"
 (cd "$ROOT" && zip -q -9 -r "$WORK/game-payload.zip" \
   main.lua conf.lua src libs data assets tools/save-editor \
   tools/rom_manifest.json tools/rom_manifest_blue.json \
+  tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
-if unzip -Z1 "$WORK/game-payload.zip" \
-    | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then
-  fail "payload unexpectedly contains generated ROM data"
-fi
+payload_list="$(unzip -Z1 "$WORK/game-payload.zip")"
+printf '%s\n' "$payload_list" \
+  | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/' \
+  && fail "payload unexpectedly contains generated ROM data"
+printf '%s\n' "$payload_list" | grep -qxF "tools/rom_manifest_gold.json" \
+  || fail "payload is missing tools/rom_manifest_gold.json"
 unzip -q "$WORK/game-payload.zip" -d "$GAME_SRC"
 rm -f "$WORK/game-payload.zip"
 

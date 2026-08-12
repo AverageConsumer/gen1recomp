@@ -7,6 +7,7 @@ local Version = require("src.core.Version")
 local BattleState = require("src.battle.BattleState")
 local BattleCheckpoint = require("src.core.BattleCheckpoint")
 local ModRuntime = require("src.mods.Runtime")
+local BattleSafety = require("src.battle.BattleSafety")
 
 local Checkpoint = {}
 
@@ -36,72 +37,9 @@ local function scriptsBusy(ow)
     or nonempty(ow.scriptMoves)
 end
 
-local BATTLE_BUSY_FIELDS = {
-  "current", "afterQueue", "nextInsert", "pendingHit", "waitingUI",
-  "waitingSound", "waitFrames", "draining", "animPlaying", "growIn",
-  "introSlide", "ghostReveal", "mimicCtx", "mimicMoves", "result",
-}
-
-local function inspectBattle(ow, battle)
-  if battle.kind == "link" then
-    return refusal("battle", "link_battle_unsupported",
-      "Network battles cannot be checkpointed.")
-  end
-  if battle.safari or battle.ghost or battle.scopeReveal or battle.demo
-      or battle.noCatch then
-    return refusal("battle", "battle_variant_unsupported",
-      "This battle variant does not have a checkpoint contract.")
-  end
-  if battle.kind ~= "wild" and battle.kind ~= "trainer" then
-    return refusal("battle", "battle_variant_unsupported",
-      "This battle kind does not have a checkpoint contract.")
-  end
-  local origin = battle.checkpointOrigin
-  local ordinaryOrigin = battle.kind == "wild" and "wild_encounter"
-    or "trainer_encounter"
-  local scriptedOrigin = type(origin) == "table"
-    and origin.kind == "script_battle"
-  if type(origin) ~= "table"
-      or (origin.kind ~= ordinaryOrigin and not scriptedOrigin) then
-    return refusal("battle", "battle_origin_unsupported",
-      "The battle completion path cannot be reconstructed safely.")
-  end
-  local scriptedRunner = scriptedOrigin and (battle.checkpointScriptContinuation
-    or (ow.runner
-    and ow.runner.isCheckpointBattle
-    and ow.runner:isCheckpointBattle(battle)))
-  local otherScriptWork = nonempty(ow.parallelRunners)
-    or nonempty(ow.pendingScripts) or nonempty(ow.parallelQueue)
-    or nonempty(ow.scriptMoves)
-  if (scriptedOrigin and (not scriptedRunner or otherScriptWork))
-      or (not scriptedOrigin and scriptsBusy(ow)) then
-    return refusal("battle", "script_busy",
-      "A suspended or queued script cannot be checkpointed.")
-  end
-  if battle.phase ~= "menu" or nonempty(battle.queue) then
-    return refusal("battle", "battle_phase_busy",
-      "Wait for the player command menu before creating a checkpoint.")
-  end
-  for _, field in ipairs(BATTLE_BUSY_FIELDS) do
-    if battle[field] ~= nil and battle[field] ~= false then
-      return refusal("battle", "battle_phase_busy",
-        "Wait for the current battle action to finish.")
-    end
-  end
-  if not battle.player or not battle.enemy or battle.player.mon.hp <= 0
-      or (battle.menuLockedAction and battle:menuLockedAction(battle.player)) then
-    return refusal("battle", "battle_phase_busy",
-      "Wait for an ordinary player decision before creating a checkpoint.")
-  end
-  for _, battler in ipairs({ battle.player, battle.enemy }) do
-    if battler.shownHP ~= battler.mon.hp
-        or battler.shownStatus ~= battler.mon.status
-        or battler.drainFloor ~= nil or battler.drainHold ~= nil
-        or battler.faintQueued then
-      return refusal("battle", "battle_phase_busy",
-        "Wait for battle status and HP presentation to settle.")
-    end
-  end
+local function inspectBattle(game, battle)
+  local allowed, reason, message = BattleSafety.inspect(game, battle)
+  if not allowed then return refusal("battle", reason, message) end
   return { canCapture = true, canRestore = true, kind = "battle" }
 end
 
@@ -120,7 +58,7 @@ function Checkpoint.inspect(game)
   end
   local top = game.stack and game.stack.top and game.stack:top()
   if getmetatable(top) == BattleState then
-    return inspectBattle(ow, top)
+    return inspectBattle(game, top)
   end
   if top ~= ow then
     return refusal("overworld", "screen_busy",

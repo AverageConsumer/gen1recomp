@@ -167,5 +167,7 @@ trap 'rm -rf "$temp_dir"' EXIT
 unzip -p "$temp_dir/game.love" src/core/Version.lua \
   | grep -Eq 'engine[[:space:]]*=[[:space:]]*"1\.2\.3"' \
   || fail "shared payload version was not stamped"
+grep -qxF "tools/rom_manifest_gold.json" "$temp_dir/love-listing.txt" \
+  || fail "shared payload is missing tools/rom_manifest_gold.json"
 
 say "Linux arm64 self-test passed"

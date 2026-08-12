@@ -119,7 +119,13 @@ function NamingScreen.new(game, opts)
   -- The header icon is an OBJ on the cart, so it wears a real palette; without
   -- one it would draw in raw DMG shades next to a colored world.
   self.iconColors = opts.iconColors
-  self.gfx = opts.menuGfx
+  local data = game and game.data or {}
+  self.gfx = opts.menuGfx or data.gen2MenuGfx
+  if self.gfx and self.gfx.naming then self.gfx = self.gfx.naming end
+  -- engine/menus/naming_screen.asm:47
+  -- engine/gfx/cgb_layouts.asm:488
+  local diploma = data.gen2Diploma
+  self.palette = diploma and diploma.palettes and diploma.palettes[1]
   self.tiles = {}
   if self.gfx then
     for _, key in ipairs({ "border", "middleLine", "underLine", "cursor" }) do
@@ -315,6 +321,10 @@ function NamingScreen:update(_dt)
   end
 end
 
+function NamingScreen:paperColor()
+  return GbcPalette.color(self.palette, 1)
+end
+
 -- The backdrop: one patterned tile repeated over the whole screen.  Without
 -- menu_gfx.lua (older cache) fall back to a flat mid gray, which keeps the
 -- cleared panels readable.
@@ -322,16 +332,24 @@ function NamingScreen:drawBackdrop()
   local G = love.graphics
   local tile = self.tiles.border
   if not tile then
-    G.setColor(0.62, 0.62, 0.62, 1)
+    local paper = self:paperColor()
+    G.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
     G.rectangle("fill", 0, 0, 160, 144)
     G.setColor(1, 1, 1, 1)
     return
   end
-  G.setColor(1, 1, 1, 1)
-  for ty = 0, Chrome.SCREEN_H - 1 do
-    for tx = 0, Chrome.SCREEN_W - 1 do
-      G.draw(tile, tx * 8, ty * 8)
+  local function blit()
+    G.setColor(1, 1, 1, 1)
+    for ty = 0, Chrome.SCREEN_H - 1 do
+      for tx = 0, Chrome.SCREEN_W - 1 do
+        G.draw(tile, tx * 8, ty * 8)
+      end
     end
+  end
+  if self.palette and GbcPalette.available() then
+    GbcPalette.with(self.palette, blit)
+  else
+    blit()
   end
 end
 
@@ -410,7 +428,8 @@ end
 
 function NamingScreen:clearPanel(tx, ty, tw, th)
   local G = love.graphics
-  G.setColor(1, 1, 1, 1)
+  local paper = self:paperColor()
+  G.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
   G.rectangle("fill", tx * 8, ty * 8, tw * 8, th * 8)
   G.setColor(0, 0, 0, 1)
 end
@@ -472,12 +491,13 @@ function NamingScreen:drawPanel()
       G.draw(self.iconImage, quad, 16, 16)
     end
   end
+  local pal = self.palette
   if self.monName then
     -- Nickname header is two lines: "<MON>'S" then "NICKNAME?".
-    Chrome.print(self.monName .. "'S", 5, 2)
-    Chrome.print("NICKNAME?", 5, 4)
+    Chrome.printThrough(self.monName .. "'S", 5, 2, pal)
+    Chrome.printThrough("NICKNAME?", 5, 4, pal)
   else
-    Chrome.print(self.prompt, 5, 2)
+    Chrome.printThrough(self.prompt, 5, 2, pal)
   end
   self:drawEntry(5, self.isBox and 4 or 6)
 
@@ -489,17 +509,22 @@ function NamingScreen:drawPanel()
     for col = 0, 8 do
       local ch = line[col + 1]
       if ch and ch ~= " " and ch ~= "" then
-        Chrome.print(ch, 2 + col * 2, keyboardTop + row * 2)
+        Chrome.printThrough(ch, 2 + col * 2, keyboardTop + row * 2, pal)
       end
     end
   end
   local labels = self.lower and BOTTOM_LOWER_LABELS or BOTTOM_UPPER_LABELS
   local bottomY = keyboardTop + bottom * 2
   for i, label in ipairs(labels) do
-    Chrome.print(label, BOTTOM_LABEL_TX[i], bottomY)
+    Chrome.printThrough(label, BOTTOM_LABEL_TX[i], bottomY, pal)
   end
 
-  self:drawCursorBox(self:cursorTile())
+  local function cursor() self:drawCursorBox(self:cursorTile()) end
+  if pal and GbcPalette.available() then
+    GbcPalette.with(pal, cursor)
+  else
+    cursor()
+  end
   G.setColor(1, 1, 1, 1)
 end
 
@@ -511,23 +536,32 @@ function NamingScreen:drawWidescreen(winW, winH)
   local G = love.graphics
   -- The naming screen's own patterned backdrop is the surround: extend it to
   -- the window edges so a widescreen boot has no black pillarbox.
-  self:drawBackdrop()
   local scale = Chrome.fitScale(winW, winH)
   local ox, oy = Chrome.fitOrigin(winW, winH, scale)
-  G.setColor(0.62, 0.62, 0.62, 1)
+  local paper = self:paperColor()
+  G.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
   G.rectangle("fill", 0, 0, winW, winH)
   G.setColor(1, 1, 1, 1)
   if self.tiles.border then
     local tilesX = math.ceil(winW / (8 * scale))
     local tilesY = math.ceil(winH / (8 * scale))
-    G.push()
-    G.scale(scale, scale)
-    for ty = 0, tilesY do
-      for tx = 0, tilesX do
-        G.draw(self.tiles.border, tx * 8, ty * 8)
+    local tile = self.tiles.border
+    local function blit()
+      G.setColor(1, 1, 1, 1)
+      G.push()
+      G.scale(scale, scale)
+      for ty = 0, tilesY do
+        for tx = 0, tilesX do
+          G.draw(tile, tx * 8, ty * 8)
+        end
       end
+      G.pop()
     end
-    G.pop()
+    if self.palette and GbcPalette.available() then
+      GbcPalette.with(self.palette, blit)
+    else
+      blit()
+    end
   end
   G.push()
   G.translate(ox, oy)

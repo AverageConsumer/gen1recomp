@@ -172,6 +172,34 @@ local ROWS = {
     text = function(options)
       return require("src.render.GBCFX").levelLabel(options.gbcfx or 0)
     end },
+  { id = "touchControls", label = "TOUCH PAD", port = true,
+    text = function(options)
+      local tc = options.touchControls
+      local on = not (type(tc) == "table" and tc.enabled == false)
+      return on and "ON" or "OFF"
+    end,
+    cycle = function(options, _delta, game)
+      local tc = type(options.touchControls) == "table" and options.touchControls or {}
+      tc.enabled = tc.enabled == false
+      options.touchControls = tc
+      require("src.core.TouchControls"):applyOptions(options)
+      if game and game.persistOptions then game:persistOptions() end
+    end },
+  { id = "touchLayout", label = "TOUCH LAYOUT", port = true,
+    activate = function(game)
+      game.stack:push(require("src.ui.TouchControlsEditor").new(game))
+    end },
+  { id = "haptics", label = "VIBRATION", port = true,
+    text = function(options)
+      return require("src.core.TouchControls").hapticLabel(options.haptics)
+    end,
+    cycle = function(options, delta, game)
+      local TC = require("src.core.TouchControls")
+      options.haptics = TC.cycleHaptics(options.haptics, delta)
+      TC:applyOptions(options)
+      TC.buzz(options.haptics)
+      if game and game.persistOptions then game:persistOptions() end
+    end },
   { label = "CANCEL", cancel = true },
 }
 
@@ -196,11 +224,18 @@ local function sameRows(_, rows) return rows end
 -- COLOR) simply appear in the list the hook receives.
 local function buildRows()
   local rows = {}
+  local env = os.getenv("POKEPORT_TOUCH")
+  local osName = love.system and love.system.getOS and love.system.getOS()
+  local showTouch = env == "1"
+    or (env ~= "0" and (osName == "Android" or osName == "iOS"))
   for i, row in ipairs(ROWS) do
-    local copy = {}
-    for key, value in pairs(row) do copy[key] = value end
-    copy.id = copy.id or copy.key or (copy.cancel and "cancel") or nil
-    rows[i] = copy
+    if showTouch or (row.id ~= "touchControls" and row.id ~= "touchLayout"
+        and row.id ~= "haptics") then
+      local copy = {}
+      for key, value in pairs(row) do copy[key] = value end
+      copy.id = copy.id or copy.key or (copy.cancel and "cancel") or nil
+      rows[#rows + 1] = copy
+    end
   end
   return rows
 end
@@ -291,6 +326,9 @@ end
 
 function OptionsMenu:leave_()
   if self.onDone then self.onDone(self.options) end
+  if self.game and self.game.stack and self.game.stack:top() == self then
+    self.game.stack:pop()
+  end
 end
 
 function OptionsMenu:update(_dt)

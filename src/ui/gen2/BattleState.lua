@@ -92,6 +92,8 @@ local FAINT_SLIDE_FRAMES_PER_ROW = 2
 -- (engine/battle/core.asm:3439-3466, data/text/battle.asm:241-249).
 local TEXT_NO_WILL_TO_FIGHT = "There's no will to battle!"
 local TEXT_EGG_CANT_BATTLE = "An EGG can't battle!"
+-- data/text/battle.asm:207
+local TEXT_USE_NEXT_MON = "Use next POKéMON?"
 
 -- BattleText_TheMoveIsDisabled / BattleText_TheresNoPPLeftForThisMove
 -- (data/text/battle.asm:315-322).
@@ -1158,11 +1160,11 @@ function BattleState:advanceQueue()
     -- pokegold engine/battle/core.asm:7057-7069: every mon that leveled
     -- gets the stats box, not just the mon currently on the field.
     self.pendingStatsMon = mon
-    -- BattleText_StringBuffer1GrewToLevel ends in text_end (battle.asm:336-343),
-    -- and the active mon never even prints it (core.asm:7044-7056 jumps to the
-    -- stats box).  Either way there is no PromptButton before the stats box.
+    -- engine/battle/core.asm:7044
     if mon and mon == battle.player then
       event.text = nil
+      event.sfx = nil
+      event.waitSfx = nil
       if self.shownHp then
         self.shownHp.player = mon.hp or 0
         if self.hpAnim and self.hpAnim.side == "player" then
@@ -1282,6 +1284,14 @@ function BattleState:advanceQueue()
     return self:askNickname(event.mon)
   end
   if event.kind == "choose-switch" then
+    -- engine/battle/core.asm:2590
+    if self.battle and self.battle.wild then
+      self.nextMonIndex = 1
+      self.phase = "ask-next-mon"
+      self.message = TEXT_USE_NEXT_MON
+      self.messageTimer = 0
+      return
+    end
     -- A fainted lead: force a switch before anything else runs.
     self.phase = "forced-switch"
     self.message = "Choose a POKéMON."
@@ -1888,6 +1898,36 @@ function BattleState:update(_dt)
     return
   end
 
+  -- engine/battle/core.asm:2590
+  if self.phase == "ask-next-mon" then
+    if self.messageTimer > 0 then
+      if input:wasPressed("a") or input:wasPressed("b") then
+        self.messageTimer = 0
+      end
+      return
+    end
+    if input:wasPressed("up") or input:wasPressed("down") then
+      self.nextMonIndex = self.nextMonIndex == 1 and 2 or 1
+    elseif input:wasPressed("b") then
+      return self:answerUseNextMon(false)
+    elseif input:wasPressed("a") then
+      return self:answerUseNextMon(self.nextMonIndex == 1)
+    end
+    return
+  end
+
+  if self.phase == "cant-escape-then-switch" then
+    if self.messageTimer > 0 then
+      if input:wasPressed("a") or input:wasPressed("b") then
+        self.messageTimer = 0
+      end
+      return
+    end
+    self.message = "Choose a POKéMON."
+    self.phase = "forced-switch"
+    return
+  end
+
   if self.phase == "refuse-shift" then
     if self.messageTimer > 0 then
       if input:wasPressed("a") or input:wasPressed("b") then
@@ -2443,6 +2483,31 @@ function BattleState:offerShiftSwitch(mon)
   self.message = trainer .. " is about to use " .. self:name(mon)
     .. ". Will " .. player .. " change POKéMON?"
   self.messageTimer = MESSAGE_FRAMES
+end
+
+function BattleState:answerUseNextMon(yes)
+  if yes then
+    self.phase = "forced-switch"
+    self.message = "Choose a POKéMON."
+    return
+  end
+  local battle = self.battle
+  if not battle then
+    self.phase = "forced-switch"
+    return
+  end
+  local lead = battle.party and battle.party[1]
+  local pSpd = (lead and lead.stats and lead.stats.speed) or 0
+  -- engine/battle/core.asm:2614
+  if battle:tryRun(pSpd) then
+    self:pushAll(battle:takeEvents())
+    self.phase = "resolving"
+    return self:advanceQueue()
+  end
+  battle:takeEvents()
+  self.message = "Can't escape!"
+  self.messageTimer = MESSAGE_FRAMES
+  self.phase = "cant-escape-then-switch"
 end
 
 -- SetUpBattlePartyMenu + PickSwitchMonInBattle (core.asm:3307-3308), which is
@@ -3192,15 +3257,18 @@ function BattleState:drawPanel()
     -- stands.
     local asking = self.phase == "ask-nickname" or self.phase == "ask-forget"
       or self.phase == "stop-learning" or self.phase == "ask-shift"
+      or self.phase == "ask-next-mon"
     if asking and (self.messageTimer or 0) <= 0 then
       -- OfferSwitch calls PlaceYesNoBox with `lb bc, 1, 7`, so its box is at
       -- (1,7) instead (engine/battle/core.asm:3303, home/menu.asm:392-410).
-      local left = self.phase == "ask-shift" and 1 or 14
+      local left = (self.phase == "ask-shift" or self.phase == "ask-next-mon")
+        and 1 or 14
       Chrome.box(left, 7, 6, 5)
       Chrome.print("YES", left + 2, 8)
       Chrome.print("NO", left + 2, 10)
       local index = self.phase == "ask-nickname" and self.nicknameIndex
         or self.phase == "ask-shift" and self.shiftIndex
+        or self.phase == "ask-next-mon" and self.nextMonIndex
         or self.forgetChoice
       Chrome.cursor(left + 1, index == 1 and 8 or 10)
     end
@@ -3220,7 +3288,13 @@ local STATS_BOX_ROWS = {
 
 -- pokegold engine/battle/core.asm:7060-7066 (box at hlcoord 9,0, stats at 11,y).
 function BattleState:drawStatsBox(mon)
-  local stats = mon and mon.stats
+  if not mon then return end
+  local stats = mon.stats
+  local data = self.game and self.game.data
+  local def = data and data.pokemon and data.pokemon[mon.species]
+  if def and def.baseStats then
+    stats = Mon.stats(def.baseStats, mon.dvs, mon.level, mon.statExp)
+  end
   if not stats then return end
   Chrome.textbox(9, 0, 9, 10)
   for i, row in ipairs(STATS_BOX_ROWS) do

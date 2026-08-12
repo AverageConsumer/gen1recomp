@@ -340,6 +340,18 @@ failure as a failed first checkpoint rather than claiming restart safety.
 See RFC 0003, RFC 0004, RFC 0005, and RFC 0006 for exact contracts and error
 codes.
 
+At that same settled supported wild/trainer decision boundary, a tool may claim
+START through `battle.menu_auxiliary`. It receives `(next, game, context)`, where
+`context` is the data-only `{ kind = "wild" }` or `{ kind = "trainer" }`; it
+never receives the live battle controller. Return `true` to consume START after
+opening source-owned UI, or call `next(game, context)` to allow lower-priority
+handlers. With no handler, START remains inert. Ordinary encounters and the
+validated built-in scripted battle origins described by RFC 0005 are eligible;
+opaque scripts, link/Safari/ghost/demo battles, action queues,
+animation/messages, forced choices, and every phase that cannot safely be
+checkpointed remain excluded. Exceptions are contained by normal hook isolation
+and fall through without advancing a turn.
+
 ## Developer console
 
 Boot with developer mode on to unlock the in-game console and hot-reload
@@ -443,9 +455,12 @@ identifiers: `pc_box_withdraw`, `pc_box_deposit`, `pc_box_release`,
 control the battle text/menu layer and the HP/status panels. Both receive
 `(next, state)` and default to `true`, so vanilla rendering is unchanged.
 Both hooks apply to Gen 1 and Gen 2 battles.
-Pushed text boxes also pass through `battle.bottom_ui_visible`; a wrapper that
-only owns battle presentation should return `false` only for its active battle
-or text-box state.
+Text boxes and YES/NO prompts pushed above a battle inherit a `false` result
+for that battle, so hiding the bottom layer cannot leave their white backing
+behind under another overlay. Text boxes also pass through the hook as their
+own state, preserving selective control outside a battle; a wrapper that only
+owns battle presentation should return `false` only for its active battle or
+text-box state.
 
 `core.logic_speed` receives `(next, game)` once per `Game:logicSpeed()` call
 (once per frame). Vanilla behavior resolves the per-category GAME SPEED
@@ -495,6 +510,21 @@ platform-bridge mod bundled only with that build's launcher, for example).
 Neither hook needs a `Runtime.wantsHook` guard before calling it: `Hooks:call`
 already falls straight through to the vanilla function when no mod has
 wrapped the name, at negligible cost.
+
+## Detached Pokémon icon presentation
+
+`mod.ui.PokemonIcon.draw(game, summary, x, y, opts)` draws the same party icon
+the native Party menu would resolve without exposing a live Pokémon record or
+the private Party menu. `summary` is the detached data-only shape
+`{ species = string, hp = integer, maxHp = integer }`; `opts.selected` and
+`opts.counter` optionally request the native selected-icon animation phase.
+
+The engine retains icon ownership. Content registered through
+`mod.content.icons`, species `icon` definitions, asset overrides, and the
+public `pokemon.icon` hook therefore continue to compose. Invalid summaries
+return `false, code, message` and draw nothing. The helper is presentation
+only: it does not expose moves, status, checkpoint payloads, or mutable party
+state.
 
 ## Shared date and time presentation
 

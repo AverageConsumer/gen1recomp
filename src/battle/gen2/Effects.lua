@@ -100,21 +100,28 @@ end
 -- are 1/8 each, which is what the `and 3` on a 0-3 roll plus the two-step
 -- fallthrough in .DetermineNumberOfHits produces.
 function Effects.multiHitCount(random)
-  local roll = random and random(4) or 0
-  if roll < 2 then return roll + 2 end
-  -- Hits 4 and 5 take a second roll, so each ends up half as likely.
-  local second = random and random(2) or 0
-  return second + 4
+  local function roll(n)
+    if random then return random(n) end
+    if love and love.math and love.math.random then
+      return love.math.random(n) - 1
+    end
+    return math.random(n) - 1
+  end
+  -- engine/battle/effect_commands.asm:5228
+  local first = roll(4)
+  if first < 2 then return first + 2 end
+  return roll(4) + 2
 end
 
 Effects.HIT_COUNTS = {
   EFFECT_DOUBLE_HIT = 2,
+  EFFECT_POISON_MULTI_HIT = 2,
   -- Triple Kick stops early if a hit misses; Battle rolls that per hit.
   EFFECT_TRIPLE_KICK = 3,
 }
 
 function Effects.hitCount(effect, random)
-  if effect == "EFFECT_MULTI_HIT" or effect == "EFFECT_POISON_MULTI_HIT" then
+  if effect == "EFFECT_MULTI_HIT" then
     return Effects.multiHitCount(random)
   end
   return Effects.HIT_COUNTS[effect] or 1

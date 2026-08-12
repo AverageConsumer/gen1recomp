@@ -75,7 +75,8 @@ local SFX_TRANSACTION = "Sfx_Transaction"
 
 local MartMenu = {}
 MartMenu.__index = MartMenu
-MartMenu.isOpaque = true
+-- engine/items/mart.asm:54
+MartMenu.isOpaque = false
 
 -- constants/mart_constants.asm.  The `pokemart` macro emits this as one byte
 -- ahead of the word mart id, and MartTypeDialogs is indexed by it.
@@ -329,9 +330,6 @@ local function extractedText(text, base, labels)
   end
   return out
 end
-
-function MartMenu:wantsFillScale() return true end
-function MartMenu:drawsWidescreen() return true end
 
 -- data/generated/marts.lua is what the ROM extractor will write out of `Marts`
 -- (data/items/marts.asm): `lists` is a 1-based array in MART_* order, each
@@ -896,7 +894,8 @@ local function printPriceOpaque(amount, ty)
 end
 
 function MartMenu:drawBuyList()
-  -- pokegold engine/menus/scrolling_menu.asm _InitScrollingMenu: no border for the buy list
+  -- engine/items/mart.asm:542
+  Chrome.box(LIST_BOX_X, LIST_BOX_Y, LIST_BOX_W, LIST_BOX_H)
   for row = 1, VISIBLE_ROWS do
     local i = row + self.scroll
     local ty = LIST_Y + (row - 1) * LIST_SPACING
@@ -953,18 +952,14 @@ end
 function MartMenu:drawUnder()
   local phase = self.phase
   if phase == "top" then
-    Chrome.clear()
     self:drawTopMenu()
     self:drawTextBox(self.topLines)
   elseif phase == "buy" or phase == "buyQuantity" then
-    Chrome.clear()
     self:drawMoneyBox()
     self:drawBuyList()
     self:drawDescription()
   elseif phase == "sell" or phase == "sellQuantity" then
     if self.pack then self.pack:drawPanel() end
-  else
-    Chrome.clear()
   end
 end
 
@@ -1001,19 +996,6 @@ end
 
 function MartMenu:draw()
   self:drawPanel()
-end
-
-function MartMenu:drawWidescreen(winW, winH)
-  local G = love.graphics
-  G.setColor(1, 1, 1, 1)
-  G.rectangle("fill", 0, 0, winW, winH)
-  local scale = Chrome.fitScale(winW, winH)
-  G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
-  G.scale(scale, scale)
-  self:drawPanel()
-  G.pop()
 end
 
 return MartMenu

@@ -1084,16 +1084,20 @@ function Pokegear:update(_dt)
   -- answers -1 rather than backing out to the strip.
   if self.fly then return self:updateFlyMap(input) end
   if self.mode == "strip" then
-    if input:wasPressed("left") then
-      self.cardIndex = self.cardIndex > 1 and self.cardIndex - 1 or #self.cards
-    elseif input:wasPressed("right") then
-      self.cardIndex = self.cardIndex < #self.cards and self.cardIndex + 1 or 1
-    elseif input:wasPressed("a") then
-      self.mode = "card"
-    elseif input:wasPressed("b") then
-      if self.onClose then self.onClose() end
+    local stripCard = self:card()
+    if not (stripCard and stripCard.id == "phone") then
+      if input:wasPressed("left") then
+        self.cardIndex = self.cardIndex > 1 and self.cardIndex - 1 or #self.cards
+      elseif input:wasPressed("right") then
+        self.cardIndex = self.cardIndex < #self.cards and self.cardIndex + 1 or 1
+      elseif input:wasPressed("a") then
+        self.mode = "card"
+      elseif input:wasPressed("b") then
+        if self.onClose then self.onClose() end
+      end
+      return
     end
-    return
+    self.mode = "card"
   end
   -- Inside a card.
   local card = self:card()
@@ -1105,6 +1109,19 @@ function Pokegear:update(_dt)
   -- submenu is waiting for.
   local phoneBusy = card and card.id == "phone"
     and (self.call ~= nil or self.phoneSubmenu ~= nil)
+  -- engine/pokegear/pokegear.asm:799
+  if card and card.id == "phone" and not phoneBusy then
+    if input:wasPressed("b") then
+      if self.onClose then self.onClose() end
+      return
+    elseif input:wasPressed("left") then
+      self:switchCard("map", "clock")
+      return
+    elseif input:wasPressed("right") then
+      self:switchCard("radio")
+      return
+    end
+  end
   if not phoneBusy and input:wasPressed("b") then
     self.mode = "strip"
     self:stopRadio()
@@ -2057,6 +2074,7 @@ function Pokegear:drawPlayerIcon(x, y)
   local beat = math.floor((self.iconTimer or 0) / 8)
   -- .OAMData_RedWalk (data/sprite_anims/oam.asm:314-319) hangs its four tiles
   -- at -8,-8; camY of -4 undoes the world's sprite lift.
+  love.graphics.setColor(1, 1, 1, 1)
   self.playerIcon:draw(x - 8, y - 8, 0, -4, "down",
     beat % 2, beat == 3)
   return true

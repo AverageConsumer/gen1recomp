@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.1.79",
+          "date": "2026-08-12",
+          "size": 10956333,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.79/gen1recomp-0.1.79-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1090 With TILT Option enabled, screen does not correctly render beyond what would be visible with TILT Disabled.\n- #1093 Gen 2 Gold Beta: jingle doesn't play when receiving Elm's phone number\n- #1094 Gen 2 Gold Beta: no battle SFX when animations are Off\n- #1095 Gen 2 Gold Beta: player sprite has white box outline that cuts off Pokémon sprites\n- #1098 [Gold] Can't change controls (no menu for it and it doesn't use the one set in RBY)\n- #1102 [Gold] Shop ui off because of a border\n- #1105 [Gold] Game speed doesn't apply to the intro\n- #1106 [Gold] Games slots don't respect portable.txt\n- #1108 [Gold] Launcher doesn't show any information about the save slot(s)\n- #1109 [Options] text speed doesn't work at all.\n- #1110 [Gold] When catching a Pokemon, the ball disappears  and the text doesn't wait for you to progress\n- #1111 [Gold] nurse joy doesn't look left for healing\n- #1113 [Gold] Poke center -> Bills PC -> Deposit Pokemon, screen off\n- #1114 [Gold] Can't release Pokemon, menu doesn't appear\n- #1117 [Gold/Options] sound doesn't change\n- #1118 [Gold] Berrys animation missing and speedup.\n- #1121 [Gold] NPC trading (probably player too?) animation broken / missing things\n- #1122 [Gold] Level up UI.\n- #1123 [Gold] Character stops \"inside door\" when leaving buildings instead of moving one tile down\n- #1124 [Gold] When \"turning\", no animation is played\n- #1126 [Gold] Jumping off ledge animation missing\n- #1127 [Gold] Very minor Pokegear issues.\n- #1128 [Gold] When calling mom, the yes/no dialogue background color doesn't fit\n- #1131 [Gold] Pokegear map bug(s)\n- #1132 [gold] pokedex bugs\n- #1134 Unable to Validate/Pack mod calling Gold's overworld sprite\n- #1137 64x64 sprite support broken for mods on Gen 2\n- #1141 Teleport doesn't end wild battle\n\n## Contributors\n\n- @AverageConsumer\n- @bryanthaboi\n- @dburton95\n- @dlloa\n- @MaxTomahawk\n- @swuff-star\n- @TheRealSolidusSnake\n- @thibautbus"
+        },
+        {
           "version": "0.1.78",
           "date": "2026-08-11",
           "size": 10944298,

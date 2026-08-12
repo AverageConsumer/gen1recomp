@@ -159,14 +159,15 @@ function Game:makeTitleState()
       self:applyOptions(self.save.options)
       self.stack:push(OverworldState, self.save.player.map,
                       self.save.player.x, self.save.player.y,
-                      self.save.player.facing)
+                      self.save.player.facing,
+                      { via = "boot", freshBoot = true })
       Screens.push(self, bootScreens(self).newGame or "OakSpeech",
                    function() end)
     end,
     onContinue = function()
       local loaded, recovered = SaveData.load()
       if loaded then
-        self:restoreSave(loaded, recovered)
+        self:restoreSave(loaded, recovered, { freshBoot = true })
       end
     end,
   })
@@ -639,7 +640,12 @@ function Game:keypressed(key)
     return
   elseif key == "f2" then
     local loaded, recovered = SaveData.load()
-    if loaded then self:restoreSave(loaded, recovered) end
+    if loaded then
+      -- F2 jumps straight to the loaded save's map/position, with no
+      -- walking transition -- a hard state teleport like Continue, not a
+      -- smooth warp -- whether pressed at the title screen or mid-session.
+      self:restoreSave(loaded, recovered, { freshBoot = true })
+    end
     return
   elseif key == "-" then
     self:zoomStep(-1)
@@ -1124,7 +1130,7 @@ function Game:applyOptions(opts)
   if gbcCleared then self:writeOptions() end
 end
 
-function Game:restoreSave(loaded, recovered)
+function Game:restoreSave(loaded, recovered, opts)
   if ModRuntime.wants("save.loading") then
     ModRuntime.emit("save.loading", { raw = loaded })
   end
@@ -1157,8 +1163,12 @@ function Game:restoreSave(loaded, recovered)
   end
   -- rebuild the state stack from the save
   while self.stack:top() do self.stack:pop() end
+  -- freshBoot threads through from the caller (onContinue and F2 both set
+  -- it); a future caller that doesn't ask for it keeps the ordinary
+  -- crossfade by default.
   self.stack:push(self.overworld, loaded.player.map,
-                  loaded.player.x, loaded.player.y, loaded.player.facing)
+                  loaded.player.x, loaded.player.y, loaded.player.facing,
+                  { via = "boot", freshBoot = opts and opts.freshBoot })
   self.saveReport = report
   if not SaveData.emptyReport(report) then
     -- the report screen is a Screens id so mods (or the ui milestone) own
@@ -1187,9 +1197,12 @@ function Game:restoreCheckpointSave(loaded)
   self.save = loaded
   self:adoptSave(loaded)
   while self.stack:top() do self.stack:pop() end
+  -- freshBoot unconditionally: Checkpoint.resume (src/core/Checkpoint.lua)
+  -- is this method's only caller, and it is itself gated to the title
+  -- session (isTitleSession).
   self.stack:push(self.overworld, loaded.player.map,
                   loaded.player.x, loaded.player.y, loaded.player.facing,
-                  { via = "checkpoint", checkpoint = true })
+                  { via = "checkpoint", checkpoint = true, freshBoot = true })
 end
 
 -- Install a reconstructed battle without calling BattleState:enter(), whose

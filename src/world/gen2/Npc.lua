@@ -442,6 +442,27 @@ function NPC:updateTreeShake()
   return true
 end
 
+function NPC:scriptRockSmash(frames)
+  -- engine/overworld/map_objects.asm:1462
+  self.rockSmash = {
+    frame = 0,
+    frames = frames or 10,
+  }
+  self.frozen = true
+  return true
+end
+
+function NPC:updateRockSmash()
+  local st = self.rockSmash
+  if not st then return false end
+  st.frame = st.frame + 1
+  if st.frame >= st.frames then
+    self.rockSmash = nil
+    return false
+  end
+  return true
+end
+
 -- `passable` is the follower's escape (src/world/gen2/Follower.lua), the same
 -- name and meaning src/world/Collision.lua:20 gives it under Gen 1.
 local function occupied(entities, tx, ty, self)
@@ -512,6 +533,10 @@ function NPC:update(map, entities)
   -- way the teleport step type does, so it sits in the same position.
   if self.treeShake then
     self:updateTreeShake()
+    return
+  end
+  if self.rockSmash then
+    self:updateRockSmash()
     return
   end
   -- NPC_CHANGE_FACING (src/world/NPC.lua:71): one walk cycle in place, no
@@ -726,6 +751,15 @@ function NPC:draw(ox, oy, scale)
     self.sprite:draw(
       self.px, self.py + yOffset, 0, 0,
       facing, 0, false, false, q == 3)
+  elseif self.rockSmash then
+    -- engine/overworld/map_objects.asm:1462
+    if (self.rockSmash.frame % 2) == 0 then
+      G.pop()
+      return
+    end
+    self.sprite:draw(
+      self.px, self.py + yOffset, 0, 0,
+      self.facing, self:walkPhase(), self.stepFlip)
   else
     self.sprite:draw(
       self.px, self.py + yOffset, 0, 0,

@@ -456,7 +456,13 @@ end
 -- AskRockSmashScript reads it with `ifequal 1, .no`.  Transcribing it the
 -- obvious way round refuses the move for every party that has it.
 function H.HasRockSmash(ctx)
-  return call(ctx, "partyMoveUser", "ROCK_SMASH") and 0 or 1
+  local mon = call(ctx, "partyMoveUser", "ROCK_SMASH")
+  if mon then
+    -- engine/events/overworld.asm:1339
+    ctx.curPartyMon = mon
+    return 0
+  end
+  return 1
 end
 
 -- PutTheRodAway: ClearBox over the text window, then wPlayerAction back to

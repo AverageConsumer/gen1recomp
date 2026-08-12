@@ -17,6 +17,12 @@ local TURN_FRAMES = 4
 -- at the walking rate, which is what stops a bike step flickering the legs.
 Player.STEP_FRAMES = STEP_FRAMES
 
+-- engine/overworld/map_objects.asm:1815
+local JUMP_Y = {
+  -4, -6, -8, -10, -11, -12, -12, -12,
+  -11, -10, -9, -8, -6, -4, 0, 0,
+}
+
 function Player.new(cx, cy, facing, spriteDef)
   local self = setmetatable({
     cellX = cx, cellY = cy,
@@ -170,9 +176,11 @@ function Player:update()
   self.px = self.cellX * 16 + dx * adv
   self.py = self.cellY * 16 + dy * adv
   if self.jumping then
-    -- pokegold engine/overworld/map_objects.asm: UpdateJumpPosition's
-    -- y_offsets table peaks at -12.
-    self.py = self.py - math.floor(12 * math.sin(math.pi * self.progress / frames))
+    -- engine/overworld/map_objects.asm:1815
+    local idx = math.floor((self.progress - 1) / 2) + 1
+    if idx < 1 then idx = 1 end
+    if idx > #JUMP_Y then idx = #JUMP_Y end
+    self.spriteYOffset = JUMP_Y[idx]
   end
   if self.progress >= frames then
     self.cellX, self.cellY = self.targetX, self.targetY
@@ -180,6 +188,7 @@ function Player:update()
     self.px, self.py = self.cellX * 16, self.cellY * 16
     self.moving = false
     self.jumping = nil
+    self.spriteYOffset = 0
     self.stepFlip = not self.stepFlip
     return true
   end
@@ -193,6 +202,15 @@ function Player:draw(ox, oy, scale)
   -- standing on.  StepFunction_GotBite's `xor 1` rod bob and the fly take-off
   -- lift both ride this one byte.
   local yOffset = self.spriteYOffset or 0
+  if self.jumping then
+    -- engine/overworld/map_objects.asm:1995
+    local gx = ox + self.px * scale
+    local gy = oy + self.py * scale
+    local s = 16 * scale
+    G.setColor(0, 0, 0, 0.4)
+    G.ellipse("fill", gx + s * 0.5, gy + s * 0.85, s * 0.35, s * 0.12)
+    G.setColor(1, 1, 1, 1)
+  end
   if self.sprite then
     G.push()
     G.translate(ox, oy)

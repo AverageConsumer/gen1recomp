@@ -68,7 +68,16 @@ function Mon.stats(baseStats, dvs, level, statExp)
   baseStats = baseStats or {}
   dvs = dvs or {}
   statExp = statExp or {}
-  local hpDv = dvs.hp or Mon.hpDV(dvs)
+  -- engine/pokemon/move_mon.asm:1540
+  local specialDv = dvs.special
+  if specialDv == nil then
+    specialDv = dvs.specialAttack or dvs.specialDefense
+  end
+  -- engine/pokemon/move_mon.asm:1496
+  local hpDv = Mon.hpDV({
+    attack = dvs.attack, defense = dvs.defense,
+    speed = dvs.speed, special = specialDv,
+  })
   local hp = math.floor((((baseStats.hp or 1) * 2 + hpDv * 2
     + math.floor(math.sqrt(statExp.hp or 0) / 4)) * level) / 100)
     + level + 10
@@ -82,11 +91,25 @@ function Mon.stats(baseStats, dvs, level, statExp)
     -- box_struct ends them at SpcExp), so SpA and SpD grow together.  The
     -- per-stat keys are still read as a fallback for a record written before
     -- the shared word existed.
-    specialAttack = statValue(baseStats.specialAttack, dvs.special, level,
+    specialAttack = statValue(baseStats.specialAttack, specialDv, level,
       statExp.special or statExp.specialAttack),
-    specialDefense = statValue(baseStats.specialDefense, dvs.special, level,
+    specialDefense = statValue(baseStats.specialDefense, specialDv, level,
       statExp.special or statExp.specialDefense),
   }
+end
+
+function Mon.refreshStats(mon, data)
+  if type(mon) ~= "table" then return mon end
+  local def = data and data.pokemon and data.pokemon[mon.species]
+  if not (def and def.baseStats) then return mon end
+  -- engine/pokemon/move_mon.asm:1402
+  local stats = Mon.stats(def.baseStats, mon.dvs, mon.level or 1, mon.statExp)
+  mon.stats = stats
+  mon.maxHp = stats.hp
+  if mon.hp == nil or mon.hp > stats.hp then
+    mon.hp = stats.hp
+  end
+  return mon
 end
 
 -- The five stat exp words, in struct order.  There is no sixth: see Mon.stats.

@@ -621,6 +621,8 @@ function World.new(game)
     -- which is why a cut tree is back the next time you walk in.  Restoring
     -- these at the top of setMap is that refill.
     blockEdits = {},
+    -- engine/overworld/map_setup.asm:78
+    objectSpawns = {},
     -- A field move that is mid-flow (the used-X text, then its effect).
     fieldMove = nil,
     -- ---- state the script VM owns ------------------------------------------
@@ -1819,6 +1821,15 @@ function World:moveObject(objectId, cellX, cellY)
   local def = self.map and self.map.def
   local obj = def and def.objects and def.objects[index]
   if not (obj and cellX and cellY) then return end
+  local mapId = self.map and self.map.id
+  local key = obj.index or index
+  if mapId then
+    self.objectSpawns = self.objectSpawns or {}
+    self.objectSpawns[mapId] = self.objectSpawns[mapId] or {}
+    if not self.objectSpawns[mapId][key] then
+      self.objectSpawns[mapId][key] = { obj.x, obj.y }
+    end
+  end
   obj.x, obj.y = cellX, cellY
   local npc = self:objectEntity(objectId)
   if npc and npc ~= self.player then
@@ -3715,6 +3726,16 @@ function World:updateMovement()
   while st.i <= #st.bytes do
     local b = st.bytes[st.i]
     st.i = st.i + 1
+    -- engine/overworld/movement.asm:163
+    if b == 0x57 then
+      local duration = st.bytes[st.i] or 0
+      st.i = st.i + 1
+      if ent.scriptRockSmash then
+        ent:scriptRockSmash(duration)
+      end
+      st.sleep = duration
+      return
+    end
     local act = Movement.decodeByte(b)
     if act.kind == "end" then
       -- SLIDING_F is an object flag, not a stream one, so a stream that never
@@ -5238,6 +5259,38 @@ function World:restoreBlocks()
   return any
 end
 
+function World:restoreObjectSpawns()
+  -- engine/overworld/map_setup.asm:78
+  local spawns = self.objectSpawns
+  if not spawns then return end
+  for mapId, byIndex in pairs(spawns) do
+    local def = self.maps and self.maps[mapId]
+    local objects = def and def.objects
+    if objects then
+      for key, xy in pairs(byIndex) do
+        local obj
+        for _, row in ipairs(objects) do
+          if (row.index or 0) == key then obj = row break end
+        end
+        if obj then
+          obj.x, obj.y = xy[1], xy[2]
+        end
+        local npc = self.npcPool
+          and self.npcPool[string.format("%s_obj_%d", mapId, key)]
+        if npc then
+          npc.cellX, npc.cellY = xy[1], xy[2]
+          npc.px, npc.py = xy[1] * 16, xy[2] * 16
+          npc.homeX, npc.homeY = xy[1], xy[2]
+          npc.moving = false
+          npc.progress = 0
+          npc.targetX, npc.targetY = nil, nil
+        end
+      end
+    end
+    spawns[mapId] = nil
+  end
+end
+
 -- Drop the loaded map's baked canvases and bake again.  Same shape as what
 -- pollTimeOfDay does when the clock rolls the palette over; a block edit
 -- invalidates the bake for the same reason a palette change does.  A world with
@@ -5361,8 +5414,10 @@ end
 -- picked, and TextBox reads it back off game.stringBuffer.
 function World:setNickname(mon)
   if not self.game then return end
-  self.game.stringBuffer =
-    (mon and (mon.nickname or mon.name or mon.species)) or ""
+  local name = (mon and (mon.nickname or mon.name or mon.species)) or ""
+  self.game.stringBuffer = name
+  -- engine/events/overworld.asm:1339
+  if self.vm then self.vm.stringBuffer = name end
 end
 
 function World:playMonCry(mon)
@@ -8305,6 +8360,7 @@ function World:setMap(mapId, cx, cy, facing, opts)
   -- and WHIRLPOOL swapped out goes back: a cut tree is standing again the next
   -- time the map is loaded, and this has to happen before Map.new reads them.
   self:restoreBlocks()
+  self:restoreObjectSpawns()
   -- HandleNewMap (home/map.asm:216-228) runs ResetMapBufferEventFlags before
   -- anything else that touches state: event flags 0-7
   -- (EVENT_TEMPORARY_UNTIL_MAP_RELOAD) die on every map load, which is what
@@ -8785,7 +8841,8 @@ function World:tryLedgeJump(dir)
   -- ShakeGrass (engine/overworld/movement.asm:741-770).
   p.inGrass, p.grassShake = false, nil
   p.progress = 0
-  p.stepFrames = Player.STEP_FRAMES
+  -- engine/overworld/map_objects.asm:1163
+  p.stepFrames = Player.STEP_FRAMES * 2
   self:playSfxNamed("Sfx_JumpOverLedge", SFX_JUMP_OVER_LEDGE)
   return true
 end

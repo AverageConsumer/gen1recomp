@@ -261,6 +261,8 @@ function SummaryMenu.new(game, opts)
       math.min(opts.index or 1, math.max(1, #self.party)))
     self.mon = self.party[self.index]
   end
+  -- engine/pokemon/move_mon.asm:1402
+  Mon.refreshStats(self.mon, data)
   self.page = opts.page or PINK_PAGE
   -- ManagePokemonMoves opens straight onto MoveScreenLoop's screen; SELECT off
   -- the green page reaches the same view with the stats pages still behind it.
@@ -678,6 +680,8 @@ function SummaryMenu:switchMon(delta)
   if next_ < 1 or next_ > #self.party then return false end
   self.index = next_
   self.mon = self.party[next_]
+  -- engine/pokemon/move_mon.asm:1402
+  Mon.refreshStats(self.mon, self.game and self.game.data)
   self.moveIndex = 1
   self:playCry()
   return true
@@ -694,6 +698,8 @@ function SummaryMenu:switchMonPastEggs(delta)
   if next_ < 1 or next_ > #self.party then return false end
   self.index = next_
   self.mon = self.party[next_]
+  -- engine/pokemon/move_mon.asm:1402
+  Mon.refreshStats(self.mon, self.game and self.game.data)
   self.moveIndex = 1
   self:playCry()
   return true

@@ -45,6 +45,7 @@
 local Anim = require("src.core.gen2.TradeAnim")
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
+local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
@@ -200,6 +201,15 @@ local TEMPLATE_ROWS = {
   { row = 0, text = "─── №." },
   { row = 4, text = "OT/" },
   { row = 6, text = "<ID>№." },
+}
+
+-- gfx/sgb/predef.pal:29
+local function scale5(value) return math.floor(value * 255 / 31 + 0.5) end
+local TRADE_TUBE_PAL = {
+  { scale5(31), scale5(31), scale5(31) },
+  { scale5(18), scale5(20), scale5(27) },
+  { scale5(11), scale5(15), scale5(23) },
+  { 0, 0, 0 },
 }
 
 --------------------------------------------------------------------------
@@ -367,8 +377,22 @@ end
 -- reading through.
 -- `index` is a GB shade, 0 (white) to 3 (black); GbcPalette.color counts from
 -- 1, as the palettes themselves do.
+function TradeAnimView:bgColors()
+  local id = (self.beat or {}).id or ""
+  local pan = id:find("_pan_", 1, true)
+  if not pan then
+    return Palettes.textColors(self.palettes)
+  end
+  local colors = TRADE_TUBE_PAL
+  -- engine/movie/trade_animation.asm:1271
+  if math.floor((self.frame or 0) / 8) % 2 == 1 then
+    colors = { colors[1], colors[3], colors[2], colors[4] }
+  end
+  return colors
+end
+
 function TradeAnimView:shade(index)
-  local colors = Palettes.textColors(self.palettes)
+  local colors = self:bgColors()
   local rgb = GbcPalette.color(colors, index + 1)
     or ({ { 255, 255, 255 }, { 168, 168, 168 }, { 96, 96, 96 },
           { 0, 0, 0 } })[index + 1]
@@ -384,7 +408,7 @@ end
 -- and GbcPalette maps them.  A driver with no shader draws the greys, which
 -- is the DMG ramp and not a black frame.
 function TradeAnimView:through(body)
-  local colors = Palettes.textColors(self.palettes)
+  local colors = self:bgColors()
   love.graphics.setColor(1, 1, 1, 1)
   if colors and GbcPalette.available() then
     GbcPalette.with(colors, body)
@@ -543,7 +567,7 @@ function TradeAnimView:drawStats(record, offset)
   G.setColor(1, 1, 1, 1)
   G.rectangle("fill", (PANEL_X + 1) * 8, PANEL_Y * 8, 9 * 8, 8)
   for _, row in ipairs(TEMPLATE_ROWS) do
-    Chrome.print(row.text, PANEL_X + 1, row.row)
+    Chrome.print(Strings(row.text), PANEL_X + 1, row.row)
   end
   Chrome.print(Chrome.number(record.dex or 0, 3, true), PANEL_X + 7, 0)
   Chrome.print(record.name, PANEL_X + 1, 2)
@@ -767,6 +791,8 @@ end
 function TradeAnimView:drawPanel()
   local id = (self.beat or {}).id
   local t = self.offset or 0
+  -- engine/movie/trade_animation.asm:151
+  local wasBattle = Font.useBattleExtra(true)
   Chrome.clear()
 
   if GIVE_BEATS[id] then
@@ -794,6 +820,7 @@ function TradeAnimView:drawPanel()
     end
   end
   love.graphics.setColor(1, 1, 1, 1)
+  Font.useBattleExtra(wasBattle)
 end
 
 function TradeAnimView:drawTubeBeat(id, t)

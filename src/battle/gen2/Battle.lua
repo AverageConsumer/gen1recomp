@@ -217,7 +217,7 @@ function Battle.new(opts)
   opts = opts or {}
   local self = setmetatable({}, Battle)
   self.data = opts.data or {}
-  self.random = opts.random
+  self.random = opts.random or function(n) return rand(nil, n) end
   self.party = opts.party or {}
   self.trainer = opts.trainer
   self.save = opts.save
@@ -269,6 +269,13 @@ function Battle.new(opts)
     end
     self.enemyIndex = Battle.firstHealthy(self.enemyParty) or 1
     self.enemy = self.enemyParty[self.enemyIndex]
+  end
+
+  for _, mon in ipairs(self.party) do
+    Mon.refreshStats(mon, self.data)
+  end
+  for _, mon in ipairs(self.enemyParty or {}) do
+    Mon.refreshStats(mon, self.data)
   end
 
   -- Battle RAM opens empty on both sides: NewBattleMonStatus and
@@ -1655,7 +1662,7 @@ function Battle:useMove(attacker, defender, moveId)
       state.rolloutLock = nil
     end
 
-    local hits = Effects.hitCount(def.effect, self.random)
+    local hits = Effects.hitCount(def.effect, self:roller())
     local landed = 0
     for hit = 1, hits do
       if (defender.hp or 0) <= 0 then break end
@@ -3178,7 +3185,8 @@ function Battle:giveExperiencePass(loser, def, recipients, count, halved)
         -- ChangeHappiness is outside the level loop.
         Happiness.change(mon, "GAINLEVEL")
         self:emit({ kind = "level", index = index, level = mon.level,
-          text = self:monName(mon) .. " grew to level " .. mon.level .. "!" })
+          text = self:monName(mon) .. " grew to level " .. mon.level .. "!",
+          sfx = "Sfx_DexFanfare5079", waitSfx = true })
         for _, moveId in ipairs(result.learned) do
           local ok, reason, entry = Mon.learnMove(mon, moveId, self.data)
           local moveDef = self:moveDef(moveId)
@@ -3644,7 +3652,7 @@ end
 -- Running: Gen 2's odds (engine/battle/core.asm TryToRunAwayFromBattle) are
 -- based on the speed ratio and how many times you have tried this battle.
 -- Trainers never let you run.
-function Battle:tryRun()
+function Battle:tryRun(pSpd)
   -- .cant_escape and .cant_run_from_trainer leave wBattlePlayerAction alone,
   -- which is what BattleMenu_Run reads to decide whether the turn was spent
   -- (engine/battle/core.asm:5035); only .cant_escape_2, the failed roll at the
@@ -3676,7 +3684,8 @@ function Battle:tryRun()
     return false
   end
   self.runAttempts = (self.runAttempts or 0) + 1
-  if self:runRoll(self:effectiveSpeed(self.player),
+  -- engine/battle/core.asm:2614
+  if self:runRoll(pSpd or self:effectiveSpeed(self.player),
       self:effectiveSpeed(self.enemy)) then
     self:emit({ kind = "run", text = "Got away safely!" })
     self:endBattle("run")

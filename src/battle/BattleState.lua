@@ -21,12 +21,14 @@ local MoveEffects = require("src.battle.MoveEffects")
 local Party = require("src.pokemon.Party")
 local Pokemon = require("src.pokemon.Pokemon")
 local Runtime = require("src.mods.Runtime")
+local BattleSafety = require("src.battle.BattleSafety")
 local Screens = require("src.ui.Screens")
 local Status = require("src.battle.Status")
 local Timing = require("src.core.Timing")
 local TrainerAI = require("src.battle.TrainerAI")
 local TurnOrder = require("src.battle.TurnOrder")
 local TypeChart = require("src.battle.TypeChart")
+local UIVisibility = require("src.battle.UIVisibility")
 local RomText = require("src.core.RomText")
 local Strings = require("src.core.Strings")
 local WideBattle = require("src.battle.WideBattle")
@@ -135,9 +137,7 @@ function BattleState:sgbPalettes()
 end
 
 function BattleState:bottomUIVisible()
-  if not Runtime.wantsHook("battle.bottom_ui_visible") then return true end
-  return Runtime.call("battle.bottom_ui_visible", function() return true end,
-                      self) ~= false
+  return UIVisibility.bottomVisible(self, true)
 end
 
 function BattleState:statusHUDVisible()
@@ -2059,6 +2059,17 @@ function BattleState:update(dt)
     if locked then
       self:resolveTurn(locked)
       return
+    end
+    -- START has no vanilla action at a settled supported player-decision
+    -- boundary.  A tool mod may claim this semantic auxiliary action through
+    -- the public hook, receiving only game plus a data-only kind.  The shared
+    -- safety predicate keeps every unsupported/forced/animated phase inert.
+    if input:wasPressed("start") and Runtime.wantsHook("battle.menu_auxiliary") then
+      local safe = BattleSafety.inspect(self.game, self)
+      if safe and Runtime.call("battle.menu_auxiliary", function() return false end,
+          self.game, { kind = self.kind }) == true then
+        return
+      end
     end
     local col = (self.menuIndex - 1) % 2
     local row = math.floor((self.menuIndex - 1) / 2)

@@ -127,6 +127,7 @@ function BindingsMenu:beginCapture(item)
   self.onKeyReleased = BindingsMenu.captureKeyRelease
   self.onGamepadReleased = BindingsMenu.capturePadRelease
   self.onJoystickReleased = BindingsMenu.captureJoyRelease
+  if Input.armCapture then Input:armCapture() end
 end
 
 function BindingsMenu:endCapture()
@@ -138,6 +139,7 @@ function BindingsMenu:endCapture()
   self.onKeyReleased = nil
   self.onGamepadReleased = nil
   self.onJoystickReleased = nil
+  if Input.disarmCapture then Input:disarmCapture() end
 end
 
 -- Escape is the capture's way out, so it is never captured: every other
@@ -232,7 +234,11 @@ function BindingsMenu:storeBinding(slot, value)
   b[slot] = value
   opts.bindings[item.button.id] = b
   item.right = boundRight(opts.bindings, item.button)
-  if game.writeOptions then game:writeOptions() end
+  if game.writeOptions then
+    game:writeOptions()
+  elseif game.persistOptions then
+    game:persistOptions()
+  end
 end
 
 -- SELECT: forget one row's rebind and fall back to the defaults.  #510's
@@ -246,7 +252,11 @@ function BindingsMenu:clearBinding(item)
   end
   opts.bindings[item.button.id] = nil
   item.right = boundRight(opts.bindings, item.button)
-  if game.writeOptions then game:writeOptions() end
+  if game.writeOptions then
+    game:writeOptions()
+  elseif game.persistOptions then
+    game:persistOptions()
+  end
 end
 
 -- START: confirm, then drop the whole overlay (#589).  The footer doubles
@@ -264,12 +274,39 @@ function BindingsMenu:confirmReset()
     for _, it in ipairs(self.items) do
       it.right = boundRight(nil, it.button)
     end
-    if game.writeOptions then game:writeOptions() end
+    if game.writeOptions then
+      game:writeOptions()
+    elseif game.persistOptions then
+      game:persistOptions()
+    end
   end, { defaultNo = true }))
 end
 
+function BindingsMenu:drainCapture()
+  local events = Input.takeCaptureEvents and Input:takeCaptureEvents()
+  if not events then return end
+  for i = 1, #events do
+    local ev = events[i]
+    if ev.phase == "pressed" then
+      if ev.kind == "key" then self:captureKey(ev.value)
+      elseif ev.kind == "pad" then self:capturePad(ev.value)
+      elseif ev.kind == "joy" then self:captureJoy(ev.value)
+      end
+    else
+      if ev.kind == "key" then self:captureKeyRelease(ev.value)
+      elseif ev.kind == "pad" then self:capturePadRelease(ev.value)
+      elseif ev.kind == "joy" then self:captureJoyRelease(ev.value)
+      end
+    end
+    if not self.capture then return end
+  end
+end
+
 function BindingsMenu:update(dt)
-  if self.capture then return end -- the raw capture owns the input
+  if self.capture then
+    self:drainCapture()
+    return
+  end
   if self.game.input:wasPressed("start") then
     return self:confirmReset()
   end

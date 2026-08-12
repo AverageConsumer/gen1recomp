@@ -27,10 +27,9 @@ APPLICATION_ID="io.github.averageconsumer.gen1recomp.androidtest"
 LOVE_ANDROID_VERSION="11.5a"
 NDK_VERSION="25.2.9519653"
 YELLOW_MANIFEST_RELATIVE="tools/rom_manifest_yellow.json"
-# A fresh source checkout normally supplies this through Git.  This URL is
-# deliberately only a last resort for incomplete source exports: the manifest
-# contains extraction metadata, never a ROM or extracted game data.
 YELLOW_MANIFEST_URL="${YELLOW_MANIFEST_URL:-https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/tools/rom_manifest_yellow.json}"
+GOLD_MANIFEST_RELATIVE="tools/rom_manifest_gold.json"
+GOLD_MANIFEST_URL="${GOLD_MANIFEST_URL:-https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/tools/rom_manifest_gold.json}"
 
 VERSION=""
 PACKAGE_ONLY=false
@@ -130,6 +129,54 @@ ensure_yellow_manifest() {
   fail "Yellow import manifest is unavailable. Git recovery failed and could not download $YELLOW_MANIFEST_URL"
 }
 
+gold_manifest_is_valid() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json, pathlib, sys
+
+try:
+    manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
+except (OSError, ValueError):
+    raise SystemExit(1)
+
+raise SystemExit(0 if manifest.get("romSha1") ==
+                 "d8b8a3600a465308c9953dfa04f0081c05bdcb94" else 1)
+PY
+}
+
+ensure_gold_manifest() {
+  local manifest="$ROOT/$GOLD_MANIFEST_RELATIVE"
+  local staged
+  staged="$(mktemp)"
+
+  if gold_manifest_is_valid "$manifest"; then
+    rm -f "$staged"
+    return
+  fi
+
+  warn "Gold import manifest is missing or invalid; recovering it before packaging"
+  if git -C "$ROOT" show "HEAD:$GOLD_MANIFEST_RELATIVE" > "$staged" 2>/dev/null \
+      && gold_manifest_is_valid "$staged"; then
+    mkdir -p "$(dirname "$manifest")"
+    mv "$staged" "$manifest"
+    say "restored Gold import manifest from this checkout's Git data"
+    return
+  fi
+
+  if command -v curl >/dev/null 2>&1 \
+      && curl --fail --location --retry 2 --connect-timeout 15 \
+          --output "$staged" "$GOLD_MANIFEST_URL" \
+      && gold_manifest_is_valid "$staged"; then
+    mkdir -p "$(dirname "$manifest")"
+    mv "$staged" "$manifest"
+    say "downloaded Gold import manifest from the project repository"
+    return
+  fi
+
+  rm -f "$staged"
+  fail "Gold import manifest is unavailable. Git recovery failed and could not download $GOLD_MANIFEST_URL"
+}
+
 # --------------------------------------------------------------- branding
 # love-android 11.5+ reads app id / name / orientation from gradle.properties.
 # Manifest still gets permission trims. Re-applied every build so refreshing
@@ -194,6 +241,7 @@ PY
 pack_game_love() {
   say "packing game.love for love-android embed flavor"
   ensure_yellow_manifest
+  ensure_gold_manifest
   mkdir -p "$EMBED_ASSETS"
   rm -f "$LOVE_FILE"
   # tools/save-editor ships with the app: the launcher's Edit button on a save
