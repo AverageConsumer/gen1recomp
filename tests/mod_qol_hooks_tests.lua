@@ -168,8 +168,11 @@ end
 
 do
   local BattleState = require("src.battle.BattleState")
+  local Gen2BattleState = require("src.ui.gen2.BattleState")
   check(BattleState.bottomUIVisible({ phase = "menu" }),
     "battle bottom UI is visible without a mod")
+  check(Gen2BattleState.bottomUIVisible({ phase = "menu" }),
+    "Gold battle bottom UI is visible without a mod")
   local seen
   local unsub = wrap("battle.bottom_ui_visible", function(_, state)
     seen = state
@@ -177,6 +180,8 @@ do
   end)
   check(not BattleState.bottomUIVisible({ phase = "messages" }),
     "a mod can hide the battle text and menu layer")
+  check(not Gen2BattleState.bottomUIVisible({ phase = "menu" }),
+    "the same hook hides Gold's battle text and menu layer")
   local text = setmetatable({}, TextBox)
   text:draw()
   check(seen == text, "pushed text boxes use the same visibility hook")
@@ -200,15 +205,41 @@ do
 
   check(BattleState.bottomUIVisible({ phase = "moveSelect" }),
     "battle bottom UI returns when the hook is removed")
+  check(Gen2BattleState.bottomUIVisible({ phase = "moves" }),
+    "Gold battle bottom UI returns when the hook is removed")
+
+  local Chrome = require("src.ui.gen2.Chrome")
+  local clear, box, print = Chrome.clear, Chrome.box, Chrome.print
+  local boxes = 0
+  Chrome.clear = function() end
+  Chrome.box = function() boxes = boxes + 1 end
+  Chrome.print = function() end
+  local panel = setmetatable({
+    battle = { player = {}, enemy = {} }, phase = "resolving",
+    drawHud = function() end,
+  }, { __index = Gen2BattleState })
+  unsub = wrap("battle.bottom_ui_visible", function() return false end)
+  panel:drawPanel()
+  check(boxes == 0, "Gold skips its in-state battle box when a mod owns it")
+  unsub()
+  panel:drawPanel()
+  check(boxes == 1, "Gold draws its battle box again without the hook")
+  Chrome.clear, Chrome.box, Chrome.print = clear, box, print
 
   check(BattleState.statusHUDVisible({}),
     "battle status HUD is visible without a mod")
+  check(Gen2BattleState.statusHUDVisible({}),
+    "Gold battle status HUD is visible without a mod")
   unsub = wrap("battle.status_hud_visible", function() return false end)
   check(not BattleState.statusHUDVisible({}),
     "a mod can hide the battle status HUD")
+  check(not Gen2BattleState.statusHUDVisible({}),
+    "the same hook hides Gold's battle status HUD")
   unsub()
   check(BattleState.statusHUDVisible({}),
     "battle status HUD returns when the hook is removed")
+  check(Gen2BattleState.statusHUDVisible({}),
+    "Gold battle status HUD returns when the hook is removed")
 end
 
 -- ------- battle.caught_marker_visible (caught wild marker)

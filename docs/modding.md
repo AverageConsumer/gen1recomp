@@ -454,6 +454,7 @@ identifiers: `pc_box_withdraw`, `pc_box_deposit`, `pc_box_release`,
 `battle.bottom_ui_visible` and `battle.status_hud_visible` independently
 control the battle text/menu layer and the HP/status panels. Both receive
 `(next, state)` and default to `true`, so vanilla rendering is unchanged.
+Both hooks apply to Gen 1 and Gen 2 battles.
 Text boxes and YES/NO prompts pushed above a battle inherit a `false` result
 for that battle, so hiding the bottom layer cannot leave their white backing
 behind under another overlay. Text boxes also pass through the hook as their

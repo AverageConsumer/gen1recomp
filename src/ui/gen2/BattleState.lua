@@ -173,6 +173,18 @@ end
 function BattleState:wantsFillScale() return true end
 function BattleState:drawsWidescreen() return true end
 
+function BattleState:bottomUIVisible()
+  if not Runtime.wantsHook("battle.bottom_ui_visible") then return true end
+  return Runtime.call("battle.bottom_ui_visible", function() return true end,
+                      self) ~= false
+end
+
+function BattleState:statusHUDVisible()
+  if not Runtime.wantsHook("battle.status_hud_visible") then return true end
+  return Runtime.call("battle.status_hud_visible", function() return true end,
+                      self) ~= false
+end
+
 -- opts: battle (a Battle), onDone(outcome), save
 function BattleState.new(game, opts)
   opts = opts or {}
@@ -3079,6 +3091,7 @@ end
 function BattleState:drawHud()
   local wasBattle = Font.useBattleExtra(true)
   local enemy, player = self:activeMon("enemy"), self:activeMon("player")
+  local showStatus = self:statusHUDVisible()
 
   -- Enemy HUD (DrawEnemyHUD clears (1,0) 4 rows x 11 cols):
   --   name at (1,0); PrintLevel at (6,1) with the gender symbol at (9,1);
@@ -3087,7 +3100,7 @@ function BattleState:drawHud()
   -- runs, so a shake or a slide does not drag the HP bar with it.
   -- And nothing at all before UpdateEnemyHUD has ever run: the intro bands
   -- slide in over a blanked tilemap (core.asm:8554/8564).
-  if self.showEnemyHud and not self:hudCleared("enemy") then
+  if showStatus and self.showEnemyHud and not self:hudCleared("enemy") then
   Chrome.print(self:name(enemy), 1, 0)
   -- PrintLevel writes <LV> at the coordinate it is given and then LEFT-aligns
   -- the digits after it, so the glyph is pinned to column 6 whether the level
@@ -3127,7 +3140,8 @@ function BattleState:drawHud()
   -- BattleMenu's own tutorial arm skips UpdateBattleHuds as well.  The DUDE's
   -- half of the screen is his back-pic and nothing more.
   -- Nor before SendOutPlayerMon's own UpdatePlayerHUD (core.asm:3838).
-  if not player or not self.showPlayerHud or self:hudCleared("player") then
+  if not showStatus or not player or not self.showPlayerHud
+      or self:hudCleared("player") then
     Font.useBattleExtra(wasBattle)
     return
   end
@@ -3225,6 +3239,11 @@ function BattleState:drawPanel()
     return
   end
   self:drawHud()
+
+  if not self:bottomUIVisible() then
+    love.graphics.setColor(1, 1, 1, 1)
+    return
+  end
 
   -- Message box across the bottom, with the menu window over its right half --
   -- the cart draws the prompt into the full-width box and then opens the menu
