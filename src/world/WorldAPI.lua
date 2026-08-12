@@ -6,6 +6,8 @@
 -- stays unsupported; anything a mod legitimately needs belongs here.
 
 local Logger = require("src.core.Logger")
+local FieldDefaults = require("src.world.FieldDefaults")
+local Map = require("src.world.Map")
 local MapLoader = require("src.world.MapLoader")
 local MapOverview = require("src.world.MapOverview")
 local Party = require("src.pokemon.Party")
@@ -15,6 +17,9 @@ local WorldAPI = {}
 WorldAPI.__index = WorldAPI
 
 local NO_OVERWORLD = "no overworld"
+local DIG_TILESETS = { FOREST = true, CEMETERY = true, CAVERN = true,
+                       FACILITY = true, INTERIOR = true }
+local RODS = { "OLD_ROD", "GOOD_ROD", "SUPER_ROD" }
 
 local function acceptsMenuInput(game, ow)
   local stack = game and game.stack
@@ -83,6 +88,169 @@ function WorldAPI:reorderParty(fromSlot, toSlot)
     party[fromSlot], party[toSlot] = party[toSlot], party[fromSlot]
     require("src.core.Sound").play(game.data, "Swap")
   end
+  return true
+end
+
+local function outside(game, ow)
+  return Map.isOutside(ow.map.def,
+    FieldDefaults.field(game.data, "outsideTilesets"))
+end
+
+local function knows(mon, moveId)
+  for _, move in ipairs(mon.moves or {}) do
+    if move.id == moveId then return true end
+  end
+  return false
+end
+
+local function monInfo(game, mon, slot)
+  local def = game.data.pokemon[mon.species] or {}
+  return { slot = slot, species = mon.species,
+    name = mon.nickname or def.name or mon.species, level = mon.level,
+    hp = mon.hp, maxHp = mon.stats and mon.stats.hp or mon.hp }
+end
+
+local function softboiledSources(game)
+  local party, sources = game.save.party or {}, {}
+  for sourceSlot, source in ipairs(party) do
+    local heal = source.stats and math.floor(source.stats.hp / 5) or 0
+    if knows(source, "SOFTBOILED") and source.hp > heal then
+      local info = monInfo(game, source, sourceSlot)
+      info.targets = {}
+      for targetSlot, target in ipairs(party) do
+        if target ~= source and target.hp > 0 and target.stats
+           and target.hp < target.stats.hp then
+          info.targets[#info.targets + 1] = monInfo(game, target, targetSlot)
+        end
+      end
+      if #info.targets > 0 then sources[#sources + 1] = info end
+    end
+  end
+  return sources
+end
+
+function WorldAPI:availableFieldActions()
+  local ow = self:overworld()
+  local game, out = self.game, {}
+  if not (ow and ow.map and ow.player and game and game.save) then return out end
+  local save, inv = game.save, game.save.inventory or {}
+  local function add(id, label) out[#out + 1] = { id = id, label = label } end
+
+  if (inv.BICYCLE or 0) > 0 and not ow.player.surfing
+     and (save.onBike or ow:bikeAllowed(ow.map.id)) then
+    add("bicycle", save.onBike and "BIKE OFF" or "BICYCLE")
+  end
+  if inv.CASCADEBADGE and ow:useCutFieldMove() == "ok" then add("cut", "CUT") end
+  if inv.SOULBADGE then
+    local surf = ow:useSurfFieldMove()
+    if surf == "ok" or surf == "dismount" then
+      add("surf", surf == "dismount" and "LEAVE WATER" or "SURF")
+    end
+  end
+  local fx, fy = ow.player:facingCell()
+  if ow.map:inBounds(fx, fy) and ow.map:isWaterCell(fx, fy) then
+    local rods = {}
+    for _, id in ipairs(RODS) do
+      if (inv[id] or 0) > 0 then
+        local def = game.data.items and game.data.items[id]
+        rods[#rods + 1] = { id = id, label = def and def.name or id }
+      end
+    end
+    if #rods > 0 then
+      add("fish", "FISH")
+      out[#out].rods = rods
+    end
+  end
+  if inv.RAINBOWBADGE and not ow.strengthActive
+     and ow:partyKnows("STRENGTH") then add("strength", "STRENGTH") end
+  if inv.BOULDERBADGE and ow.dark and ow:partyKnows("FLASH") then
+    add("flash", "FLASH")
+  end
+  if DIG_TILESETS[ow.map.def.tileset] and ow.map.id ~= "AGATHAS_ROOM"
+     and ow:partyKnows("DIG") then add("dig", "DIG") end
+  if outside(game, ow) and ow:partyKnows("TELEPORT") then
+    add("teleport", "TELEPORT")
+  end
+  local sources = softboiledSources(game)
+  if #sources > 0 then
+    add("softboiled", "SOFTBOILED")
+    out[#out].sources = sources
+  end
+  return out
+end
+
+function WorldAPI:useFieldAction(id, opts)
+  local ow = self:overworld()
+  if not ow then return nil, NO_OVERWORLD end
+  if self.game.stack:top() ~= ow then return nil, "world is busy" end
+  local found
+  for _, action in ipairs(self:availableFieldActions()) do
+    if action.id == id then found = action break end
+  end
+  if not found then return nil, "field action unavailable" end
+
+  if id == "bicycle" then
+    ow:toggleBike()
+  elseif id == "cut" then
+    local x, y = ow.player:facingCell()
+    ow:tryCut(x, y)
+  elseif id == "surf" then
+    if ow:useSurfFieldMove() == "dismount" then
+      ow:stopSurfing()
+    else
+      local x, y = ow.player:facingCell()
+      ow:trySurf(x, y)
+    end
+  elseif id == "fish" then
+    local rod = opts and opts.rod
+    if not rod and #found.rods == 1 then rod = found.rods[1].id end
+    local allowed
+    for _, choice in ipairs(found.rods or {}) do
+      if choice.id == rod then allowed = true break end
+    end
+    if not allowed then return nil, "fishing rod unavailable" end
+    ow:useFishingRod(rod)
+  elseif id == "strength" then
+    ow:useStrengthFieldMove()
+  elseif id == "flash" then
+    ow:useFlashFieldMove()
+  elseif id == "dig" or id == "teleport" then
+    ow:beginTeleportOut()
+  elseif id == "softboiled" then
+    local sourceSlot, targetSlot = opts and tonumber(opts.sourceSlot),
+                                   opts and tonumber(opts.targetSlot)
+    local allowed
+    for _, source in ipairs(found.sources or {}) do
+      if source.slot == sourceSlot then
+        for _, target in ipairs(source.targets or {}) do
+          if target.slot == targetSlot then allowed = true break end
+        end
+      end
+    end
+    if not allowed then return nil, "softboiled target unavailable" end
+    ow:useSoftboiledFieldMove(self.game.save.party[sourceSlot],
+                              self.game.save.party[targetSlot])
+  end
+  return true
+end
+
+function WorldAPI:canFly()
+  local ow, game = self:overworld(), self.game
+  local inv = game and game.save and game.save.inventory or {}
+  return ow ~= nil and ow.map ~= nil and not not inv.THUNDERBADGE
+    and outside(game, ow) and ow:partyKnows("FLY") ~= nil
+end
+
+function WorldAPI:flyTo(mapId)
+  local ow = self:overworld()
+  if not self:canFly() then return nil, "fly unavailable" end
+  if self.game.stack:top() ~= ow then return nil, "world is busy" end
+  local save, field = self.game.save, self.game.data.field or {}
+  if not (save.visited and save.visited[mapId]
+      and field.flyWarps and field.flyWarps[mapId]) then
+    return nil, "destination unavailable"
+  end
+  ow:flyTo(mapId)
   return true
 end
 
