@@ -154,6 +154,16 @@ love::image::ImageData *Canvas::newImageData(love::image::Image *module, int sli
 	return module->newImageData(r.w, r.h, dataformat);
 }
 
+bool Canvas::requestImageData()
+{
+	return false;
+}
+
+love::image::ImageData *Canvas::pollImageData(love::image::Image *)
+{
+	return nullptr;
+}
+
 void Canvas::draw(Graphics *gfx, Quad *q, const Matrix4 &t)
 {
 	if (gfx->isCanvasActive(this))
