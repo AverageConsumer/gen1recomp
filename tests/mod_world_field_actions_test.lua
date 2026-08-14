@@ -26,6 +26,7 @@ local world = {
     inBounds = function() return true end,
     isWaterCell = function() return water end },
   player = { surfing = false, facingCell = function() return 4, 5 end },
+  facingIsShoreOrWater = function() return water end,
   useCutFieldMove = function() return "no" end,
   useSurfFieldMove = function() return "no" end,
   bikeAllowed = function() return true end,
@@ -48,7 +49,7 @@ end
 
 local actions = api:availableFieldActions()
 eq(actions[1].id, "bicycle", "owned bicycle is exposed on a valid map")
-world.toggleBike = function() world.usedBike = true end
+world.useBicycle = function() world.usedBike = true return true end
 check(api:useFieldAction("bicycle"), "bicycle action is accepted")
 check(world.usedBike, "bicycle action reaches the overworld")
 
@@ -58,7 +59,7 @@ local fish
 for _, action in ipairs(actions) do if action.id == "fish" then fish = action end end
 check(fish and fish.rods[1].id == "OLD_ROD",
   "owned rod is exposed while facing water")
-world.useFishingRod = function(_, rod) world.usedRod = rod end
+world.useFishingRod = function(_, rod) world.usedRod = rod return true end
 check(api:useFieldAction("fish", { rod = "OLD_ROD" }),
   "owned fishing rod is accepted")
 eq(world.usedRod, "OLD_ROD", "fishing action reaches the overworld")

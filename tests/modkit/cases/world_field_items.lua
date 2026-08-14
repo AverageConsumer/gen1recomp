@@ -13,12 +13,14 @@ local redWorld = {
   runner = { isRunning = function() return false end },
   scriptMoves = {},
   bikeAllowed = function() return true end,
+  partyKnows = function() return nil end,
   facingIsShoreOrWater = function() return facingWater end,
   useBicycle = function(self) self.bikeUsed = true return true end,
   useFishingRod = function(self, rod) self.rodUsed = rod return true end,
 }
 local redGame = {
-  data = { items = { OLD_ROD = { name = "OLD ROD" } } },
+  data = { field = { outsideTilesets = {} },
+    items = { OLD_ROD = { name = "OLD ROD" } } },
   save = { player = { name = "RED" }, party = {},
     inventory = { BICYCLE = 1, OLD_ROD = 1 } },
   stack = { states = { redWorld } },
@@ -61,7 +63,7 @@ local goldWorld = {
   acceptsMenuInput = function() return true end,
   playerCollision = function() return 0x00 end,
   alwaysOnBike = function() return false end,
-  fieldContext = function() return { facingColl = 0x20 } end,
+  fieldContext = function() return { facingColl = 0x20, party = {} } end,
   useFieldItem = function(self, item) self.itemUsed = item return "used" end,
 }
 local goldGame = {
