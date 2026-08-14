@@ -16,6 +16,8 @@ local Version = {
                           -- binary (e.g. a LOVE version bump); an older shell
                           -- refuses to chainload a payload whose minShell
                           -- exceeds the shell it provides.
+  selfUpdate = false,     -- this fork ships APK-only releases; never replace
+                          -- its Lua host with an upstream payload.
   modApi = 2,             -- mod API major (manifest `api`)
   linkProtocol = 2,       -- link handshake wire version (Handshake.PROTOCOL)
   saveFormat = 4,         -- save.meta.format
