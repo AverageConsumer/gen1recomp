@@ -6,6 +6,7 @@
 local SecondScreen = {}
 local C = nil
 local ffi = nil
+local companion = false
 
 local function log(msg)
   pcall(function() require("src.core.Logger").info("SecondScreen: %s", msg) end)
@@ -21,6 +22,9 @@ do
       int love_android_secondary_ready();
       void love_android_push_secondary(const void *rgba, int w, int h);
       void love_android_secondary_enable(int on);
+      int love_android_secondary_detected();
+      int love_android_present_secondary(const void *rgba, int w, int h,
+        unsigned int background, const char *preference);
       const char *love_android_poll_secondary_touch();
     ]])
     local okLib, lib = pcall(ffi.load, "love")
@@ -34,6 +38,10 @@ do
       log(("bridge symbols not found (ffi.load ok=%s); second display disabled")
         :format(tostring(okLib)))
     end
+    companion = C ~= nil
+      and pcall(function() return C.love_android_secondary_detected end)
+      and pcall(function() return C.love_android_present_secondary end)
+      and pcall(function() return C.love_android_poll_secondary_touch end)
   end
 end
 
@@ -47,8 +55,21 @@ function SecondScreen.available()
   return ok and r ~= 0
 end
 
-function SecondScreen.push(imageData, w, h)
+-- A connected display is not necessarily the current Presentation yet. This
+-- distinction lets a companion retry its first frame after hotplug/re-target.
+function SecondScreen.detected()
+  if not companion then return SecondScreen.available() end
+  local ok, r = pcall(C.love_android_secondary_detected)
+  return ok and r ~= 0
+end
+
+function SecondScreen.push(imageData, w, h, background, preference)
   if not C or not imageData then return false end
+  if companion and background ~= nil then
+    local ok, shown = pcall(C.love_android_present_secondary,
+      imageData:getFFIPointer(), w, h, background, preference or "auto")
+    return ok and shown ~= 0
+  end
   return pcall(function()
     C.love_android_push_secondary(imageData:getFFIPointer(), w, h)
   end)
@@ -57,10 +78,8 @@ end
 -- Returns the oldest queued secondary-display event as "action,x,y", where
 -- coordinates are in the submitted frame's pixel space.
 function SecondScreen.pollTouch()
-  if not C then return nil end
-  local ok, event = pcall(function()
-    return C.love_android_poll_secondary_touch()
-  end)
+  if not companion then return nil end
+  local ok, event = pcall(C.love_android_poll_secondary_touch)
   if not ok or event == nil or event == ffi.NULL then return nil end
   return ffi.string(event)
 end

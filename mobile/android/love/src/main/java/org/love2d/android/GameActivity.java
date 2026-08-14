@@ -60,6 +60,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.DisplayMetrics;
 import android.view.*;
@@ -70,6 +71,28 @@ import androidx.core.app.ActivityCompat;
 
 public class GameActivity extends SDLActivity {
     private static DisplayMetrics metrics = null;
+    // AYN keeps a disabled built-in panel registered as ON. Its system mode is
+    // the usable-state signal: 0 = both, 1 = main only, 2 = second only.
+    private static final String DUAL_SCREEN_DISPLAY_MODE = "dual_screen_display_mode";
+    private static final String AYN_SECOND_SCREEN = "Screen-2";
+    private static volatile int dualScreenDisplayMode = -1;
+    private android.hardware.display.DisplayManager displayManager;
+    private boolean companionDisplayListenerRegistered;
+    private boolean dualScreenModeObserverRegistered;
+    private final android.hardware.display.DisplayManager.DisplayListener companionDisplayListener =
+        new android.hardware.display.DisplayManager.DisplayListener() {
+            @Override public void onDisplayAdded(int displayId) { rebindSecondaryDisplay(); }
+            @Override public void onDisplayRemoved(int displayId) { rebindSecondaryDisplay(); }
+            @Override public void onDisplayChanged(int displayId) { rebindSecondaryDisplay(); }
+        };
+    private final android.database.ContentObserver dualScreenModeObserver =
+        new android.database.ContentObserver(new Handler(Looper.getMainLooper())) {
+            @Override public void onChange(boolean selfChange, Uri uri) {
+                refreshDualScreenDisplayMode();
+                Log.d("GameActivity", "dual-screen mode changed to " + dualScreenDisplayMode);
+                rebindSecondaryDisplay();
+            }
+        };
     private static String gamePath = "";
     private static Vibrator vibrator = null;
     protected final int[] externalStorageRequestDummy = new int[1];
@@ -229,6 +252,10 @@ public class GameActivity extends SDLActivity {
             if (create != null) pendingCreateSuggestedName = create;
         }
         metrics = getResources().getDisplayMetrics();
+        if (android.os.Build.VERSION.SDK_INT >= 17) {
+            displayManager = (android.hardware.display.DisplayManager)
+                getSystemService(Context.DISPLAY_SERVICE);
+        }
 
         // Set low-latency audio values
         nativeSetDefaultStreamValues(getAudioFreq(), getAudioSMP());
@@ -362,6 +389,7 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        unregisterCompanionDisplayObservers();
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -376,6 +404,7 @@ public class GameActivity extends SDLActivity {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
         }
+        unregisterCompanionDisplayObservers();
         teardownSecondaryDisplay();
         onHostPause();
         super.onPause();
@@ -385,7 +414,48 @@ public class GameActivity extends SDLActivity {
     public void onResume() {
         super.onResume();
         onHostResume();
+        refreshDualScreenDisplayMode();
+        if (displayManager != null && !companionDisplayListenerRegistered) {
+            displayManager.registerDisplayListener(companionDisplayListener, null);
+            companionDisplayListenerRegistered = true;
+        }
+        if (dualScreenDisplayMode != -1 && !dualScreenModeObserverRegistered) {
+            getContentResolver().registerContentObserver(
+                Settings.System.getUriFor(DUAL_SCREEN_DISPLAY_MODE), false, dualScreenModeObserver);
+            dualScreenModeObserverRegistered = true;
+        }
         setupSecondaryDisplay();
+    }
+
+    private void refreshDualScreenDisplayMode() {
+        dualScreenDisplayMode = Settings.System.getInt(
+            getContentResolver(), DUAL_SCREEN_DISPLAY_MODE, -1);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // AYN's screen toggle shells out to `input keyevent 60` (Right Shift).
+        // SDL would expose that virtual key as SELECT and change gameplay.
+        if (dualScreenDisplayMode != -1
+                && event.getKeyCode() == KeyEvent.KEYCODE_SHIFT_RIGHT
+                && event.getDeviceId() == KeyCharacterMap.VIRTUAL_KEYBOARD) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                Log.d("GameActivity", "ignored synthetic AYN screen-toggle key");
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private void unregisterCompanionDisplayObservers() {
+        if (displayManager != null && companionDisplayListenerRegistered) {
+            displayManager.unregisterDisplayListener(companionDisplayListener);
+            companionDisplayListenerRegistered = false;
+        }
+        if (dualScreenModeObserverRegistered) {
+            getContentResolver().unregisterContentObserver(dualScreenModeObserver);
+            dualScreenModeObserverRegistered = false;
+        }
     }
 
     /**
@@ -590,6 +660,57 @@ public class GameActivity extends SDLActivity {
     @Keep
     public static boolean showRequiredImportFilePicker() {
         return showFilePicker(PICKED_REQUIRED_IMPORT_FILENAME);
+    }
+
+    @Keep
+    public static boolean hasCompanionDisplay() {
+        GameActivity self = (GameActivity) mSingleton;
+        return self != null && !secondaryActivityPending
+            && android.os.SystemClock.elapsedRealtime() >= secondaryRetryAfter
+            && findSecondaryDisplay(self) != null;
+    }
+
+    @Keep
+    public static boolean presentCompanionDisplay(
+            int width, int height, byte[] rgba, int backgroundColor, String preference) {
+        if (rgba == null || width <= 0 || height <= 0
+                || rgba.length != (long) width * height * 4) return false;
+        secondaryPreference = normalizeSecondaryPreference(preference);
+        secondaryFrameCover = preference != null && preference.endsWith(":cover");
+        secondaryFrameWidth = width;
+        secondaryFrameHeight = height;
+        secondaryBackground = backgroundColor;
+        secondaryFrame = rgba;
+        setSecondaryEnabled(true);
+        SecondaryPresentation p = secondaryPresentation;
+        SecondaryActivity a = secondaryActivity;
+        if (p == null && a == null) return false;
+        try {
+            if (p != null) {
+                p.setBackground(backgroundColor);
+                p.updateFrame(java.nio.ByteBuffer.wrap(rgba), width, height,
+                    secondaryFrameCover);
+            } else {
+                a.setBackground(backgroundColor);
+                a.updateFrame(java.nio.ByteBuffer.wrap(rgba), width, height,
+                    secondaryFrameCover);
+            }
+            return true;
+        } catch (Throwable t) {
+            GameActivity self = (GameActivity) mSingleton;
+            if (self != null) self.runOnUiThread(() -> {
+                teardownSecondaryDisplay();
+                setupSecondaryDisplay();
+            });
+            return false;
+        }
+    }
+
+    @Keep
+    public static String pollCompanionDisplayTouch() {
+        synchronized (secondaryTouches) {
+            return secondaryTouches.pollFirst();
+        }
     }
 
     /**
@@ -1404,85 +1525,310 @@ public class GameActivity extends SDLActivity {
     // physical display. Driven from the engine through love_android_secondary_*
     // in src/jni/love/src/common/android.cpp.
     private static volatile SecondaryPresentation secondaryPresentation;
+    // Android rejects Presentation on the unflagged primary display. On Android
+    // 10+ a non-focusable Activity can host that one asymmetric layout instead.
+    private static volatile SecondaryActivity secondaryActivity;
+    private static volatile boolean secondaryActivityPending;
+    private static volatile int secondaryActivityTarget = Display.INVALID_DISPLAY;
+    private static volatile long secondaryRetryAfter;
     private static volatile boolean secondaryEnabled = false;
+    private static volatile String secondaryPreference = "auto";
+    private static volatile byte[] secondaryFrame;
+    private static volatile int secondaryFrameWidth;
+    private static volatile int secondaryFrameHeight;
+    private static volatile int secondaryBackground;
+    private static volatile boolean secondaryFrameCover;
     private static final int MAX_SECONDARY_TOUCHES = 32;
     private static final java.util.ArrayDeque<String> secondaryTouches =
         new java.util.ArrayDeque<>();
 
     @Keep
     public static void setSecondaryEnabled(final boolean on) {
-        secondaryEnabled = on;
         final GameActivity self = (GameActivity) mSingleton;
+        if (secondaryEnabled == on
+                && (on ? self != null && (secondaryOutputIsPreferred(self)
+                                      || findSecondaryDisplay(self) == null
+                                      || secondaryActivityPending
+                                      || android.os.SystemClock.elapsedRealtime() < secondaryRetryAfter)
+                       : secondaryPresentation == null && secondaryActivity == null)) return;
+        secondaryEnabled = on;
         if (self == null) return;
         self.runOnUiThread(new Runnable() {
             @Override public void run() {
-                if (on) setupSecondaryDisplay(); else teardownSecondaryDisplay();
+                if (on) {
+                    rebindSecondaryDisplay();
+                } else {
+                    teardownSecondaryDisplay();
+                    secondaryFrame = null;
+                }
             }
+        });
+    }
+
+    private static boolean secondaryOutputIsPreferred(GameActivity self) {
+        Display preferredDisplay = findSecondaryDisplay(self);
+        if (preferredDisplay == null) return false;
+        SecondaryPresentation p = secondaryPresentation;
+        Display presentationDisplay = p != null ? p.getDisplay() : null;
+        if (presentationDisplay != null
+                && presentationDisplay.getDisplayId() == preferredDisplay.getDisplayId()) return true;
+        SecondaryActivity a = secondaryActivity;
+        Display activityDisplay = a != null ? getActivityDisplay(a) : null;
+        return activityDisplay != null
+            && activityDisplay.getDisplayId() == preferredDisplay.getDisplayId();
+    }
+
+    private static String normalizeSecondaryPreference(String preference) {
+        if (preference != null && preference.endsWith(":cover")) {
+            preference = preference.substring(0, preference.length() - 6);
+        }
+        return "handheld".equals(preference) || "secondary".equals(preference)
+            ? preference : "auto";
+    }
+
+    private static void rebindSecondaryDisplay() {
+        GameActivity self = (GameActivity) mSingleton;
+        if (self == null || !secondaryEnabled || secondaryOutputIsPreferred(self)) return;
+        self.runOnUiThread(() -> {
+            if (!secondaryEnabled || secondaryOutputIsPreferred(self)) return;
+            teardownSecondaryDisplay();
+            setupSecondaryDisplay();
         });
     }
 
     private static void setupSecondaryDisplay() {
         GameActivity self = (GameActivity) mSingleton;
-        if (self == null || !secondaryEnabled || secondaryPresentation != null) return;
+        if (self == null || !secondaryEnabled || secondaryPresentation != null
+                || secondaryActivity != null || secondaryActivityPending
+                || android.os.SystemClock.elapsedRealtime() < secondaryRetryAfter) return;
         try {
-            android.hardware.display.DisplayManager dm =
-                (android.hardware.display.DisplayManager) self.getSystemService(Context.DISPLAY_SERVICE);
-            if (dm == null) return;
-            Display chosen = null;
-            for (Display d : dm.getDisplays()) {
-                android.graphics.Point size = new android.graphics.Point();
-                d.getRealSize(size);
-                Log.d("GameActivity", "display id=" + d.getDisplayId() + " name=" + d.getName()
-                    + " size=" + size.x + "x" + size.y);
-                if (chosen == null && d.getDisplayId() != Display.DEFAULT_DISPLAY) {
-                    chosen = d;
-                }
-            }
-            if (chosen == null) {
-                Display[] pres =
-                    dm.getDisplays(android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
-                if (pres != null && pres.length > 0) chosen = pres[0];
-            }
+            Display chosen = findSecondaryDisplay(self);
             if (chosen == null) {
                 Log.d("GameActivity", "no secondary display found");
                 return;
             }
+            if (!isPresentationDisplay(chosen)) {
+                secondaryActivityPending = true;
+                secondaryActivityTarget = chosen.getDisplayId();
+                Intent intent = new Intent(self, SecondaryActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+                android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+                options.setLaunchDisplayId(secondaryActivityTarget);
+                self.startActivity(intent, options.toBundle());
+                final int requestedDisplay = secondaryActivityTarget;
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (secondaryActivityPending && secondaryActivityTarget == requestedDisplay) {
+                        secondaryActivityPending = false;
+                        secondaryRetryAfter = android.os.SystemClock.elapsedRealtime() + 1000;
+                    }
+                }, 1000);
+                return;
+            }
             SecondaryPresentation p = new SecondaryPresentation(self, chosen);
+            p.setOnDismissListener(dialog -> {
+                if (secondaryPresentation == p) secondaryPresentation = null;
+            });
             p.show();
             secondaryPresentation = p;
+            secondaryRetryAfter = 0;
+            if (secondaryFrame != null) {
+                p.setBackground(secondaryBackground);
+                p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
+                    secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
+            }
             Log.d("GameActivity", "secondary display presentation started on id=" + chosen.getDisplayId());
         } catch (Throwable t) {
             Log.d("GameActivity", "secondary display setup failed: " + t);
-            secondaryPresentation = null;
+            secondaryActivityPending = false;
+            secondaryActivityTarget = Display.INVALID_DISPLAY;
+            secondaryRetryAfter = android.os.SystemClock.elapsedRealtime() + 1000;
+            teardownSecondaryDisplay();
         }
+    }
+
+    private static Display findSecondaryDisplay(GameActivity self) {
+        android.hardware.display.DisplayManager dm =
+            (android.hardware.display.DisplayManager) self.getSystemService(Context.DISPLAY_SERVICE);
+        if (dm == null || android.os.Build.VERSION.SDK_INT < 17) return null;
+        Display gameDisplay = getActivityDisplay(self);
+        int gameDisplayId = gameDisplay != null
+            ? gameDisplay.getDisplayId() : Display.DEFAULT_DISPLAY;
+        Display handheldDisplay = dm.getDisplay(Display.DEFAULT_DISPLAY);
+        boolean handheldAvailable = android.os.Build.VERSION.SDK_INT >= 29
+            && gameDisplayId != Display.DEFAULT_DISPLAY && isDisplayUsable(handheldDisplay);
+        Display[] presentations = dm.getDisplays(
+            android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
+        Display chosen = findOtherPresentationDisplay(presentations, gameDisplayId);
+        if (chosen == null && android.os.Build.VERSION.SDK_INT >= 19) {
+            chosen = findOtherPresentationDisplay(dm.getDisplays(), gameDisplayId);
+        }
+        if ("handheld".equals(secondaryPreference) && handheldAvailable) return handheldDisplay;
+        if ("secondary".equals(secondaryPreference) && chosen != null) return chosen;
+        if (handheldAvailable) return handheldDisplay;
+        return chosen;
+    }
+
+    private static Display findOtherPresentationDisplay(Display[] displays, int gameDisplayId) {
+        if (displays == null) return null;
+        for (Display d : displays) {
+            if (d.getDisplayId() != gameDisplayId && isPresentationDisplay(d)) return d;
+        }
+        return null;
+    }
+
+    private static Display getActivityDisplay(android.app.Activity activity) {
+        return android.os.Build.VERSION.SDK_INT >= 30
+            ? activity.getDisplay() : activity.getWindowManager().getDefaultDisplay();
+    }
+
+    private static boolean isPresentationDisplay(Display display) {
+        return android.os.Build.VERSION.SDK_INT >= 17 && isDisplayUsable(display)
+            && (android.os.Build.VERSION.SDK_INT < 19
+                || (display.getFlags() & Display.FLAG_PRESENTATION) != 0);
+    }
+
+    private static boolean isDisplayUsable(Display display) {
+        if (display == null || display.getState() == Display.STATE_OFF) return false;
+        if (dualScreenDisplayMode == 1 && AYN_SECOND_SCREEN.equals(display.getName())) return false;
+        return dualScreenDisplayMode != 2 || display.getDisplayId() != Display.DEFAULT_DISPLAY;
     }
 
     private static void teardownSecondaryDisplay() {
         SecondaryPresentation p = secondaryPresentation;
         secondaryPresentation = null;
+        SecondaryActivity a = secondaryActivity;
+        secondaryActivity = null;
+        secondaryActivityPending = false;
+        secondaryActivityTarget = Display.INVALID_DISPLAY;
         synchronized (secondaryTouches) { secondaryTouches.clear(); }
         if (p != null) {
             try { p.dismiss(); } catch (Throwable t) {}
         }
+        if (a != null) {
+            try { a.finish(); } catch (Throwable t) {}
+        }
+    }
+
+    @Keep
+    public static boolean is24HourClock() {
+        GameActivity self = (GameActivity) mSingleton;
+        return self == null || android.text.format.DateFormat.is24HourFormat(self);
     }
 
     @Keep
     public static boolean hasSecondaryDisplay() {
-        return secondaryPresentation != null;
+        GameActivity self = (GameActivity) mSingleton;
+        return self != null && secondaryOutputIsPreferred(self);
     }
 
     @Keep
     public static void updateSecondaryFrame(java.nio.ByteBuffer buf, int w, int h) {
         SecondaryPresentation p = secondaryPresentation;
-        if (p != null && buf != null && w > 0 && h > 0) {
-            p.updateFrame(buf, w, h);
+        SecondaryActivity a = secondaryActivity;
+        if ((p != null || a != null) && buf != null && w > 0 && h > 0) {
+            try {
+                if (p != null) p.updateFrame(buf, w, h);
+                else a.updateFrame(buf, w, h);
+            } catch (Throwable t) {
+                GameActivity self = (GameActivity) mSingleton;
+                if (self != null) self.runOnUiThread(() -> {
+                    teardownSecondaryDisplay();
+                    setupSecondaryDisplay();
+                });
+            }
         }
     }
 
-    @Keep
-    public static String pollSecondaryDisplayTouch() {
-        synchronized (secondaryTouches) {
-            return secondaryTouches.pollFirst();
+    private static void applySecondaryImmersive(android.view.Window w) {
+        if (w == null) return;
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            w.setDecorFitsSystemWindows(false);
+            android.view.WindowInsetsController c = w.getInsetsController();
+            if (c != null) {
+                c.hide(android.view.WindowInsets.Type.systemBars());
+                c.setSystemBarsBehavior(
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            w.getDecorView().setSystemUiVisibility(
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
+    }
+
+    public static class SecondaryActivity extends android.app.Activity {
+        private FrameView frameView;
+
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            Display display = getActivityDisplay(this);
+            if (!secondaryEnabled || display == null
+                    || display.getDisplayId() != secondaryActivityTarget) {
+                secondaryActivityPending = false;
+                secondaryActivityTarget = Display.INVALID_DISPLAY;
+                secondaryRetryAfter = android.os.SystemClock.elapsedRealtime() + 1000;
+                finish();
+                return;
+            }
+            frameView = new FrameView(this);
+            android.view.Window w = getWindow();
+            w.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+            setContentView(frameView);
+            applySecondaryImmersive(w);
+            secondaryActivity = this;
+            secondaryActivityPending = false;
+            secondaryRetryAfter = 0;
+            if (secondaryFrame != null) {
+                setBackground(secondaryBackground);
+                updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
+                    secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
+            }
+        }
+
+        @Override
+        protected void onDestroy() {
+            if (secondaryActivity == this) secondaryActivity = null;
+            super.onDestroy();
+        }
+
+        @Override
+        public void onWindowFocusChanged(boolean hasFocus) {
+            super.onWindowFocusChanged(hasFocus);
+            if (hasFocus) applySecondaryImmersive(getWindow());
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+            GameActivity activity = (GameActivity) mSingleton;
+            return activity != null ? activity.dispatchKeyEvent(event) : super.dispatchKeyEvent(event);
+        }
+
+        @Override
+        public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+            GameActivity activity = (GameActivity) mSingleton;
+            return activity != null
+                ? activity.dispatchGenericMotionEvent(event)
+                : super.dispatchGenericMotionEvent(event);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
+            frameView.updateFrame(buf, w, h);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            frameView.updateFrame(buf, w, h, cover);
+        }
+
+        void setBackground(int color) {
+            frameView.setFrameBackground(color);
         }
     }
 
@@ -1519,30 +1865,34 @@ public class GameActivity extends SDLActivity {
             if (hasFocus) applyImmersive();
         }
 
+        @Override
+        public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+            GameActivity activity = (GameActivity) mSingleton;
+            return activity != null ? activity.dispatchKeyEvent(event) : super.dispatchKeyEvent(event);
+        }
+
+        @Override
+        public boolean dispatchGenericMotionEvent(android.view.MotionEvent event) {
+            GameActivity activity = (GameActivity) mSingleton;
+            return activity != null
+                ? activity.dispatchGenericMotionEvent(event)
+                : super.dispatchGenericMotionEvent(event);
+        }
+
         private void applyImmersive() {
-            android.view.Window w = getWindow();
-            if (w == null) return;
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
-                w.setDecorFitsSystemWindows(false);
-                android.view.WindowInsetsController c = w.getInsetsController();
-                if (c != null) {
-                    c.hide(android.view.WindowInsets.Type.systemBars());
-                    c.setSystemBarsBehavior(
-                        android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                }
-            } else {
-                w.getDecorView().setSystemUiVisibility(
-                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-            }
+            applySecondaryImmersive(getWindow());
         }
 
         void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
             frameView.updateFrame(buf, w, h);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            frameView.updateFrame(buf, w, h, cover);
+        }
+
+        void setBackground(int color) {
+            frameView.setFrameBackground(color);
         }
     }
 
@@ -1552,7 +1902,9 @@ public class GameActivity extends SDLActivity {
         private final android.graphics.Paint paint = new android.graphics.Paint();
         private final Object lock = new Object();
         private int fw, fh;
+        private int backgroundColor = 0xFF000000;
         private int activePointer = -1;
+        private boolean cover;
 
         FrameView(Context context) {
             super(context);
@@ -1562,7 +1914,12 @@ public class GameActivity extends SDLActivity {
         }
 
         void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
+            updateFrame(buf, w, h, false);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
             synchronized (lock) {
+                this.cover = cover;
                 if (bitmap == null || fw != w || fh != h) {
                     if (bitmap != null) bitmap.recycle();
                     bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
@@ -1571,6 +1928,11 @@ public class GameActivity extends SDLActivity {
                 buf.rewind();
                 bitmap.copyPixelsFromBuffer(buf);
             }
+            postInvalidate();
+        }
+
+        void setFrameBackground(int color) {
+            synchronized (lock) { backgroundColor = color; }
             postInvalidate();
         }
 
@@ -1625,12 +1987,17 @@ public class GameActivity extends SDLActivity {
             synchronized (lock) {
                 if (bitmap == null || fw == 0 || fh == 0) return;
                 int vw = getWidth(), vh = getHeight();
-                int s = Math.min(vw / fw, vh / fh);
-                if (s < 1) s = 1;
-                int dw = fw * s, dh = fh * s;
+                float fit = Math.min((float) vw / fw, (float) vh / fh);
+                if (fit <= 0) return;
+                // Companion UIs fit at whole-pixel steps. Game output opts into
+                // cover so the frame's own aspect fills narrower displays.
+                float scale = cover
+                    ? Math.max((float) vw / fw, (float) vh / fh)
+                    : fit >= 2f ? (float) Math.floor(fit) : fit;
+                int dw = Math.round(fw * scale), dh = Math.round(fh * scale);
                 int dx = (vw - dw) / 2, dy = (vh - dh) / 2;
                 dst.set(dx, dy, dx + dw, dy + dh);
-                canvas.drawColor(0xFF000000);
+                canvas.drawColor(backgroundColor);
                 canvas.drawBitmap(bitmap, null, dst, paint);
             }
         }
