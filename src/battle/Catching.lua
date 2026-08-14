@@ -27,6 +27,17 @@ Catching.BALLS = BALLS
 -- divisor, which is what the old per-field `or` defaults resolved to
 local DEFAULT_BALL = { randMax = 255, hpFactor = 12, wobbleFactor = 150 }
 
+local function stockFactors(def, targetMon, targetDef, rateOverride, statuses)
+  local rate = rateOverride or targetDef.catchRate
+  local record = Status.recordFor(statuses, targetMon.status)
+  local statusBonus = record and record.catchBonus or 0
+  local hpQuarter = math.max(1, math.floor(targetMon.hp / 4))
+  local factor = def.hpFactor or DEFAULT_BALL.hpFactor
+  local f = math.min(255, math.floor(math.floor(
+    targetMon.stats.hp * 255 / factor) / hpQuarter))
+  return rate, statusBonus, f, record
+end
+
 function Catching.registerInto(registry, _, owner)
   for id, record in pairs(BALLS) do
     registry:register(id, record, owner)
@@ -41,21 +52,9 @@ end
 local function stockAttempt(def, targetMon, targetDef, rng, rateOverride, statuses)
   if def.autoCatch then return true, 3 end
   local randMax = def.randMax
-  local rate = rateOverride or targetDef.catchRate
-
-  -- the status subtraction and the wobble bonus come off the merged
-  -- status record (SLP/FRZ 25 and +10, the rest 12 and +5)
   local s = targetMon.status
-  local record = Status.recordFor(statuses, s)
-  local statusBonus = record and record.catchBonus or 0
-
-  -- HP factor (X)
-  local maxhp = targetMon.stats.hp
-  local hpQuarter = math.max(1, math.floor(targetMon.hp / 4))
-  local factor = def.hpFactor or DEFAULT_BALL.hpFactor
-  -- the 255 cap applies only after BOTH divisions (ItemUseBall keeps
-  -- the intermediate in 16 bits); capping early collapses the value
-  local f = math.min(255, math.floor(math.floor(maxhp * 255 / factor) / hpQuarter))
+  local rate, statusBonus, f, record = stockFactors(
+    def, targetMon, targetDef, rateOverride, statuses)
 
   local function shakes()
     local ballFactor2 = def.wobbleFactor or DEFAULT_BALL.wobbleFactor
@@ -78,6 +77,22 @@ local function stockAttempt(def, targetMon, targetDef, rng, rateOverride, status
   if r > rate then return false, shakes() end
   if rng(0, 255) <= f then return true, 3 end
   return false, shakes()
+end
+
+-- Exact stock catch probability for UI previews. Custom attempt functions
+-- may contain arbitrary logic, so nil is safer than a plausible lie.
+function Catching.chance(ball, targetMon, targetDef, rateOverride, opts)
+  opts = opts or {}
+  local def = opts.ballDef or BALLS[ball] or DEFAULT_BALL
+  if def.attempt then return nil end
+  if def.autoCatch then return 100 end
+  local rate, statusBonus, f = stockFactors(
+    def, targetMon, targetDef, rateOverride, opts.statuses)
+  local outcomes = def.randMax + 1
+  local automatic = math.min(outcomes, math.max(0, statusBonus))
+  local passed = math.min(outcomes, math.max(0, rate + statusBonus + 1))
+  return (automatic + (passed - automatic) * (f + 1) / 256)
+    * 100 / outcomes
 end
 
 -- Returns caught, shakes (0-3).  rateOverride replaces the species catch
