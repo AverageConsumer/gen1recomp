@@ -6,8 +6,11 @@ local check, eq = S.check, S.eq
 
 local mon = { species = "TESTMON", level = 5, hp = 18,
   stats = { hp = 20 }, moves = {} }
-local game = { data = { pokemon = { TESTMON = { name = "TESTMON" } },
-  moves = {}, items = {} }, save = { party = { mon }, inventory = {} },
+local game = { data = { pokemon = { TESTMON = { name = "TESTMON",
+    catchRate = 255 } }, moves = {}, items = {
+      POTION = { name = "POTION" }, POKE_BALL = { name = "POKE BALL" },
+    } }, save = { party = { mon },
+      inventory = { POTION = 1, POKE_BALL = 1 } },
   input = { pressQueue = {} }, stack = { states = {} } }
 function game.stack:pop() return table.remove(self.states) end
 
@@ -16,6 +19,10 @@ local battle = { isBattleState = true, phase = "menu", queue = {},
   enemy = { mon = { species = "TESTMON", level = 4, hp = 12,
     stats = { hp = 12 }, moves = {} }, curTypes = { "NORMAL" } } }
 function battle:battleKind() return "wild" end
+function battle:catchChance(ball)
+  return require("src.battle.Catching").chance(ball, self.enemy.mon,
+    game.data.pokemon[self.enemy.mon.species])
+end
 function battle:chooseMenu(choice)
   if choice == "fight" then self.phase = "moveSelect" end
   return true
@@ -32,6 +39,10 @@ local root = api:snapshot()
 check(root and root.kind == "wild" and root.prompt == "menu",
   "Gen 1 battle is exposed as a copied snapshot")
 eq(root.player.maxHp, 20, "Gen 1 max HP comes from battle stats")
+eq(#root.items, 2, "Gen 1 battle snapshot includes medicine and balls")
+check(type(root.items[1].catchChance) == "number"
+    or type(root.items[2].catchChance) == "number",
+  "Gen 1 catch preview uses the complete Catching API")
 check(api:submit({ id = 1, revision = root.revision, kind = "fight" }),
   "Gen 1 semantic menu intent accepted")
 local moves = api:snapshot()
