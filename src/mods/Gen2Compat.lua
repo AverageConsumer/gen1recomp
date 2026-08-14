@@ -737,7 +737,8 @@ COVERAGE["src.pokemon.Boxes"] = {
 COVERAGE["src.world.WorldAPI"] = {
   kind = "alias", target = "src.world.gen2.WorldAPI",
   backed = "new __index overworld current mapOverview warpTo toggleObject replaceBlock "
-    .. "spawnNpc removeNpc npc queueScript invalidateMap",
+    .. "spawnNpc removeNpc npc queueScript invalidateMap "
+    .. "availableFieldActions useFieldAction",
   warned = "setFlag getFlag",
   absent = "",
   notes = {
