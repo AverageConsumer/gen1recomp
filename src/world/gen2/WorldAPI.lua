@@ -62,6 +62,23 @@ local function itemLabel(game, id)
   return (def and def.name) or id
 end
 
+local FIELD_ACTIONS = {
+  { id = "cut", move = "CUT" },
+  { id = "surf", move = "SURF" },
+  { id = "strength", move = "STRENGTH" },
+  { id = "flash", move = "FLASH" },
+  { id = "headbutt", move = "HEADBUTT" },
+  { id = "whirlpool", move = "WHIRLPOOL" },
+  { id = "waterfall", move = "WATERFALL" },
+  { id = "sweet_scent", move = "SWEET_SCENT" },
+  { id = "dig", move = "DIG" },
+  { id = "teleport", move = "TELEPORT" },
+}
+
+local function owned(inventory, id)
+  return (inventory and inventory[id] or 0) > 0
+end
+
 -- The same field-item contract as Gen 1, resolved through Gold's own bike,
 -- collision and fishing rules.
 function WorldAPI:availableFieldActions()
@@ -69,8 +86,12 @@ function WorldAPI:availableFieldActions()
   if not (world and game and game.save and world.map and world.player)
       or not world:acceptsMenuInput() then return out end
   local inventory = game.save.inventory or {}
+  local function add(id, label)
+    out[#out + 1] = { id = id, label = label }
+    return out[#out]
+  end
 
-  if (inventory.BICYCLE or 0) > 0 then
+  if owned(inventory, "BICYCLE") then
     local bike = Bike.tryBike({
       state = world.playerState,
       environment = world.map.def and world.map.def.environment,
@@ -78,23 +99,36 @@ function WorldAPI:availableFieldActions()
       alwaysOnBike = world:alwaysOnBike(),
     })
     if bike == "mount" or bike == "dismount" then
-      out[#out + 1] = { id = "bicycle",
-        label = bike == "dismount" and "BIKE OFF" or "BICYCLE" }
+      add("bicycle", bike == "dismount" and "BIKE OFF" or "BICYCLE")
     end
   end
 
   local context = world:fieldContext()
+  for _, row in ipairs(FIELD_ACTIONS) do
+    if not (row.move == "STRENGTH" and world.strengthActive) then
+      local mon = FieldMoves.partyMoveUser(context.party, row.move, context)
+      if mon then
+        context.mon = mon
+        local result = FieldMoves.fromMenu(row.move, context)
+        if result.ok then add(row.id, row.move) end
+      end
+    end
+  end
+
   if not FieldMoves.isSurfing(world.playerState)
       and Permissions.isWater(context.facingColl) then
     local rods = {}
     for _, id in ipairs(RODS) do
-      if (inventory[id] or 0) > 0 then
+      if owned(inventory, id) then
         rods[#rods + 1] = { id = id, label = itemLabel(game, id) }
       end
     end
-    if #rods > 0 then
-      out[#out + 1] = { id = "fish", label = "FISH", rods = rods }
-    end
+    if #rods > 0 then add("fish", "FISH").rods = rods end
+  end
+
+  if owned(inventory, "SQUIRTBOTTLE")
+      and world:squirtbottleTreeScript() then
+    add("squirtbottle", itemLabel(game, "SQUIRTBOTTLE"))
   end
   return out
 end
@@ -123,6 +157,19 @@ function WorldAPI:useFieldAction(id, opts)
       end
     end
     return nil, "fishing rod unavailable"
+  elseif id == "squirtbottle" then
+    local outcome = world:useFieldItem("SQUIRTBOTTLE")
+    if outcome and outcome ~= "nowhere" then return true end
+  end
+
+  for _, row in ipairs(FIELD_ACTIONS) do
+    if row.id == id then
+      local context = world:fieldContext()
+      local mon = FieldMoves.partyMoveUser(context.party, row.move, context)
+      local result = mon and world:useFieldMove(row.move, mon)
+      if result and result.ok then return true end
+      return nil, "field action unavailable"
+    end
   end
   return nil, "field action unavailable"
 end

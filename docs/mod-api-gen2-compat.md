@@ -486,9 +486,10 @@ has its own entry points for (`start_battle "wild" species level`, `warp`,
 **by name, before the first row runs**, so a mod never gets a half-run queue.
 `marchInPlace` still has no Gen 2 equivalent (the Gen 2 movement stream has no
 byte for it) and returns `nil, reason` rather than approximating one.
-`availableFieldActions` and `useFieldAction` expose the same contextual
-bicycle and fishing records in both games. Each engine keeps ownership of its
-inventory, terrain, surfing, bike, and fishing rules.
+`availableFieldActions` and `useFieldAction` share Gen 1's contextual action
+records: badge, party move, map and facing-tile checks remain engine-owned,
+while Gold additionally exposes Headbutt, Sweet Scent, Whirlpool, Waterfall
+and the SquirtBottle when they can actually be used.
 
 **Hooks and events that fire on Gold.** Every name below is the Gen 1 name
 carrying the Gen 1 payload keys, because Gold's call sites reuse them rather
