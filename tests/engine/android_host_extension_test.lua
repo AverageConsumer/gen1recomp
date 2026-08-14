@@ -53,11 +53,12 @@ check(source:find("DisplayManager.DisplayListener", 1, true)
     and source:find("registerDisplayListener", 1, true)
     and source:find("unregisterDisplayListener", 1, true),
   "secondary displays are monitored while the activity is active")
-check(position("if (secondaryEnabled) registerSecondaryDisplayListener();") <
+check(position("registerCompanionDisplayObservers();") <
       position("setupSecondaryDisplay();"),
   "secondary display monitoring starts before initial discovery")
-check(source:find("!monitor.hasDisplay(display.getDisplayId())", 1, true),
-  "a disconnected active display is rebound without replacing a live one")
+check(source:find("onDisplayAdded(int displayId) { rebindSecondaryDisplay(); }", 1, true)
+    and source:find("onDisplayRemoved(int displayId) { rebindSecondaryDisplay(); }", 1, true),
+  "display hotplug re-evaluates the preferred companion target")
 
 check(not source:lower():find("openxr", 1, true),
   "generic Android activity must not require OpenXR")

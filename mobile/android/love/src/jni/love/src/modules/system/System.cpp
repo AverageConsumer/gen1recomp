@@ -227,6 +227,15 @@ bool System::createFile(const char *suggestedName) const
 #endif
 }
 
+bool System::is24HourClock() const
+{
+#ifdef LOVE_ANDROID
+	return love::android::is24HourClock();
+#else
+	return true;
+#endif
+}
+
 bool System::syncHealthSteps() const
 {
 #ifdef LOVE_ANDROID
