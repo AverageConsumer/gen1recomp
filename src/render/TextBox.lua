@@ -253,6 +253,16 @@ function TextBox:beginLine()
   table.insert(self.shown, {})
 end
 
+function TextBox:visibleText()
+  local page = self.pages[self.pageIndex]
+  if not page then return nil end
+  local out, count = {}, #(self.shown or {})
+  for i = math.max(1, self.lineIndex - count + 1), self.lineIndex do
+    if page[i] ~= nil then out[#out + 1] = page[i] end
+  end
+  return #out > 0 and out or nil
+end
+
 function TextBox:update(dt)
   local input = self.game.input
   self.blink = (self.blink + 1) % 60

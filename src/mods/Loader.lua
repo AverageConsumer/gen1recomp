@@ -1308,7 +1308,7 @@ function Loader:_api(mod)
   -- mod.world materializes on first touch, like the image helper above: a
   -- headless load must not drag the world stack in, and the Game the facade
   -- acts on is still being wired when the entry chunk runs
-  local world
+  local world, battle
   setmetatable(api, { __index = function(_, key)
     -- mod.game is the live service owner, resolved per generation the way
     -- mod.world is: src/core/Game.lua's singleton under Gen 1, the Game2
@@ -1317,9 +1317,17 @@ function Loader:_api(mod)
     -- entry chunk runs.  This is what a mod should hold instead of requiring
     -- src.core.Game, which under Gold hands back a table nothing instantiated.
     if key == "game" then return loader:_game() end
+    local game = loader:_game()
+    if key == "battle" then
+      if battle then return battle end
+      local module = game and engineRequire(loader.generation == 2
+        and "src.battle.gen2.BattleAPI" or "src.battle.BattleAPI")
+      if not module then return nil end
+      battle = module.new(game, modId)
+      return battle
+    end
     if key ~= "world" then return nil end
     if world then return world end
-    local game = loader:_game()
     -- one facade name, one arm per generation: Gold's world is not a stack
     -- state and its flags are a bitfield, so the resolution differs even
     -- where the method set does not (src/world/gen2/WorldAPI.lua)
