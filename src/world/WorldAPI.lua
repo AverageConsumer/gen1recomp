@@ -6,6 +6,8 @@
 -- stays unsupported; anything a mod legitimately needs belongs here.
 
 local Logger = require("src.core.Logger")
+local FieldDefaults = require("src.world.FieldDefaults")
+local Map = require("src.world.Map")
 local MapLoader = require("src.world.MapLoader")
 local MapOverview = require("src.world.MapOverview")
 local Party = require("src.pokemon.Party")
@@ -15,6 +17,8 @@ local WorldAPI = {}
 WorldAPI.__index = WorldAPI
 
 local NO_OVERWORLD = "no overworld"
+local DIG_TILESETS = { FOREST = true, CEMETERY = true, CAVERN = true,
+                       FACILITY = true, INTERIOR = true }
 local RODS = { "OLD_ROD", "GOOD_ROD", "SUPER_ROD" }
 
 local function acceptsMenuInput(game, ow)
@@ -87,6 +91,44 @@ function WorldAPI:reorderParty(fromSlot, toSlot)
   return true
 end
 
+local function outside(game, ow)
+  return Map.isOutside(ow.map.def,
+    FieldDefaults.field(game.data, "outsideTilesets"))
+end
+
+local function knows(mon, moveId)
+  for _, move in ipairs(mon.moves or {}) do
+    if move.id == moveId then return true end
+  end
+  return false
+end
+
+local function monInfo(game, mon, slot)
+  local def = game.data.pokemon[mon.species] or {}
+  return { slot = slot, species = mon.species,
+    name = mon.nickname or def.name or mon.species, level = mon.level,
+    hp = mon.hp, maxHp = mon.stats and mon.stats.hp or mon.hp }
+end
+
+local function softboiledSources(game)
+  local party, sources = game.save.party or {}, {}
+  for sourceSlot, source in ipairs(party) do
+    local heal = source.stats and math.floor(source.stats.hp / 5) or 0
+    if knows(source, "SOFTBOILED") and source.hp > heal then
+      local info = monInfo(game, source, sourceSlot)
+      info.targets = {}
+      for targetSlot, target in ipairs(party) do
+        if target ~= source and target.hp > 0 and target.stats
+           and target.hp < target.stats.hp then
+          info.targets[#info.targets + 1] = monInfo(game, target, targetSlot)
+        end
+      end
+      if #info.targets > 0 then sources[#sources + 1] = info end
+    end
+  end
+  return sources
+end
+
 -- Contextual field-item shortcuts. Only actions that can start immediately
 -- are listed; callers receive copied labels and never inspect world internals.
 function WorldAPI:availableFieldActions()
@@ -103,6 +145,17 @@ function WorldAPI:availableFieldActions()
       label = save.onBike and "BIKE OFF" or "BICYCLE" }
   end
 
+  if inventory.CASCADEBADGE and ow:useCutFieldMove() == "ok" then
+    out[#out + 1] = { id = "cut", label = "CUT" }
+  end
+  if inventory.SOULBADGE then
+    local surf = ow:useSurfFieldMove()
+    if surf == "ok" or surf == "dismount" then
+      out[#out + 1] = { id = "surf",
+        label = surf == "dismount" and "LEAVE WATER" or "SURF" }
+    end
+  end
+
   if not ow.player.surfing and ow:facingIsShoreOrWater() then
     local rods = {}
     for _, id in ipairs(RODS) do
@@ -114,6 +167,26 @@ function WorldAPI:availableFieldActions()
     if #rods > 0 then
       out[#out + 1] = { id = "fish", label = "FISH", rods = rods }
     end
+  end
+
+  if inventory.RAINBOWBADGE and not ow.strengthActive
+      and ow:partyKnows("STRENGTH") then
+    out[#out + 1] = { id = "strength", label = "STRENGTH" }
+  end
+  if inventory.BOULDERBADGE and ow.dark and ow:partyKnows("FLASH") then
+    out[#out + 1] = { id = "flash", label = "FLASH" }
+  end
+  if DIG_TILESETS[ow.map.def.tileset] and ow.map.id ~= "AGATHAS_ROOM"
+      and ow:partyKnows("DIG") then
+    out[#out + 1] = { id = "dig", label = "DIG" }
+  end
+  if outside(game, ow) and ow:partyKnows("TELEPORT") then
+    out[#out + 1] = { id = "teleport", label = "TELEPORT" }
+  end
+  local sources = softboiledSources(game)
+  if #sources > 0 then
+    out[#out + 1] = { id = "softboiled", label = "SOFTBOILED",
+      sources = sources }
   end
   return out
 end
@@ -130,6 +203,18 @@ function WorldAPI:useFieldAction(id, opts)
 
   if id == "bicycle" then
     if ow:useBicycle() then return true end
+  elseif id == "cut" then
+    local x, y = ow.player:facingCell()
+    ow:tryCut(x, y)
+    return true
+  elseif id == "surf" then
+    if ow:useSurfFieldMove() == "dismount" then
+      ow:stopSurfing()
+    else
+      local x, y = ow.player:facingCell()
+      ow:trySurf(x, y)
+    end
+    return true
   elseif id == "fish" then
     local rod = opts and opts.rod
     if not rod and #found.rods == 1 then rod = found.rods[1].id end
@@ -137,8 +222,52 @@ function WorldAPI:useFieldAction(id, opts)
       if choice.id == rod and ow:useFishingRod(rod) then return true end
     end
     return nil, "fishing rod unavailable"
+  elseif id == "strength" then
+    ow:useStrengthFieldMove()
+    return true
+  elseif id == "flash" then
+    ow:useFlashFieldMove()
+    return true
+  elseif id == "dig" or id == "teleport" then
+    ow:beginTeleportOut()
+    return true
+  elseif id == "softboiled" then
+    local sourceSlot, targetSlot = opts and tonumber(opts.sourceSlot),
+                                   opts and tonumber(opts.targetSlot)
+    local allowed
+    for _, source in ipairs(found.sources or {}) do
+      if source.slot == sourceSlot then
+        for _, target in ipairs(source.targets or {}) do
+          if target.slot == targetSlot then allowed = true break end
+        end
+      end
+    end
+    if not allowed then return nil, "softboiled target unavailable" end
+    ow:useSoftboiledFieldMove(game.save.party[sourceSlot],
+                              game.save.party[targetSlot])
+    return true
   end
   return nil, "field action unavailable"
+end
+
+function WorldAPI:canFly()
+  local ow, game = self:overworld(), self.game
+  local inventory = game and game.save and game.save.inventory or {}
+  return ow ~= nil and ow.map ~= nil and not not inventory.THUNDERBADGE
+    and outside(game, ow) and ow:partyKnows("FLY") ~= nil
+end
+
+function WorldAPI:flyTo(mapId)
+  local game, ow = self.game, self:overworld()
+  if not self:canFly() then return nil, "fly unavailable" end
+  if not acceptsMenuInput(game, ow) then return nil, "world is busy" end
+  local save, field = game.save, game.data.field or {}
+  if not (save.visited and save.visited[mapId]
+      and field.flyWarps and field.flyWarps[mapId]) then
+    return nil, "destination unavailable"
+  end
+  ow:flyTo(mapId)
+  return true
 end
 
 -- A compact, read-only view of the active map for minimaps and companion UIs.
