@@ -127,6 +127,8 @@ public:
 	 **/
 	virtual bool createFile(const char *suggestedName = nullptr) const;
 
+	virtual bool is24HourClock() const;
+
 	/**
 	 * Pokéwalker: stage pending real-world steps (steps_pending.json in the
 	 * save dir) from the platform step source. Android-only; false elsewhere.
