@@ -15,6 +15,7 @@ local redWorld = {
   runner = { isRunning = function() return false end },
   scriptMoves = {},
   bikeAllowed = function() return true end,
+  partyKnows = function() return nil end,
   facingIsShoreOrWater = function() return facingWater end,
   useCutFieldMove = function() return redCut and "ok" or "nothing" end,
   useSurfFieldMove = function() return redSurf end,

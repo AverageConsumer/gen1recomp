@@ -6,7 +6,7 @@ local check = S.check
 local OverworldState = require("src.world.OverworldController")
 local BattleState = require("src.battle.BattleState")
 
-for _, method in ipairs({ "toggleBike", "useFishingRod", "stopSurfing",
+for _, method in ipairs({ "useBicycle", "useFishingRod", "stopSurfing",
     "useStrengthFieldMove", "useFlashFieldMove",
     "useSoftboiledFieldMove" }) do
   check(type(OverworldState[method]) == "function",
