@@ -34,6 +34,7 @@ local Font = require("src.render.Font")
 -- a mod has taken a facade (src/mods/Gen2Compat.lua).
 local Gen1Facade = require("src.mods.Gen2Compat")
 local GbcPalette = require("src.render.GbcPalette")
+local GameViewport = require("src.render.GameViewport")
 local Gen2Save = require("src.core.gen2.Save")
 local HallOfFame = require("src.core.gen2.HallOfFame")
 local HiddenItems = require("src.world.gen2.HiddenItems")
@@ -7502,7 +7503,7 @@ function World:interactBody()
 end
 
 function World:fitScale()
-  local w, h = love.graphics.getDimensions()
+  local w, h = GameViewport.dimensions()
   return math.max(1, math.floor(math.min(w / 160, h / 144)))
 end
 
@@ -8329,7 +8330,7 @@ function World:rebuildNeighbors()
   self.neighbors = {}
   if not self.map then return end
   local s = self:zoomScale()
-  local ww, wh = love.graphics.getDimensions()
+  local ww, wh = GameViewport.dimensions()
   local vw = math.ceil(ww / s)
   local vh = math.ceil(wh / s)
   if vw % 2 ~= 0 then vw = vw + 1 end
@@ -9694,7 +9695,7 @@ function World:drawGround(s)
     if canvas then
       bw, bh = canvas:getDimensions()
     else
-      bw, bh = G.getDimensions()
+      bw, bh = GameViewport.dimensions()
     end
     BorderFill.draw(self, self:borderImageFor(self.map.id),
       cam.x, cam.y, bw, bh, s, self.map.id)
@@ -9955,7 +9956,7 @@ end
 
 function World:draw()
   local G = love.graphics
-  local w, h = G.getDimensions()
+  local w, h = GameViewport.dimensions()
   self:refreshColorMode()
   G.clear(0.07, 0.05, 0.02, 1)
 

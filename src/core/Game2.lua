@@ -35,6 +35,7 @@ local World = require("src.world.gen2.World")
 -- The mod event/hook buses.  Gold reaches them through Runtime like every
 -- other engine file, so a call site here is the same call site Gen 1 has.
 local ModRuntime = require("src.mods.Runtime")
+local GameViewport = require("src.render.GameViewport")
 -- Only for the mod-supplied save migrations and the mods-changed report, which
 -- are keyed off save.meta and know nothing about a generation; Gold's own save
 -- IO is src/core/gen2/Save.lua.
@@ -1197,9 +1198,7 @@ function Game2:frameFit(w, h)
     dpi = tonumber(love.window.getDPIScale()) or 1
   end
   local pw, ph = w * dpi, h * dpi
-  if love.graphics.getPixelDimensions then
-    pw, ph = love.graphics.getPixelDimensions()
-  end
+  pw, ph = GameViewport.pixelDimensions()
   return scale, ox, oy, dpi, pw, ph
 end
 
@@ -1363,9 +1362,9 @@ end
 -- is being shown on.  Mod post-processes fold in between the two, where
 -- Renderer.lua:1058 folds them -- a blur or a colour grade is what the LCD grid
 -- is then drawn over, rather than something that smears the grid itself.
-function Game2:draw()
+function Game2:drawViewportFrame()
   local G = love.graphics
-  local w, h = G.getDimensions()
+  local w, h = GameViewport.dimensions()
   local GBCFX = require("src.render.GBCFX")
   local GbcPalette = require("src.render.GbcPalette")
   local Pipelines = require("src.render.Pipelines")
@@ -1475,6 +1474,13 @@ function Game2:draw()
   G.pop()
   G.setColor(1, 1, 1, 1)
   self:drawHud(w, h)
+end
+
+function Game2:draw()
+  GameViewport.begin(2)
+  GameViewport.setTarget()
+  self:drawViewportFrame()
+  GameViewport.finish(self)
 end
 
 -- The paper a pushed TextBox has to sit on.  A textbox is built entirely from
@@ -1803,14 +1809,17 @@ end
 
 -- coordinates are LOVE window units, the same space render.hud's viewport is in
 function Game2:pointerEvent(phase, source, id, x, y, dx, dy, pressure, button)
+  local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
   return ModRuntime.call("input.pointer", pointerUnclaimed, self, {
     phase = phase, source = source, id = id, x = x, y = y,
+    gameX = gameX, gameY = gameY, insideGame = insideGame,
     dx = dx or 0, dy = dy or 0, pressure = pressure, button = button,
   })
 end
 
 function Game2:touchpressed(id, x, y, dx, dy, pressure)
-  if TouchControls:touchpressed(id, x, y) then return end
+  local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
+  if insideGame and TouchControls:touchpressed(id, gameX, gameY) then return end
   if not ModRuntime.wantsHook("input.pointer") then return end
   -- POKEPORT_TOUCH routes the mouse through here as a stand-in finger under the
   -- id "mouse" (see main.lua); mods still see its true source
@@ -1824,7 +1833,8 @@ function Game2:touchmoved(id, x, y, dx, dy, pressure)
   -- The pad tracks only ids it captured at press, so this is a no-op for a
   -- mod-visible pointer; a captured one sliding between d-pad directions swaps
   -- the held GB button here.
-  TouchControls:touchmoved(id, x, y)
+  local gameX, gameY = GameViewport.toLocal(x, y)
+  TouchControls:touchmoved(id, gameX, gameY)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   -- the POKEPORT_TOUCH mouse path carries no deltas; derive them from the
@@ -1838,7 +1848,8 @@ function Game2:touchmoved(id, x, y, dx, dy, pressure)
 end
 
 function Game2:touchreleased(id, x, y, dx, dy, pressure)
-  TouchControls:touchreleased(id, x, y)
+  local gameX, gameY = GameViewport.toLocal(x, y)
+  TouchControls:touchreleased(id, gameX, gameY)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   self.modPointers[id] = nil

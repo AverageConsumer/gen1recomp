@@ -17,6 +17,7 @@
 local Kit = require("src.ui.kit.Kit")
 local Theme = require("src.ui.kit.Theme")
 local SafeArea = require("src.core.SafeArea")
+local GameViewport = require("src.render.GameViewport")
 
 local Layout = {}
 
@@ -41,7 +42,7 @@ local lastW, lastH, lastOx, lastOy, lastSw, lastSh, lastMax
 function Layout.metrics(maxAppW)
   local W, H = 0, 0
   if love and love.graphics and love.graphics.getDimensions then
-    W, H = love.graphics.getDimensions()
+    W, H = GameViewport.dimensions()
   end
   local ox, oy, sw, sh = SafeArea.rect()
   local s = Kit.layout(sw, sh)
