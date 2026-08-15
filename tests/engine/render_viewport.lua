@@ -77,5 +77,21 @@ Viewport.reset()
 assert(not Viewport.active(),
   "viewport geometry cannot leak into the launcher after presentation")
 
+hooks.chains["render.viewport"] = nil
+hooks:wrap("render.viewport", function(next, ctx)
+  local full = next(ctx)
+  full.capture = true
+  return full
+end, 0, "capture-fixture")
+Viewport.begin(1)
+assert(Viewport.active() and Viewport.dimensions() == 640,
+  "a full-window capture allocates a final composition target")
+presented = nil
+Viewport.setTarget()
+Viewport.finish({})
+assert(presented and presented.width == 640 and presented.height == 576,
+  "a full-window capture reaches final window composition")
+Viewport.reset()
+
 Runtime.hooks = savedHooks
 print("render viewport: ok")
