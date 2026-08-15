@@ -565,9 +565,10 @@ function Game:draw()
   if ModRuntime.wantsHook("render.hud") then
     ModRuntime.call("render.hud", function() end, self, viewport)
   end
-  -- on-screen mobile controls: pure screen-space, over the finished frame
-  TouchControls:draw()
   GameViewport.finish(self)
+  -- OS-window chrome: keep the pad full-size and above any composed companion
+  -- view instead of capturing and shrinking it with the game viewport.
+  TouchControls:draw()
 end
 
 -- overworld survey zoom: wheel up / '=' zooms in, wheel down / '-' out
@@ -951,8 +952,7 @@ function Game:pointerEvent(phase, source, id, x, y, dx, dy, pressure, button)
 end
 
 function Game:touchpressed(id, x, y, dx, dy, pressure)
-  local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
-  if insideGame and TouchControls:touchpressed(id, gameX, gameY) then return end
+  if TouchControls:touchpressed(id, x, y) then return end
   if not ModRuntime.wantsHook("input.pointer") then return end
   -- POKEPORT_TOUCH routes the mouse through here as a stand-in finger
   -- under the id "mouse" (see main.lua); mods still see its true source
@@ -964,8 +964,7 @@ function Game:touchpressed(id, x, y, dx, dy, pressure)
 end
 
 function Game:touchmoved(id, x, y, dx, dy, pressure)
-  local gameX, gameY = GameViewport.toLocal(x, y)
-  TouchControls:touchmoved(id, gameX, gameY)
+  TouchControls:touchmoved(id, x, y)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   -- the POKEPORT_TOUCH mouse path carries no deltas; derive them from the
@@ -979,8 +978,7 @@ function Game:touchmoved(id, x, y, dx, dy, pressure)
 end
 
 function Game:touchreleased(id, x, y, dx, dy, pressure)
-  local gameX, gameY = GameViewport.toLocal(x, y)
-  TouchControls:touchreleased(id, gameX, gameY)
+  TouchControls:touchreleased(id, x, y)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   self.modPointers[id] = nil

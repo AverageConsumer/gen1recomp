@@ -11,7 +11,7 @@ local GameViewport = require("src.render.GameViewport")
 
 local SafeArea = {}
 
-function SafeArea.rect()
+function SafeArea.windowRect()
   local ww, wh = 0, 0
   if love and love.graphics and love.graphics.getDimensions then
     ww, wh = GameViewport.fullDimensions()
@@ -20,14 +20,14 @@ function SafeArea.rect()
   if wh <= 0 then wh = 1 end
 
   if not (love and love.window and love.window.getSafeArea) then
-    return GameViewport.localSafeRect(0, 0, ww, wh)
+    return 0, 0, ww, wh
   end
 
   local x, y, w, h = love.window.getSafeArea()
   if type(x) ~= "number" or type(y) ~= "number"
      or type(w) ~= "number" or type(h) ~= "number"
      or w <= 0 or h <= 0 then
-    return GameViewport.localSafeRect(0, 0, ww, wh)
+    return 0, 0, ww, wh
   end
 
   -- A safe rect that cannot fit the window's unit space is a backend
@@ -54,7 +54,11 @@ function SafeArea.rect()
   y = math.max(0, math.min(y, wh))
   w = math.max(1, math.min(w, ww - x))
   h = math.max(1, math.min(h, wh - y))
-  return GameViewport.localSafeRect(x, y, w, h)
+  return x, y, w, h
+end
+
+function SafeArea.rect()
+  return GameViewport.localSafeRect(SafeArea.windowRect())
 end
 
 return SafeArea
