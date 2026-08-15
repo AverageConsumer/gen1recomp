@@ -6,6 +6,7 @@ local FixedStep = require("src.core.FixedStep")
 local Input = require("src.core.Input")
 local Logger = require("src.core.Logger")
 local Renderer = require("src.render.Renderer")
+local GameViewport = require("src.render.GameViewport")
 local SaveData = require("src.core.SaveData")
 local StateStack = require("src.core.StateStack")
 local TouchControls = require("src.core.TouchControls")
@@ -452,6 +453,7 @@ local function centerClassicZones(zones, offset)
 end
 
 function Game:draw()
+  GameViewport.begin(1)
   -- the UI canvas clears transparent when the overworld's world pass
   -- shows through beneath it; opaque full-screen states get the classic
   -- white clear
@@ -565,6 +567,7 @@ function Game:draw()
   end
   -- on-screen mobile controls: pure screen-space, over the finished frame
   TouchControls:draw()
+  GameViewport.finish(self)
 end
 
 -- overworld survey zoom: wheel up / '=' zooms in, wheel down / '-' out
@@ -939,14 +942,17 @@ local function pointerUnclaimed() return false end
 -- coordinates are LOVE window units, the same space render.hud's viewport
 -- and the touch overlay lay out in
 function Game:pointerEvent(phase, source, id, x, y, dx, dy, pressure, button)
+  local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
   return ModRuntime.call("input.pointer", pointerUnclaimed, self, {
     phase = phase, source = source, id = id, x = x, y = y,
+    gameX = gameX, gameY = gameY, insideGame = insideGame,
     dx = dx or 0, dy = dy or 0, pressure = pressure, button = button,
   })
 end
 
 function Game:touchpressed(id, x, y, dx, dy, pressure)
-  if TouchControls:touchpressed(id, x, y) then return end
+  local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
+  if insideGame and TouchControls:touchpressed(id, gameX, gameY) then return end
   if not ModRuntime.wantsHook("input.pointer") then return end
   -- POKEPORT_TOUCH routes the mouse through here as a stand-in finger
   -- under the id "mouse" (see main.lua); mods still see its true source
@@ -958,7 +964,8 @@ function Game:touchpressed(id, x, y, dx, dy, pressure)
 end
 
 function Game:touchmoved(id, x, y, dx, dy, pressure)
-  TouchControls:touchmoved(id, x, y)
+  local gameX, gameY = GameViewport.toLocal(x, y)
+  TouchControls:touchmoved(id, gameX, gameY)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   -- the POKEPORT_TOUCH mouse path carries no deltas; derive them from the
@@ -972,7 +979,8 @@ function Game:touchmoved(id, x, y, dx, dy, pressure)
 end
 
 function Game:touchreleased(id, x, y, dx, dy, pressure)
-  TouchControls:touchreleased(id, x, y)
+  local gameX, gameY = GameViewport.toLocal(x, y)
+  TouchControls:touchreleased(id, gameX, gameY)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   self.modPointers[id] = nil
