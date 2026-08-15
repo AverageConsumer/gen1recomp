@@ -9,6 +9,8 @@ local hooks = Hooks.new()
 Runtime.hooks = hooks
 
 local Viewport = require("src.render.GameViewport")
+local SafeArea = require("src.core.SafeArea")
+local TouchControls = require("src.core.TouchControls")
 
 Viewport.begin(1)
 assert(not Viewport.active(), "vanilla frame must not allocate a viewport")
@@ -41,6 +43,29 @@ assert(x == 80 and y == 88 and inside,
   "window pointers expose viewport-local coordinates")
 local _, _, outside = Viewport.toLocal(20, 20)
 assert(not outside, "reserved companion space is outside the game viewport")
+local _, _, localW, localH = SafeArea.rect()
+local _, _, windowW, windowH = SafeArea.windowRect()
+assert(localW == 320 and localH == 288,
+  "game chrome may still use viewport-local safe geometry")
+assert(windowW == 640 and windowH == 576,
+  "OS chrome can retain the full-window safe geometry")
+TouchControls:init()
+local controls = TouchControls:layout()
+assert(controls.dpad.cx < 160 and controls.a.cx > 480,
+  "touch controls stay laid out across the full OS window")
+local function source(path)
+  local file = assert(io.open(path, "r"))
+  local text = file:read("*a")
+  file:close()
+  return text
+end
+for _, path in ipairs({ "src/core/Game.lua", "src/core/Game2.lua" }) do
+  local text = source(path)
+  local finish = assert(text:find("GameViewport.finish(self)", 1, true))
+  local controlsDraw = assert(text:find("TouchControls:draw()", finish, true))
+  assert(controlsDraw > finish,
+    path .. " draws touch controls after final window composition")
+end
 Viewport.setTarget()
 assert(love.graphics.getCanvas() == Viewport.target(),
   "game rendering is redirected into the viewport canvas")

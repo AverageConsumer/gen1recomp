@@ -1210,18 +1210,15 @@ function Game2:viewport(w, h)
   }
 end
 
--- The screen-space layer, in the Gen 1 order: render.hud and then the
--- on-screen pad (src/core/Game.lua:521 and :524, either side of
--- Renderer:endFrame).  Both are window-space, both sit over the finished
--- frame -- post passes, letterbox and all -- and neither ever enters the game
--- canvas.  Every exit path of Game2:draw ends here, which is what makes that
--- true of the composed frame a mod owns as well as of the plain one.
+-- The render.hud layer, in Gen 1's order over the finished game frame. The
+-- on-screen pad is drawn separately after GameViewport.finish, because it is
+-- OS-window chrome and must not be captured or scaled with this canvas.
 --
 -- render.hud: persistent tool status.  The call is fenced with
 -- push("all")/pop for the reason src/render/Pipelines.lua:guardRender fences a
 -- mod render callback: a subscriber that returns cleanly but leaves a shader
 -- bound, the canvas redirected or the colour changed must not corrupt the next
--- frame -- or, now, the pad drawn immediately after it.
+-- frame.
 function Game2:drawHud(w, h)
   if ModRuntime.wantsHook("render.hud") then
     local G = love.graphics
@@ -1229,10 +1226,6 @@ function Game2:drawHud(w, h)
     ModRuntime.call("render.hud", noop, self, self:viewport(w, h))
     G.pop()
   end
-  -- The pad LAST, so a HUD mod cannot draw over the controls the player is
-  -- pressing.  It draws nothing at all off Android/iOS unless POKEPORT_TOUCH=1
-  -- forces it, and nothing ever while a controller is in use.
-  TouchControls:draw()
 end
 
 -- render.letterbox: SGB borders and custom void art in the bars around the
@@ -1475,6 +1468,9 @@ function Game2:draw()
   GameViewport.setTarget()
   self:drawViewportFrame()
   GameViewport.finish(self)
+  -- OS-window chrome: draw after companion composition so viewport layouts
+  -- neither shrink nor cover the touch pad.
+  TouchControls:draw()
 end
 
 -- The paper a pushed TextBox has to sit on.  A textbox is built entirely from
@@ -1812,8 +1808,7 @@ function Game2:pointerEvent(phase, source, id, x, y, dx, dy, pressure, button)
 end
 
 function Game2:touchpressed(id, x, y, dx, dy, pressure)
-  local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
-  if insideGame and TouchControls:touchpressed(id, gameX, gameY) then return end
+  if TouchControls:touchpressed(id, x, y) then return end
   if not ModRuntime.wantsHook("input.pointer") then return end
   -- POKEPORT_TOUCH routes the mouse through here as a stand-in finger under the
   -- id "mouse" (see main.lua); mods still see its true source
@@ -1827,8 +1822,7 @@ function Game2:touchmoved(id, x, y, dx, dy, pressure)
   -- The pad tracks only ids it captured at press, so this is a no-op for a
   -- mod-visible pointer; a captured one sliding between d-pad directions swaps
   -- the held GB button here.
-  local gameX, gameY = GameViewport.toLocal(x, y)
-  TouchControls:touchmoved(id, gameX, gameY)
+  TouchControls:touchmoved(id, x, y)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   -- the POKEPORT_TOUCH mouse path carries no deltas; derive them from the
@@ -1842,8 +1836,7 @@ function Game2:touchmoved(id, x, y, dx, dy, pressure)
 end
 
 function Game2:touchreleased(id, x, y, dx, dy, pressure)
-  local gameX, gameY = GameViewport.toLocal(x, y)
-  TouchControls:touchreleased(id, gameX, gameY)
+  TouchControls:touchreleased(id, x, y)
   local p = self.modPointers and self.modPointers[id]
   if not p then return end
   self.modPointers[id] = nil
