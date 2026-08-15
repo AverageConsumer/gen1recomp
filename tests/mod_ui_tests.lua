@@ -1106,6 +1106,27 @@ check(loader.modOptions.okmod.hardcore == false
   and loader.modOptions.okmod.startMoney == 3000
   and loader.modOptions.okmod.tag == "BLUE",
   "RESET DEFAULTS restores every schema default")
+
+-- data-only visibility keeps mode-specific settings compact and refreshes
+local conditionalSchema = {
+  { key = "mode", label = "MODE", type = "choice", default = "one",
+    choices = { { "ONE", "one" }, { "TWO", "two" } } },
+  { key = "oneOnly", label = "ONE ONLY", type = "toggle", default = false,
+    visible_if = { key = "mode", equals = "one" } },
+  { key = "twoOnly", label = "TWO ONLY", type = "toggle", default = false,
+    visible_if = { key = "mode", equals = "two" } },
+  { key = "notOne", label = "NOT ONE", type = "toggle", default = false,
+    visible_if = { key = "mode", not_equals = "one" } },
+}
+loader.modOptions.condmod = {}
+ms.cursor = 1
+ms.optionRows = ms:buildOptionRows({ id = "condmod" }, conditionalSchema)
+check(#ms.optionRows == 3 and ms.optionRows[2].id == "oneOnly",
+  "visible_if uses the controlling row default")
+ms.optionRows[1].step(mgame, 1)
+check(#ms.optionRows == 4 and ms.optionRows[2].id == "twoOnly"
+  and ms.optionRows[3].id == "notOne",
+  "changing a controller refreshes positive and negative conditions")
 press(ms, "b")
 check(ms.screen == "list", "B leaves the options screen")
 

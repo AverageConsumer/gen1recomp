@@ -986,12 +986,46 @@ end
 function ManagerState:buildOptionRows(m, schema)
   local rows = {}
   local modId = m.id
+  local byKey, visibilityKeys = {}, {}
+  for _, row in ipairs(schema) do
+    if type(row) == "table" and type(row.key) == "string" then
+      byKey[row.key] = row
+      local condition = row.visible_if
+      if type(condition) == "table" and type(condition.key) == "string" then
+        visibilityKeys[condition.key] = true
+      end
+    end
+  end
+  local function visible(row)
+    local condition = row.visible_if
+    if condition == nil then return true end
+    if type(condition) ~= "table" or type(condition.key) ~= "string" then
+      return false
+    end
+    local dependency = byKey[condition.key] or { key = condition.key }
+    local value = self:optionValue(modId, dependency)
+    if condition.equals ~= nil then return value == condition.equals end
+    if condition.not_equals ~= nil then return value ~= condition.not_equals end
+    return false
+  end
+  local function refresh(key)
+    if not visibilityKeys[key] then return end
+    local preferred = rows[self.cursor] and rows[self.cursor].id
+    self.optionRows = self:buildOptionRows(m, schema)
+    for index, candidate in ipairs(self.optionRows) do
+      if candidate.id == preferred then self.cursor = index break end
+    end
+    self.cursor = clampIndex(self.cursor, #self.optionRows)
+  end
   for _, row in ipairs(schema) do
     if type(row) ~= "table" or type(row.key) ~= "string" or row.key == ""
         or not OPTION_TYPES[row.type] then
       -- malformed rows are skipped, reported where the errors screen reads
       Runtime.reportError(modId, "options row skipped: "
         .. tostring(type(row) == "table" and (row.key or row.type) or row))
+    elseif not visible(row) then
+      -- Conditional rows stay in the data-only schema for native consumers,
+      -- but do not clutter the in-game menu outside their owning mode.
     elseif row.type == "toggle" then
       rows[#rows + 1] = { id = row.key, label = row.label or row.key,
         value = function()
@@ -999,6 +1033,7 @@ function ManagerState:buildOptionRows(m, schema)
         end,
         step = function()
           self:setOption(modId, row.key, not self:optionValue(modId, row))
+          refresh(row.key)
           return true
         end }
     elseif row.type == "choice" then
@@ -1021,6 +1056,7 @@ function ManagerState:buildOptionRows(m, schema)
           end
           index = clampIndex(index + dir, #choices)
           self:setOption(modId, row.key, choices[index][2])
+          refresh(row.key)
           return true
         end }
     elseif row.type == "number" then
@@ -1036,6 +1072,7 @@ function ManagerState:buildOptionRows(m, schema)
         step = function(_, dir)
           local cur = tonumber(self:optionValue(modId, row)) or 0
           self:setOption(modId, row.key, clamp(cur + dir * (row.step or 1)))
+          refresh(row.key)
           return true
         end,
         activate = function()
@@ -1044,7 +1081,10 @@ function ManagerState:buildOptionRows(m, schema)
             max = row.max or 99,
             start = math.max(1, tonumber(self:optionValue(modId, row)) or 1),
             onDone = function(qty)
-              if qty then self:setOption(modId, row.key, clamp(qty)) end
+              if qty then
+                self:setOption(modId, row.key, clamp(qty))
+                refresh(row.key)
+              end
             end,
           }))
         end }
@@ -1061,6 +1101,7 @@ function ManagerState:buildOptionRows(m, schema)
             default = self:optionValue(modId, row),
             onDone = function(name)
               self:setOption(modId, row.key, name)
+              refresh(row.key)
             end,
           }))
         end }
@@ -1074,6 +1115,10 @@ function ManagerState:buildOptionRows(m, schema)
             and OPTION_TYPES[row.type] then
           self:setOption(modId, row.key, row.default)
         end
+      end
+      if next(visibilityKeys) then
+        self.optionRows = self:buildOptionRows(m, schema)
+        self.cursor = clampIndex(self.cursor, #self.optionRows)
       end
       self:notify("DEFAULTS RESTORED")
     end }
