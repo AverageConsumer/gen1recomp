@@ -66,7 +66,8 @@ function Viewport.begin(generation)
   Viewport.full = context
   Viewport.rect = rect
   Viewport.generation = generation
-  local active = rect.x ~= 0 or rect.y ~= 0
+  local active = type(requested) == "table" and requested.capture == true
+    or rect.x ~= 0 or rect.y ~= 0
     or rect.width ~= w or rect.height ~= h
   Viewport.frameActive = active
   if active then
