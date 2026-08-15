@@ -32,6 +32,10 @@ Viewport.begin(2)
 assert(Viewport.active(), "a reserved rectangle creates a game target")
 w, h = Viewport.dimensions()
 assert(w == 320 and h == 288, "game renders against reserved dimensions")
+Viewport.target().getPixelDimensions = function() return 737, 664 end
+local pw, ph = Viewport.pixelDimensions()
+assert(pw == 737 and ph == 664,
+  "captured rendering uses the target's real high-DPI pixel dimensions")
 local x, y, inside = Viewport.toLocal(400, 100)
 assert(x == 80 and y == 88 and inside,
   "window pointers expose viewport-local coordinates")
