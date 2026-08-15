@@ -133,8 +133,10 @@ end
 -- are listed; callers receive copied labels and never inspect world internals.
 function WorldAPI:availableFieldActions()
   local game, ow, out = self.game, self:overworld(), {}
-  if not (game and game.save and ow and ow.map and ow.player)
-      or not acceptsMenuInput(game, ow) then return out end
+  if not (game and game.save and ow and ow.map and ow.player) then
+    return out, NO_OVERWORLD
+  end
+  if not acceptsMenuInput(game, ow) then return out, "world is busy" end
   local save, inventory = game.save, game.save.inventory or {}
   local items = game.data and game.data.items or {}
 

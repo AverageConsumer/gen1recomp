@@ -60,7 +60,9 @@ T.check(not ok and err == "fishing rod unavailable",
 T.eq(redWorld.rodUsed, used, "a rejected Red rod changes nothing")
 
 redWorld.player.moving = true
-T.eq(#red:availableFieldActions(), 0, "Red hides actions while moving")
+actions, err = red:availableFieldActions()
+T.eq(#actions, 0, "Red hides actions while moving")
+T.eq(err, "world is busy", "Red distinguishes a busy world from no actions")
 ok, err = red:useFieldAction("bicycle")
 T.check(not ok and err == "world is busy",
   "Red refuses a stale action while busy")
@@ -170,5 +172,10 @@ T.check(gold:useFieldAction("squirtbottle"),
   "Gold accepts the contextual SquirtBottle")
 T.eq(goldWorld.itemUsed, "SQUIRTBOTTLE",
   "Gold delegates the SquirtBottle to its field-item path")
+
+goldWorld.acceptsMenuInput = function() return false end
+actions, err = gold:availableFieldActions()
+T.eq(#actions, 0, "Gold hides actions while busy")
+T.eq(err, "world is busy", "Gold distinguishes a busy world from no actions")
 
 T.finish()

@@ -78,8 +78,10 @@ end
 -- collision and fishing rules.
 function WorldAPI:availableFieldActions()
   local world, game, out = self:overworld(), self.game, {}
-  if not (world and game and game.save and world.map and world.player)
-      or not world:acceptsMenuInput() then return out end
+  if not (world and game and game.save and world.map and world.player) then
+    return out, NO_OVERWORLD
+  end
+  if not world:acceptsMenuInput() then return out, "world is busy" end
   local inventory = game.save.inventory or {}
 
   if (inventory.BICYCLE or 0) > 0 then
