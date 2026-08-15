@@ -100,6 +100,10 @@ end
 
 function Viewport.pixelDimensions()
   if Viewport.active() then
+    if Viewport.canvas.getPixelDimensions then
+      local w, h = Viewport.canvas:getPixelDimensions()
+      return math.max(1, w), math.max(1, h)
+    end
     return math.max(1, math.floor(Viewport.rect.width * Viewport.full.dpiX)),
       math.max(1, math.floor(Viewport.rect.height * Viewport.full.dpiY))
   end
