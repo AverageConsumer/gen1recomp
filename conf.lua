@@ -6,18 +6,30 @@ function love.conf(t)
 
   local editor = os.getenv("POKEPORT_EDITOR") == "1"
   local developer = os.getenv("POKEPORT_DEV") == "1"
+  local companion = nil
   if arg then
     for _, a in ipairs(arg) do
       if a == "--editor" then editor = true end
       if a == "--developer" then developer = true end
+      local port, token = a:match("^%-%-display%-companion=(%d+),([%w]+)$")
+      if port then companion = { port = tonumber(port), token = token } end
     end
   end
   -- main.lua runs in the same Lua state right after conf.lua; stash the
   -- decision in a global so it doesn't need to reparse `arg`.
   _G.POKEPORT_EDITOR_MODE = editor
   _G.POKEPORT_DEV_MODE = developer
+  _G.POKEPORT_DISPLAY_COMPANION = companion
 
-  if editor then
+  if companion then
+    t.identity = "pokemon-love2d-companion"
+    t.window.title = "gen1recomp Secondary Display"
+    t.window.width = 640
+    t.window.height = 576
+    t.window.minwidth = 160
+    t.window.minheight = 144
+    t.window.resizable = true
+  elseif editor then
     -- Same identity as the game, deliberately: the editor edits the game's
     -- saves and reads the game's ROM cache, both of which live under this
     -- folder.  A private editor identity would point love.filesystem at an
@@ -51,7 +63,8 @@ function love.conf(t)
   end
   t.version = love._os == "iOS" and "12.0" or "11.5"
   t.window.vsync = 1
-  t.modules.joystick = true
+  t.modules.audio = not companion
+  t.modules.joystick = not companion
   t.modules.physics = false
 
   -- love.system is not loaded during love.conf; love._os is set by the
