@@ -1,10 +1,11 @@
 > [!IMPORTANT]
 > **This fork is the unofficial matched Gen1Recomp host used by
 > [Kanto Gear](https://github.com/AverageConsumer/kanto-gear).** Download the
-> [latest matched release](https://github.com/AverageConsumer/gen1recomp/releases/latest):
-> install the APK over the existing **Gen1Recomp Android Test** app without
-> uninstalling, or extract the Windows ZIP. The upstream documentation below
-> is preserved for engine and source reference. Its release buttons and
+> [latest matched release](https://github.com/AverageConsumer/gen1recomp/releases/latest)
+> for Android, Windows, Linux, PortMaster/Rocknix, or the universal LÖVE 11.5
+> payload. On Android, install the APK over the existing **Gen1Recomp Android
+> Test** app without uninstalling. The upstream documentation below is
+> preserved for engine and source reference. Its release buttons and
 > references to “this repository” refer to
 > [bryanthaboi/gen1recomp](https://github.com/bryanthaboi/gen1recomp), not this
 > fork.
