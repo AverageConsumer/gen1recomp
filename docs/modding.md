@@ -278,10 +278,16 @@ The shared Red, Blue, Yellow, and Gold intents are:
 - `{ kind = "move", slot = 1..4 }`
 - `{ kind = "back" }` while the move menu is active
 
+Red, Blue, and Yellow also expose their generation-specific choices:
+
+- `{ kind = "safari", action = "ball" }` (`bait`, `rock`, and `run` are the
+  other accepted actions)
+- `{ kind = "mimic", index = 1 }` using an entry's snapshot `index`
+
 Menu choices and moves use the same engine methods as the native controls;
 `party` and `item` open the native screens rather than exposing or duplicating
-their mutable logic. Tutorial, link, Safari, forced, stale, and covered battle
-states refuse these core intents. Use `mod.input` for ordinary text advance.
+their mutable logic. Tutorial, link, forced, stale, and covered battle states
+refuse core intents. Use `mod.input` for ordinary text advance.
 
 ## Rendering pipelines
 

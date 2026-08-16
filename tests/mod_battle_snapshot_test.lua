@@ -48,7 +48,7 @@ local battle = {
   enemy = { mon = { species = "TESTMON", level = 4, hp = 12,
     stats = { hp = 12 }, moves = {} }, curTypes = { "NORMAL" }, stages = {} },
 }
-function battle:battleKind() return "wild" end
+function battle:battleKind() return self.kind or "wild" end
 function battle:effectRecord() return { accuracyChecked = true } end
 function battle:visibleText() return { "Wild TESTMON appeared!" } end
 function battle:menuLockedAction() return nil end
@@ -63,6 +63,14 @@ function battle:chooseMove(slot)
   return true
 end
 function battle:cancelMove() self.phase = "menu" return true end
+function battle:chooseSafari(action)
+  self.chosenSafari, self.phase = action, "messages"
+  return true
+end
+function battle:chooseMimic(slot)
+  self.chosenMimic, self.phase = slot, "messages"
+  return true
+end
 function battle:catchChance(ball)
   return require("src.battle.Catching").chance(ball, self.enemy.mon,
     game.data.pokemon[self.enemy.mon.species])
@@ -122,6 +130,18 @@ local back = api:snapshot()
 check(api:submit({ id = 3, revision = back.revision, kind = "back" }),
   "Gen 1 accepts move-menu back")
 eq(battle.phase, "menu", "Gen 1 back restores the command menu")
+
+battle.kind, battle.safari = "safari", { balls = 30 }
+local safari = api:snapshot()
+check(api:submit({ id = 4, revision = safari.revision,
+  kind = "safari", action = "rock" }), "Gen 1 accepts a Safari action")
+eq(battle.chosenSafari, "rock", "Gen 1 uses the semantic Safari path")
+battle.kind, battle.safari = "wild", nil
+battle.phase, battle.mimicMoves = "mimicSelect", { { slot = 1 } }
+local mimic = api:snapshot()
+check(api:submit({ id = 5, revision = mimic.revision,
+  kind = "mimic", index = 1 }), "Gen 1 accepts a Mimic choice")
+eq(battle.chosenMimic, 1, "Gen 1 uses the semantic Mimic path")
 
 local player2 = { species = "CHIKORITA", level = 5, hp = 20,
   maxHp = 21, moves = { { id = "TACKLE", pp = 35, maxPp = 35 } } }
@@ -226,6 +246,29 @@ do
   real:update(1 / 60)
   pressed.b = nil
   eq(real.phase, "menu", "native Gen 1 move-menu back still works")
+end
+
+do
+  local state = setmetatable({ phase = "menu", safari = { balls = 30 },
+    menuIndex = 1 }, { __index = Gen1BattleState })
+  function state:safariAction(action) self.safariChoice = action end
+  local ok, err = state:chooseSafari("missing")
+  check(not ok and err == "invalid safari action",
+    "native Safari rejects an unknown action")
+  check(state:chooseSafari("rock"), "native Safari choice is accepted")
+  eq(state.menuIndex, 3, "native Safari cursor follows the semantic choice")
+  eq(state.safariChoice, "rock", "native Safari action uses the shared path")
+
+  state.phase = "mimicSelect"
+  state.mimicMoves = { { slot = 4 } }
+  state.mimicCtx = { user = {}, target = {}, moveInst = {} }
+  function state:applyMimic(_, _, _, slot) self.mimicSlot = slot end
+  ok, err = state:chooseMimic(2)
+  check(not ok and err == "invalid mimic slot",
+    "native Mimic rejects an unknown choice")
+  check(state:chooseMimic(1), "native Mimic choice is accepted")
+  eq(state.phase, "messages", "native Mimic choice resumes battle messages")
+  eq(state.mimicSlot, 4, "native Mimic choice copies the selected move slot")
 end
 
 local Loader = require("src.mods.Loader")

@@ -218,13 +218,20 @@ function BattleAPI:submit(intent)
     return nil, "stale battle context"
   end
   local kind = battle:battleKind()
-  if kind == "oldman" or kind == "link" or kind == "safari" then
+  if kind == "oldman" or kind == "link" then
     return nil, "battle kind is not controllable"
   end
   if top ~= battle then return nil, "battle menu is covered" end
 
   local ok, err
-  if intent.kind == "menu" then
+  if intent.kind == "safari" then
+    if kind ~= "safari" then return nil, "safari menu is not active" end
+    ok, err = battle:chooseSafari(intent.action)
+  elseif kind == "safari" then
+    return nil, "battle kind is not controllable"
+  elseif intent.kind == "mimic" then
+    ok, err = battle:chooseMimic(intent.index)
+  elseif intent.kind == "menu" then
     if battle.phase ~= "menu" then return nil, "battle menu is not active" end
     if not MENU_CHOICES[intent.choice] then
       return nil, "unknown battle menu choice"

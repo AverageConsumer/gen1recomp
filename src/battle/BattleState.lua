@@ -2018,6 +2018,38 @@ function BattleState:cancelMove()
   return true
 end
 
+local SAFARI_ACTION_INDEX = { ball = 1, bait = 2, rock = 3, run = 4 }
+
+function BattleState:chooseSafari(action)
+  if self.phase ~= "menu" or not self.safari then
+    return nil, "safari menu is not active"
+  end
+  if self.safari.balls <= 0 then return nil, "no safari balls remain" end
+  local index = SAFARI_ACTION_INDEX[action]
+  if not index then return nil, "invalid safari action" end
+  self.menuIndex = index
+  self:safariAction(action)
+  return true
+end
+
+function BattleState:chooseMimic(index)
+  if self.phase ~= "mimicSelect" then
+    return nil, "mimic menu is not active"
+  end
+  if type(index) ~= "number" or index % 1 ~= 0 then
+    return nil, "invalid mimic slot"
+  end
+  local pick = self.mimicMoves and self.mimicMoves[index]
+  local ctx = self.mimicCtx
+  if not pick or not ctx then return nil, "invalid mimic slot" end
+  self.mimicIndex = index
+  self.mimicMoves, self.mimicCtx = nil, nil
+  self.phase = "messages"
+  self.nextInsert = 0 -- the copy's anim + text go to the queue head
+  self:applyMimic(ctx.user, ctx.target, ctx.moveInst, pick.slot)
+  return true
+end
+
 function BattleState:swapMoves(i, j)
   if i == j then return end
   local moves = self.player.curMoves
@@ -2139,7 +2171,7 @@ function BattleState:update(dt)
     self.menuIndex = row * 2 + col + 1
     if input:wasPressed("a") then
       require("src.core.Sound").play(self.data, "Press_AB")
-      self:safariAction(({ "ball", "bait", "rock", "run" })[self.menuIndex])
+      self:chooseSafari(({ "ball", "bait", "rock", "run" })[self.menuIndex])
     end
     return
   end
@@ -2247,12 +2279,7 @@ function BattleState:update(dt)
       self.mimicIndex = self.mimicIndex < #moves and self.mimicIndex + 1 or 1
     elseif input:wasPressed("a") then
       require("src.core.Sound").play(self.data, "Press_AB")
-      local pick = moves[self.mimicIndex]
-      local ctx = self.mimicCtx
-      self.mimicMoves, self.mimicCtx = nil, nil
-      self.phase = "messages"
-      self.nextInsert = 0 -- the copy's anim + text go to the queue head
-      self:applyMimic(ctx.user, ctx.target, ctx.moveInst, pick.slot)
+      self:chooseMimic(self.mimicIndex)
     end
     return
   end
