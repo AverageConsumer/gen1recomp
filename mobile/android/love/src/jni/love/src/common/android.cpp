@@ -325,16 +325,6 @@ bool httpDownload(const char *url, const char *destPath, const char *userAgent, 
 	return result;
 }
 
-bool is24HourClock()
-{
-	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
-	jclass activity = env->FindClass("org/love2d/android/GameActivity");
-	jmethodID method = env->GetStaticMethodID(activity, "is24HourClock", "()Z");
-	jboolean result = env->CallStaticBooleanMethod(activity, method);
-	env->DeleteLocalRef(activity);
-	return result;
-}
-
 /*
  * TLS sockets. Same resolution rule as httpDownload above -- the activity's
  * own class, never FindClass -- and the same tolerance for an old APK: a

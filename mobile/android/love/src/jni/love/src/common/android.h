@@ -119,8 +119,6 @@ int tlsReceive(int handle, char *buf, int max);
 bool tlsError(int handle, char *buf, int max);
 void tlsClose(int handle);
 
-bool is24HourClock();
-
 /*
  * Helper functions for the filesystem module
  */

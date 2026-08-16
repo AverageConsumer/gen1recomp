@@ -115,12 +115,6 @@ int w_createFile(lua_State *L)
 	return 1;
 }
 
-int w_is24HourClock(lua_State *L)
-{
-	luax_pushboolean(L, instance()->is24HourClock());
-	return 1;
-}
-
 int w_syncHealthSteps(lua_State *L)
 {
 	luax_pushboolean(L, instance()->syncHealthSteps());
@@ -236,7 +230,6 @@ static const luaL_Reg functions[] =
 	{ "pickFile", w_pickFile },
 	{ "pickFileKinds", w_pickFileKinds },
 	{ "createFile", w_createFile },
-	{ "is24HourClock", w_is24HourClock },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
 	{ "httpDownload", w_httpDownload },

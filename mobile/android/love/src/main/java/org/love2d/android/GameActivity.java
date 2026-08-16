@@ -1701,12 +1701,6 @@ public class GameActivity extends SDLActivity {
         }
     }
 
-    @Keep
-    public static boolean is24HourClock() {
-        GameActivity self = (GameActivity) mSingleton;
-        return self == null || android.text.format.DateFormat.is24HourFormat(self);
-    }
-
     @android.annotation.TargetApi(17)
     private static class SecondaryDisplayMonitor
         implements android.hardware.display.DisplayManager.DisplayListener {
