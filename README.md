@@ -1,3 +1,14 @@
+> [!IMPORTANT]
+> **This fork is the unofficial matched Gen1Recomp host used by
+> [Kanto Gear](https://github.com/AverageConsumer/kanto-gear).** Download the
+> [latest matched release](https://github.com/AverageConsumer/gen1recomp/releases/latest):
+> install the APK over the existing **Gen1Recomp Android Test** app without
+> uninstalling, or extract the Windows ZIP. The upstream documentation below
+> is preserved for engine and source reference. Its release buttons and
+> references to “this repository” refer to
+> [bryanthaboi/gen1recomp](https://github.com/bryanthaboi/gen1recomp), not this
+> fork.
+
 # Gen1Recomp
 
 A native LÖVE2D recreation of Poke Red, Blue and Yellow. The engine and map
@@ -5,7 +16,7 @@ behavior are hand-written Lua; game data and graphics are decoded from a ROM
 supplied by the player.
 
 > [!CAUTION]
-> **We are NOT affiliated with the website `gen1recomp[.]com`** That website is not run by this project, was not authorized by us, and we have no idea who operates it. It is impersonating this project; do not download anything from it, and treat anything it hosts or claims as untrustworthy. Even if the site currently links back to this repository, the people behind it can change its content at any time, so nothing on it should ever be trusted. This GitHub repository and the Discord linked below are the only official sources for this project.
+> **We are NOT affiliated with the website `gen1recomp[.]com`** That website is not run by this project, was not authorized by us, and we have no idea who operates it. It is impersonating this project; do not download anything from it, and treat anything it hosts or claims as untrustworthy. Even if the site currently links back to this repository, the people behind it can change its content at any time, so nothing on it should ever be trusted. The [upstream GitHub repository](https://github.com/bryanthaboi/gen1recomp) and the Discord linked below are the only official sources for the upstream project.
 
 <p align="center"><img src="https://raw.githubusercontent.com/bryanthaboi/gen1recomp/refs/heads/dev/assets/logo/logo.png"></p>
 
