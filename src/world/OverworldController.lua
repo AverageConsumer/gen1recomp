@@ -828,6 +828,23 @@ function OverworldState:useStrengthFieldMove(mon, onClose)
   return true
 end
 
+function OverworldState:useSoftboiledFieldMove(user, target)
+  local heal = user and user.stats and math.floor(user.stats.hp / 5) or 0
+  if not user or not user.stats or not target or not target.stats
+     or target == user or target.hp <= 0
+     or target.hp >= target.stats.hp or user.hp <= heal then
+    Game.stack:push(TextBox.new(Game, Strings("It won't have\nany effect.")))
+    return false
+  end
+  user.hp = user.hp - heal
+  target.hp = math.min(target.stats.hp, target.hp + heal)
+  require("src.core.Sound").play(Game.data, "Heal_HP")
+  local def = Game.data.pokemon[target.species]
+  Game.stack:push(TextBox.new(Game,
+    Strings("%s's HP\nwas restored!", target.nickname or def.name)))
+  return true
+end
+
 -- The battle transition's dungeon wipe uses the explicit map lists in
 -- data/maps/dungeon_maps.asm (field.dungeonTransitionMaps): singles plus
 -- inclusive map-id ranges -- faithful to the original's omissions

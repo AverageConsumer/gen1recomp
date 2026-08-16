@@ -24,7 +24,9 @@ local redWorld = {
 }
 local redGame = {
   data = { field = { outsideTilesets = { "OVERWORLD" } },
-    items = { OLD_ROD = { name = "OLD ROD" } } },
+    items = { OLD_ROD = { name = "OLD ROD" } },
+    pokemon = { CHANSEY = { name = "CHANSEY" },
+      PIKACHU = { name = "PIKACHU" } } },
   save = { player = { name = "RED" }, party = {},
     inventory = { BICYCLE = 1, OLD_ROD = 1 } },
   stack = { states = { redWorld } },
@@ -42,6 +44,7 @@ T.check(type(RedWorld.useBicycle) == "function"
     and type(RedWorld.useFishingRod) == "function"
     and type(RedWorld.useFlashFieldMove) == "function"
     and type(RedWorld.useStrengthFieldMove) == "function"
+    and type(RedWorld.useSoftboiledFieldMove) == "function"
     and type(RedWorld.stopSurfing) == "function",
   "Red keeps field-action execution in its world")
 local actions = red:availableFieldActions()
@@ -92,6 +95,33 @@ end
 T.check(redWorld.cutUsed and redWorld.surfUsed and redWorld.strengthUsed
     and redWorld.flashUsed and redWorld.teleportUsed,
   "Red delegates every move to its overworld path")
+
+local source = { species = "CHANSEY", level = 30, hp = 80,
+  stats = { hp = 100 }, moves = { { id = "SOFTBOILED" } } }
+local target = { species = "PIKACHU", level = 20, hp = 10,
+  stats = { hp = 50 }, moves = {} }
+redGame.save.party = { source, target }
+redWorld.useSoftboiledFieldMove = function(self, user, recipient)
+  self.softboiled = { user, recipient }
+  return true
+end
+byId = {}
+for _, action in ipairs(red:availableFieldActions()) do byId[action.id] = action end
+T.check(byId.softboiled and byId.softboiled.sources[1].targets[1].slot == 2,
+  "Red lists only valid SOFTBOILED targets")
+T.check(red:useFieldAction("softboiled", { sourceSlot = 1, targetSlot = 2 }),
+  "Red accepts a listed SOFTBOILED transfer")
+T.check(redWorld.softboiled[1] == source and redWorld.softboiled[2] == target,
+  "Red delegates SOFTBOILED to its overworld path")
+
+redGame.save.inventory.THUNDERBADGE = 1
+redGame.save.visited = { PALLET_TOWN = true }
+redGame.data.field.flyWarps = { PALLET_TOWN = true }
+redMoves.FLY = source
+redWorld.flyTo = function(self, mapId) self.flewTo = mapId end
+T.check(red:canFly(), "Red exposes FLY only in a valid outdoor context")
+T.check(red:flyTo("PALLET_TOWN") and redWorld.flewTo == "PALLET_TOWN",
+  "Red validates and delegates a visited FLY destination")
 
 redSurf = "dismount"
 redWorld.player.surfing = true
