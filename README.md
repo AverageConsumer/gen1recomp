@@ -1,12 +1,17 @@
 > [!IMPORTANT]
-> **This fork is the unofficial matched Gen1Recomp host used by
-> [Kanto Gear](https://github.com/AverageConsumer/kanto-gear).** Download the
-> [latest matched release](https://github.com/AverageConsumer/gen1recomp/releases/latest)
-> for Android, Windows, Linux, PortMaster/Rocknix, or the universal LÖVE 11.5
-> payload. On Android, install the APK over the existing **Gen1Recomp Android
-> Test** app without uninstalling. The upstream documentation below is
-> preserved for engine and source reference. Its release buttons and
-> references to “this repository” refer to
+> **Legacy migration host — frozen at `0.1.94-kanto.22`.** Kanto Gear 2.1 now
+> works with the [official Gen1Recomp 0.1.99 release or newer](https://github.com/bryanthaboi/gen1recomp/releases/latest),
+> so new installations should not use this fork. No further feature or host
+> releases are planned here.
+>
+> This repository remains available temporarily because its Android app has a
+> separate identity and official Gen1Recomp cannot export a Pokémon Gold
+> cartridge `.sav` yet. Existing Gold players should keep the final legacy app
+> installed until upstream provides a Gen 2 transfer path. Do not uninstall an
+> app containing an unverified save.
+>
+> The upstream documentation below is preserved for engine and source
+> reference. Its release buttons and references to “this repository” refer to
 > [bryanthaboi/gen1recomp](https://github.com/bryanthaboi/gen1recomp), not this
 > fork.
 
