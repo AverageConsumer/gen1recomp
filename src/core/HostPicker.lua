@@ -7,6 +7,10 @@ HostPicker.WORKER = "src/core/host_picker_worker.lua"
 
 HostPicker.WIN_OPEN_DIALOG = table.concat({
   "Add-Type -AssemblyName System.Windows.Forms;",
+  "try{$q=[char]34;",
+  "Add-Type -Name D -Namespace G1R -MemberDefinition ('[DllImport('+$q+'user32.dll'+$q+')]",
+  "public static extern bool SetProcessDPIAware();');",
+  "[G1R.D]::SetProcessDPIAware()|Out-Null}catch{};",
   "$o=New-Object System.Windows.Forms.Form;",
   "$o.TopMost=$true;",
   "$o.ShowInTaskbar=$false;",

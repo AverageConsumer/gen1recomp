@@ -169,11 +169,12 @@ local function fortreeBridge(_game, data)
 end
 
 -- pokeemerald/src/field_tasks.c:78 sHalfSubmergedBridgeMetatileOffsets
+-- pokeruby/src/field_tasks.c:151
 local LOG_OFFSETS = {
-  { { 0, 0, "VerticalTop" }, { 0, 1, "VerticalBottom" } },
-  { { 0, -1, "VerticalTop" }, { 0, 0, "VerticalBottom" } },
-  { { 0, 0, "HorizontalLeft" }, { 1, 0, "HorizontalRight" } },
-  { { -1, 0, "HorizontalLeft" }, { 0, 0, "HorizontalRight" } },
+  { { 0, 0, "VerticalTop", "Vertical0" }, { 0, 1, "VerticalBottom", "Vertical1" } },
+  { { 0, -1, "VerticalTop", "Vertical0" }, { 0, 0, "VerticalBottom", "Vertical1" } },
+  { { 0, 0, "HorizontalLeft", "Horizontal0" }, { 1, 0, "HorizontalRight", "Horizontal1" } },
+  { { -1, 0, "HorizontalLeft", "Horizontal0" }, { 0, 0, "HorizontalRight", "Horizontal1" } },
 }
 
 -- pokeemerald/src/field_tasks.c:240 GetPacifidlogBridgeMetatileOffsets
@@ -189,8 +190,11 @@ end
 local function setLogs(stage, x, y)
   local offsets = logOffsets(behaviorAt(x, y))
   if not offsets then return end
+  local C = constants()
   for _, o in ipairs(offsets) do
-    Steps.setMetatile(x + o[1], y + o[2], metatile("Pacifidlog_" .. stage .. "_" .. o[3]))
+    local prefix = "Pacifidlog_" .. stage .. "_"
+    Steps.setMetatile(x + o[1], y + o[2],
+      C:id("metatile_labels", "METATILE_" .. prefix .. o[3]) or metatile(prefix .. o[4]))
   end
 end
 
