@@ -56,7 +56,7 @@ end
 T.check(setUpvalue(OW.tryHiddenObject, "TextBox", textBoxStub), "TextBox upvalue on tryHiddenObject")
 
 local fakeSelf = setmetatable({
-  map = { id = MAP_ID }, player = { facing = "up" },
+  map = { id = MAP_ID }, player = { facing = "left" },
 }, { __index = OW })
 
 local function text(i) return (pushed[i] and pushed[i].text) or "" end

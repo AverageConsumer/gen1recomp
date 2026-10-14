@@ -261,7 +261,9 @@ check(overworld[1].tile == 0x14 and overworld[1].kind == "hshift",
       "water is an hshift entry on tile $14")
 check(table.concat(overworld[1].offsets, ",") == "1,2,3,2,1,0,7,0",
       "the water entry reproduces WATER_OFFSETS exactly")
-check(overworld[1].period == 20, "water advances every 20 ticks")
+check(overworld[1].period == 21 and overworld[1].phase == 1
+      and overworld[2].period == 21,
+      "water+flower tilesets step every 21 ticks, water one tick first")
 check(overworld[2].tile == 0x03 and overworld[2].kind == "frames",
       "flower is a frames entry on tile $03")
 check(table.concat(overworld[2].sequence, ",") == "1,2,3,1,1,2,3,1",
@@ -271,6 +273,7 @@ check(#overworld[2].images == 3, "the flower entry names its 3 frame images")
 local waterOnly = TileRenderer.defaultAnimatedTiles(
   { id = "PLATEAU", animation = "TILEANIM_WATER" })
 check(#waterOnly == 1, "TILEANIM_WATER derives water alone")
+check(waterOnly[1].period == 20, "water-only tilesets step every 20 ticks")
 local none = TileRenderer.defaultAnimatedTiles(
   { id = "HOUSE", animation = "TILEANIM_NONE" })
 check(#none == 0, "a tileset with no animation derives nothing")

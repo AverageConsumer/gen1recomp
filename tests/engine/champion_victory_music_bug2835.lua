@@ -40,6 +40,11 @@ local function finishWith(kind, result)
   restores = 0
   local ok, err = pcall(b.finish, b)
   T.check(ok, kind .. "/" .. result .. ": finish runs" .. (ok and "" or (": " .. tostring(err))))
+  for _ = 1, 400 do
+    local top = game.stack:top()
+    if not top or top == b or not top.update then break end
+    top:update(1 / 60)
+  end
   return restores
 end
 

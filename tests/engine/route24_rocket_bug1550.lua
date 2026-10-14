@@ -56,13 +56,19 @@ local ow = {
 }
 local npc = { id = "ROUTE24_ROCKET", def = { index = 1 } }
 
--- the prize has already been taken: the talk goes straight to the battle
-game.save.flags.EVENT_GOT_NUGGET = true
 local doneCalls = 0
-handler(game, ow, npc, function() doneCalls = doneCalls + 1 end)
+local function throughPitch()
+  pushed, engaged, doneCalls = {}, nil, 0
+  game.save.flags.EVENT_GOT_NUGGET = nil
+  handler(game, ow, npc, function() doneCalls = doneCalls + 1 end)
+  for i = 1, 4 do
+    if pushed[i] and pushed[i].onDone then pushed[i].onDone() end
+  end
+end
 
-T.check(engaged ~= nil, "the recruiter engages")
-T.eq(#pushed, 0, "no text box is pushed before the battle (#1550)")
+throughPitch()
+T.check(engaged ~= nil, "the recruiter engages after the pitch")
+T.eq(#pushed, 4, "no text box is pushed before the battle (#1550)")
 T.eq(engaged.skipBattleText, true,
   "skipBattleText stops the map text becoming the pre-battle box")
 T.eq(engaged.endBattleText, Data.text._Route24CooltrainerM1DefeatedText,
@@ -71,18 +77,27 @@ T.eq(engaged.endBattleText, Data.text._Route24CooltrainerM1DefeatedText,
 -- the win: Route24AfterRocketBattleScript prints the top-leader line
 defeated = true
 engaged.onDone()
-T.eq(#pushed, 1, "the win prints exactly one box")
-T.eq(pushed[1].text, Data.text._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
+T.eq(#pushed, 5, "the win prints exactly one box")
+T.eq(pushed[5].text, Data.text._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
   "and it is .YouCouldBecomeATopLeaderText")
-pushed[1].onDone()
+pushed[5].onDone()
 T.eq(doneCalls, 1, "control returns once the box closes")
 
 -- the blackout arm: wIsInBattle == $ff rets before the DisplayTextID
-pushed, defeated, doneCalls = {}, false, 0
-handler(game, ow, npc, function() doneCalls = doneCalls + 1 end)
+defeated = false
+throughPitch()
 engaged.onDone()
-T.eq(#pushed, 0, "a loss prints nothing")
+T.eq(#pushed, 4, "a loss prints nothing")
 T.eq(doneCalls, 1, "and just unfreezes the player")
+
+-- scripts/Route24.asm:138
+pushed, engaged, doneCalls = {}, nil, 0
+game.save.flags.EVENT_GOT_NUGGET = true
+handler(game, ow, npc, function() doneCalls = doneCalls + 1 end)
+T.eq(engaged, nil, "with the NUGGET taken he never battles again")
+T.eq(pushed[1] and pushed[1].text,
+  Data.text._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
+  "only the top-leader line")
 
 -- the prize arm: scripts/Route24.asm:149-158
 local GameVersion = require("src.core.GameVersion")

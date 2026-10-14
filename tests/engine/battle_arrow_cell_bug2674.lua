@@ -56,12 +56,14 @@ local function drawnAt(battle, frame)
   local ok, err = pcall(function() battle:drawTextArea() end)
   Font.drawCode, Font.drawBox = real, realBox
   T.check(ok, "drawTextArea runs (" .. tostring(err) .. ")")
-  local at, row = {}, 0
+  local at, row, arrow = {}, 0, false
   for _, h in ipairs(hits) do
     if h.y == 128 then row = row + 1 end
-    if h.x == 144 and h.y == 128 then at[#at + 1] = h.code end
+    if h.x == 144 and h.y == 128 then
+      if h.code == 0xEE then arrow = true else at[#at + 1] = h.code end
+    end
   end
-  return at, row
+  return at, row, arrow
 end
 
 local TEXT = "YOUR DEX IS\nENTIRELY COMPLETEZ\vCONGRATULATIONSZ"
@@ -74,9 +76,10 @@ do
   T.eq(battle.shown[2] and battle.shown[2][18], LAST,
     "red bottom line's 18th glyph is typed")
   battle.msgPreWait = 0
-  local lit, row = drawnAt(battle, 0)
+  local lit, row, arrow = drawnAt(battle, 0)
   T.check(row >= 17, "the bottom line is drawn")
   T.eq(#lit, 0, "red arrow replaces the 18th glyph while lit")
+  T.check(arrow, "the arrow sits in tile (18,16), home/text.asm:440")
   local dark, rowDark = drawnAt(battle, 30)
   T.check(rowDark >= 17, "the bottom line is drawn on blink-off")
   T.eq(#dark, 0, "red blink-off shows a blank cell, not the glyph")

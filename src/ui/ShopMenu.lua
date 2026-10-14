@@ -47,6 +47,12 @@ local function backToMenu(game, menu)
   end)
 end
 
+-- engine/events/pokemart.asm:65
+local function relist(list, greet)
+  list.index = math.max(1, math.min(list.scroll + 1, #list.items))
+  list.footer = greet
+end
+
 -- .returnToMainPokemartMenu -- pokered engine/events/pokemart.asm:199-206
 local function refuse(game, menu, list, text, under)
   game.stack:push(TextBox.new(game, text, function()
@@ -104,7 +110,7 @@ local function buy(game, stock, menu)
         onDone = function(qty)
           if not qty then
             dropQty()
-            list.footer = greet
+            relist(list, greet)
             return
           end
           local cost = qty * def.price
@@ -116,7 +122,7 @@ local function buy(game, stock, menu)
             { choice = function(yes)
                 if not yes then
                   dropQty()
-                  list.footer = greet
+                  relist(list, greet)
                   return
                 end
                 if game.save.money < cost then
@@ -134,7 +140,7 @@ local function buy(game, stock, menu)
                       Strings("Here you are!\nThank you!")),
                   function()
                     dropQty()
-                    list.footer = greet
+                    relist(list, greet)
                   end,
                   { preSound = function()
                       return require("src.core.Sound").play(game.data, "Purchase")
@@ -238,7 +244,7 @@ local function sell(game, menu)
         onDone = function(qty)
           if not qty then
             dropQty()
-            list.footer = greet
+            relist(list, greet)
             return
           end
           -- engine/events/pokemart.asm:84-91
@@ -249,7 +255,7 @@ local function sell(game, menu)
             { choice = function(yes)
                 dropQty()
                 if not yes then
-                  list.footer = greet
+                  relist(list, greet)
                   return
                 end
                 game.save.money = game.save.money + unit * qty
@@ -262,9 +268,8 @@ local function sell(game, menu)
                   list.index, list.scroll = 1, 0
                 end
                 list.items = fresh
-                list.index = math.max(1, math.min(list.index, #list.items))
                 -- a sale prints nothing -- engine/events/pokemart.asm:112
-                list.footer = greet
+                relist(list, greet)
               end }))
         end,
       })

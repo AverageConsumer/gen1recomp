@@ -84,7 +84,7 @@ local SE_FRAMES = {
   SE_DARKEN_MON_PALETTE = 0,
   SE_RESET_SCREEN_PALETTE = 0,
   SE_SHAKE_SCREEN = 72,            -- PredefShakeScreenHorizontally b=8: sum 9f
-  SE_SHAKE_ENEMY_HUD = 44,         -- 8 x (2f + 2f) SCX shake + setup Delay3s
+  SE_SHAKE_ENEMY_HUD = 60,         -- engine/battle/animations.asm:2472
   SE_DELAY_ANIMATION_10 = 10,
   SE_SLIDE_MON_OFF = 24,           -- 8 tile steps x 3f (wSlideMonDelay)
   SE_SLIDE_ENEMY_MON_OFF = 24,     -- same routine, turn flipped
@@ -100,7 +100,7 @@ local SE_FRAMES = {
   SE_MINIMIZE_MON = 6,
   SE_SHOW_MON_PIC = 3, SE_SHOW_ENEMY_MON_PIC = 3,
   SE_HIDE_MON_PIC = 3, SE_HIDE_ENEMY_MON_PIC = 3,
-  SE_BLINK_MON = 60, SE_BLINK_ENEMY_MON = 60, -- 6 x (5f off + 5f on)
+  SE_BLINK_MON = 78, SE_BLINK_ENEMY_MON = 78, -- engine/battle/animations.asm:1360
   SE_FLASH_MON_PIC = 4, SE_FLASH_ENEMY_MON_PIC = 4,
   SE_TRANSFORM_MON = 4,
   SE_SUBSTITUTE_MON = 3,
@@ -336,8 +336,10 @@ end
 
 -- effect id -> compiled sprite steps
 local EMITTERS = {
-  SE_SPIRAL_BALLS_INWARD = function(isPlayer) return spiralBallSteps(isPlayer), "flash" end,
-  SE_SHOOT_BALLS_UPWARD = function(isPlayer) return shootBallsSteps(isPlayer) end,
+  -- engine/battle/animations.asm:1499
+  SE_SPIRAL_BALLS_INWARD = function(isPlayer) return spiralBallSteps(isPlayer), "flash", 0 end,
+  -- engine/battle/animations.asm:1640
+  SE_SHOOT_BALLS_UPWARD = function(isPlayer) return shootBallsSteps(isPlayer), nil, 0 end,
   SE_SHOOT_MANY_BALLS_UPWARD = function(isPlayer) return shootManyBallsSteps(isPlayer) end,
   SE_WATER_DROPLETS_EVERYWHERE = function()
     return waterDropletSteps(), nil, 0, true
@@ -345,10 +347,10 @@ local EMITTERS = {
   -- AnimationLeavesFalling runs under wAnimPalette ($f0 on SGB);
   -- petals keep the ambient $e4
   SE_LEAVES_FALLING = function(_, data)
-    return fallingObjectSteps(3, LEAF_TILE, "f0", data.fallingDeltaXs)
+    return fallingObjectSteps(3, LEAF_TILE, "f0", data.fallingDeltaXs), nil, 1
   end,
   SE_PETALS_FALLING = function(_, data)
-    return fallingObjectSteps(20, PETAL_TILE, "e4", data.fallingDeltaXs)
+    return fallingObjectSteps(20, PETAL_TILE, "e4", data.fallingDeltaXs), nil, 1
   end,
 }
 
@@ -449,6 +451,10 @@ function AnimPlayer:start(moveId, attackerIsPlayer, opts)
   end
 
   local idFx = ANIM_ID_FX[moveId]
+  -- pokeyellow data/battle_anims/special_effects.asm:21
+  if moveId == "SPORE" and require("src.core.GameVersion").isYellow() then
+    idFx = "every4"
+  end
 
   -- DoBallTossSpecialEffects (:685): while a Master or Ultra ball is
   -- tossed (wCurItem <= ULTRA_BALL), the per-block special effect XORs

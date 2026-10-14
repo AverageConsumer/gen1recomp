@@ -316,6 +316,8 @@ function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt, obp)
   if selected then
     local px = math.floor(mon.hp * 48 / math.max(1, mon.stats.hp))
     local speed = px >= 27 and 5 or px >= 10 and 16 or 32
+    -- engine/gfx/mon_icons.asm:24
+    if PaletteFX.runsNotSGB() then speed = speed + 1 end
     alt = math.floor(counter / speed) % 2 == 1
   end
   if alt and (name == "BALL" or name == "HELIX") then
@@ -607,8 +609,10 @@ function PartyMenu:update(dt)
           self.game.stack:push(TextBox.new(self.game, txt))
           return -- .loop: submenu stays open behind the message
         end
-        self.game.stack:pop() -- close the party menu
+        -- engine/menus/start_sub_menus.asm:144-151
+        self.submenu = nil
         Screens.push(self.game, "TownMap", { fly = true, onFly = function(mapId)
+          if self.game.stack:top() == self then self.game.stack:pop() end
           if ow then ow:flyTo(mapId) end
         end })
         return
@@ -730,6 +734,13 @@ function PartyMenu:update(dt)
       elseif action == "softboiled" then
         -- field SOFTBOILED (StartMenu_Pokemon .softboiled): transfer
         -- 1/5 of the user's max HP to a chosen teammate
+        -- engine/menus/start_sub_menus.asm:236-258
+        if mon.stats and mon.hp <= math.floor(mon.stats.hp / 5) then
+          local TextBox = require("src.render.TextBox")
+          self.game.stack:push(TextBox.new(self.game,
+            self.game.data.text._NotHealthyEnoughText))
+          return
+        end
         self.softboiledFrom = self.index
       elseif action == "escape" then
         -- DIG / TELEPORT warp to the last Pokémon Center TOWN (wLastBlackoutMap,
@@ -765,6 +776,16 @@ function PartyMenu:update(dt)
             or Strings("OAK: %s!\nThis isn't the\ntime to use that!",
                        self.game.save.player.name)))
           return -- .loop: submenu stays open behind the message
+        end
+        if entry.move == "TELEPORT" then
+          -- engine/menus/start_sub_menus.asm:215-226
+          local TextBox = require("src.render.TextBox")
+          self.game.stack:push(TextBox.new(self.game,
+            self.game.data.text._WarpToLastPokemonCenterText, function()
+              self.game.stack:pop()
+              if ow then ow:beginTeleportOut() end
+            end, { auto = { wait = false, delay = 60 } }))
+          return
         end
         self.game.stack:pop()
         if ow then ow:beginTeleportOut() end
@@ -806,6 +827,8 @@ function PartyMenu:update(dt)
       return
     end
     if self.softboiledFrom then
+      -- engine/items/item_effects.asm:854-857
+      if self.softboiledFrom == self.index then return end
       local user = party[self.softboiledFrom]
       self.softboiledFrom = nil
       self.game.overworld:useSoftboiledFieldMove(user, mon)

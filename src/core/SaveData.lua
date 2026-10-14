@@ -2886,6 +2886,17 @@ function SaveData.load(version)
   return data, recovered
 end
 
+-- engine/menus/save.asm:622
+function SaveData.previousFileDiffers(save, injectedFs)
+  if type(save) ~= "table" then return false end
+  local fs = persistFs(injectedFs)
+  local disk = readTable(fs, (saveNames(save.version, injectedFs)))
+  local p = type(disk) == "table" and disk.player
+  if type(p) ~= "table" or type(p.name) ~= "string" or p.name == "" then return false end
+  if p.id == nil then return false end
+  return p.id ~= (save.player and save.player.id)
+end
+
 -- ------- validation and quarantine
 
 local function known(tbl, id)
@@ -3000,7 +3011,7 @@ local function scrubKnownMon(mon, data)
       local base = ppInt(mdef and mdef.pp, 0)
       local ppUps = math.min(3, ppInt(slot.ppUps, 0))
       if slot.ppUps ~= nil then slot.ppUps = ppUps end
-      slot.pp = ppInt(slot.pp, base + ppUps * math.floor(base / 5))
+      slot.pp = ppInt(slot.pp, base + ppUps * math.min(7, math.floor(base / 5)))
     end
   end
 end

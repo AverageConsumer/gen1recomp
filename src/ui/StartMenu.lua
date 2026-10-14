@@ -62,6 +62,8 @@ function StartMenu.new(game)
   -- box, so it stays on screen beside the panel (start_sub_menus.asm:641-647)
   table.insert(items, { label = Strings("SAVE"), keepOpen = true,
     onSelect = function()
+    -- home/start_menu.asm:52-53
+    if menu then menu.hollowIndex = menu.index end
     local TextBox = require("src.render.TextBox")
     local badges = require("src.inventory.Badges").count(game.data, game.save)
     local owned = 0
@@ -95,7 +97,7 @@ function StartMenu.new(game)
         Font.draw(Strings("POKéDEX"), 5 * 8, 6 * 8)
         Font.draw(("%3d"):format(owned), 16 * 8, 6 * 8)
         Font.draw(Strings("TIME"), 5 * 8, 8 * 8)
-        Font.draw(("%3d:%02d"):format(math.floor(t / 3600),
+        Font.draw(("%3d<COLON>%02d"):format(math.floor(t / 3600),
                                       math.floor(t / 60) % 60), 13 * 8, 8 * 8)
         love.graphics.setColor(1, 1, 1, 1)
       end,
@@ -114,24 +116,32 @@ function StartMenu.new(game)
         choiceBox = Theme.saveBox,
         choice = function(yes)
           if not yes then closePanel() return end
-          -- SaveMenu .save (engine/menus/save.asm:164-181): "Now saving..."
-          -- is a bare PlaceString held by DelayFrames 120, then GameSavedText,
-          -- which ends in `done` and so never reaches TX_PROMPT_BUTTON.
-          -- Neither page takes a button press (#765); the second waits on
-          -- SFX_SAVE (PlaySoundWaitForCurrent + WaitForSoundToFinish) and then
-          -- DelayFrames 30.  The write itself is invisible either side of the
-          -- "Now saving..." hold, so it stays on that box's onDone.
-          game.stack:push(TextBox.new(game, Strings("Now saving..."), function()
-            game:writeSave()
-            game.stack:push(TextBox.new(game,
-              Strings("%s saved\nthe game!", game.save.player.name or "RED"),
-              closePanel, { auto = {
-                sound = function()
-                  return require("src.core.Sound").play(game.data, "Save")
-                end,
-                delay = 30,
-              } }))
-          end, { auto = { delay = 120 } }))
+          local function doSave()
+            -- engine/menus/save.asm:164-181
+            game.stack:push(TextBox.new(game, Strings("Now saving..."), function()
+              game:writeSave()
+              game.stack:push(TextBox.new(game,
+                Strings("%s saved\nthe game!", game.save.player.name or "RED"),
+                closePanel, { auto = {
+                  sound = function()
+                    return require("src.core.Sound").play(game.data, "Save")
+                  end,
+                  delay = 30,
+                } }))
+            end, { auto = { delay = 120 } }))
+          end
+          -- engine/menus/save.asm:156-164
+          if not require("src.core.SaveData").previousFileDiffers(game.save) then
+            return doSave()
+          end
+          game.stack:push(TextBox.new(game,
+            game.data.text._OlderFileWillBeErasedText, nil, {
+            choiceBox = Theme.saveBox,
+            choice = function(ok)
+              if not ok then closePanel() return end
+              doSave()
+            end,
+          }))
         end,
       }))
     end
@@ -190,7 +200,7 @@ function StartMenu.new(game)
     -- anchor keeps it flush when the view is zoomed out and the letterbox no
     -- longer fills the window
     { tx = 10, ty = 0, tw = 10, maxVisible = maxVisible, startCloses = true,
-      anchor = "topright" })
+      anchor = "topright", noWrap = false })
   -- the cursor position survives closing the menu
   -- (wBattleAndStartSavedMenuItem, home/start_menu.asm)
   menu.index = math.min(game.startMenuIndex or 1, #items)

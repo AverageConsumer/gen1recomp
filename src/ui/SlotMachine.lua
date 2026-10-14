@@ -358,8 +358,9 @@ function SlotMachine:resolveWin(win)
   -- SlotReward300Func prints "Yeah!" (text_pause) before the flash; the port
   -- shows it in the box while the screen flashes.  LinedUpText follows.
   self.yeah = (sym == "7")
-  -- constants/charmap.asm:19-20
-  self.message = sym .. require("src.render.TextBox").strip(
+  -- engine/slots/slot_machine.asm:479-489
+  self.winSymbol = sym
+  self.message = require("src.render.TextBox").strip(
     romText(self.game.data, "_LinedUpText",
       " lined up!\nScored %d coins!", pay))
   -- .flashScreenLoop: flip rBGP, wait 5 frames, b times.  The coins are not
@@ -372,6 +373,7 @@ end
 
 function SlotMachine:resolveLose()
   -- NotThisTimeText, then MainSlotMachineLoop asks "One more go?"
+  self.winSymbol = nil
   self.message = "Not this time!"
   self.stage = "message"
   self.afterMessage = "onemore"
@@ -384,6 +386,8 @@ function SlotMachine:enterBet()
   self.betIndex = 0
   self.bet = 3
   self.message = nil
+  self.winSymbol = nil
+  self.betPrompt = nil
   self.payoutDisplay = 0
 end
 
@@ -399,6 +403,7 @@ end
 -- delay then CloseTextDisplay), otherwise ask "One more go?".
 function SlotMachine:afterSpin()
   if coins(self) == 0 then
+    self.winSymbol = nil
     self.message = Strings("Darn!\nRan out of coins!")
     self.stage = "message"
     self.afterMessage = nil
@@ -453,7 +458,10 @@ function SlotMachine:update(dt)
       elseif after == "onemore" then
         self:afterSpin()
       else
+        -- engine/slots/slot_machine.asm:106-108
+        local prompt = self.message
         self:enterBet()             -- NotEnoughCoinsSlotMachineText -> menu
+        self.betPrompt = prompt
       end
     end
     return
@@ -634,7 +642,12 @@ end
 -- menu on the right (like MainSlotMachineLoop's TextBoxBorder + menus).
 function SlotMachine:drawBottom()
   local lines
-  if self.stage == "bet" then
+  if self.stage == "bet" and self.betPrompt then
+    lines = {}
+    for line in (self.betPrompt .. "\n"):gmatch("(.-)\n") do
+      if line ~= "" then lines[#lines + 1] = line end
+    end
+  elseif self.stage == "bet" then
     lines = { "Bet how many", "coins?" }
   elseif self.stage == "onemore" then
     lines = { "One more", "go?" }
@@ -651,25 +664,39 @@ function SlotMachine:drawBottom()
   end
   if not lines then return end
   Font.drawBox(0, 12, 20, 6)
+  local firstX = 8
+  local art = self.winSymbol and self.message and self.symbolImg
+              and self:loadArt()
+  local rect = art and art.symbols and art.symbols[self.winSymbol]
+  if rect and self.stage ~= "flash" then
+    love.graphics.setColor(1, 1, 1, 1)
+    self.winQuad = self.winQuad or love.graphics.newQuad(0, 0, 16, 16,
+      self.symbolImg:getDimensions())
+    self.winQuad:setViewport(rect.x, rect.y, rect.w, rect.h,
+      self.symbolImg:getDimensions())
+    love.graphics.draw(self.symbolImg, self.winQuad, 2 * 8, 13 * 8)
+    firstX = 5 * 8
+  end
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(lines[1] or "", 8, 14 * 8)
+  Font.draw(lines[1] or "", firstX, 14 * 8)
   Font.draw(lines[2] or "", 8, 16 * 8)
   if self.stage == "bet" then
     -- hlcoord 14,11 with b=5 c=4 -- engine/slots/slot_machine.asm:83-86
     Font.drawBox(14, 11, 6, 7)
     love.graphics.setColor(0, 0, 0, 1)
+    -- engine/slots/slot_machine.asm:150-153
     Font.draw("×3", 16 * 8, 12 * 8)
-    Font.draw("×2", 16 * 8, 13 * 8)
-    Font.draw("×1", 16 * 8, 14 * 8)
-    Font.drawCode(0xED, 15 * 8, (12 + self.betIndex) * 8)
+    Font.draw("×2", 16 * 8, 14 * 8)
+    Font.draw("×1", 16 * 8, 16 * 8)
+    Font.drawCode(0xED, 15 * 8, (12 + 2 * self.betIndex) * 8)
   elseif self.stage == "onemore" then
     -- hlcoord 14,12 with the YES_NO_MENU 4x3 body
     -- engine/slots/slot_machine.asm:136-138, data/yes_no_menu_strings.asm:10
     Font.drawBox(14, 12, 6, 5)
     love.graphics.setColor(0, 0, 0, 1)
     Font.draw(Strings("YES"), 16 * 8, 13 * 8)
-    Font.draw(Strings("NO"), 16 * 8, 14 * 8)
-    Font.drawCode(0xED, 15 * 8, (13 + (self.yesno == 1 and 0 or 1)) * 8)
+    Font.draw(Strings("NO"), 16 * 8, 15 * 8)
+    Font.drawCode(0xED, 15 * 8, (13 + (self.yesno == 1 and 0 or 2)) * 8)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end
@@ -707,7 +734,8 @@ function SlotMachine:draw()
   love.graphics.rectangle("fill", 40, 8, 32, 8)
   love.graphics.rectangle("fill", 88, 8, 32, 8)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(("%4d"):format(math.min(9999, coins(self))), 40, 8)
+  -- engine/slots/slot_machine.asm:645-649
+  Font.draw(("%04d"):format(math.min(9999, coins(self))), 40, 8)
   Font.draw(("%04d"):format(self.payoutDisplay or 0), 88, 8)
   love.graphics.setColor(1, 1, 1, 1)
 

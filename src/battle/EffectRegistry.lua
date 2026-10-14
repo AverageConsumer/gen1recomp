@@ -275,6 +275,8 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   -- :3159 / :5555): 4 blinks the enemy pic, 1 shakes vertically, 5 / 2 once
   -- the move has an added effect (#354)
   local added = move.effect ~= nil and move.effect ~= "NO_ADDITIONAL_EFFECT"
+  -- engine/battle/core.asm:3577
+  if moveInst and user.rageMove == moveInst then added = false end
   -- PlayApplyingAttackAnimation runs on both arms of the wOptions check
   -- (engine/battle/animations.asm:424-437), so the blink is not gated (#1384)
   local hitFx = { sfx = hitSfx,
@@ -300,6 +302,20 @@ function EffectRegistry.runDamaging(battle, ctx, record)
       battle.nextInsert = (battle.nextInsert or 0) + 1
       hitRow = { anim = move.id, attackerIsPlayer = user.isPlayer }
       table.insert(battle.queue, battle.nextInsert, hitRow)
+    end
+    if h == 1 and record and record.explode then
+      local at
+      for i, item in ipairs(battle.queue) do
+        if item == hitRow then at = i break end
+      end
+      if at then
+        -- engine/battle/core.asm:6602
+        table.insert(battle.queue, at + 1, { anim = "MEGA_PUNCH",
+          attackerIsPlayer = user.isPlayer, hit = { sfx = hitSfx, animType = 5 } })
+        if (battle.nextInsert or 0) >= at then
+          battle.nextInsert = (battle.nextInsert or 0) + 1
+        end
+      end
     end
     local hadSub = target.substituteHP ~= nil
     local dealt = battle:applyDamage(target, dmg)

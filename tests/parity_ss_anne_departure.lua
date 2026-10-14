@@ -130,19 +130,10 @@ do
       check(not (r[3] == 36 and r[4] == 4),
             ("x=%d rival must not retreat to the spawn (36,4)"):format(x))
     end
-    -- jump_if_false on a lost battle has to clear the whole tail
+    -- scripts/SSAnne2F.asm:127
     local jump = rowsOfKind(rows, "jump_if_false")[1]
-    local target = jump and jump[2]
-    if type(target) == "string" then
-      for i, r in ipairs(rows) do
-        if r[1] == "label" and r[2] == target then target = i break end
-      end
-    end
-    while type(target) == "number" and rows[target]
-          and rows[target][1] == "label" do
-      target = target + 1
-    end
-    eq(target, #rows, "a lost battle jumps past the exit walk")
+    eq(jump and jump[2], "end",
+       "a lost battle halts before the exit walk and the hide")
   end
 end
 

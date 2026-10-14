@@ -116,6 +116,8 @@ YELLOW_EXTRA_SYMBOLS = (
     "PikachuMoodLookupTable", "PikaPicAnimationScriptPointerLookupTable",
     "MapSpecificPikachuExpression.Emotions", "IsPlayerPikachuAsleepInParty",
     "PikaPicAnimThunderboltPals",
+    # engine/battle/read_trainer_party.asm:87
+    "SpecialTrainerMoves",
     # Yellow-only overworld player surf sprite, loaded outside
     # SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) --
     # needs its own extract like RedBikeSprite. (RFC 0001)
@@ -445,12 +447,22 @@ def derive(red, pokeyellow, symbols_path):
     try:
         yellow["field"]["presetNames"] = field.parse_preset_names(pokeyellow)
         try:
+            the_end = yellow["field"]["credits"].get("theEnd")
             yellow["field"]["credits"] = field.parse_credits(pokeyellow)
+            if the_end:
+                yellow["field"]["credits"]["theEnd"] = the_end
         except SystemExit as exc:
             print(f"warning: parse_credits failed ({exc}); keeping Red credits")
             # TODO: hand-author a Yellow credits banner if pret layout drifts.
         yellow["field"]["trades"] = field.parse_trades(pokeyellow)
         yellow["field"]["superRod"] = field.parse_super_rod_yellow(pokeyellow)
+        hidden_items, _, _, hidden = field.parse_hidden_events(pokeyellow)
+        yellow["field"]["hiddenItems"] = hidden_items
+        extras = yellow["field"]["hiddenExtras"]
+        extras["pcTiles"] = hidden["pcTiles"]
+        extras["benchGuys"] = {
+            map_id: guys for map_id, guys in extras["benchGuys"].items()
+            if map_id in hidden["benchGuys"]}
     finally:
         util.ASM_DEFINES = saved
 

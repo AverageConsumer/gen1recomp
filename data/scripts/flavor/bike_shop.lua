@@ -34,20 +34,16 @@ return {
         { "show_text", "_BikeShopMiddleAgedWomanText" },
       },
 
-      -- BikeShopYoungsterText (pokered/scripts/BikeShop.asm):
-      -- CheckEvent EVENT_GOT_BICYCLE ; jr nz, .gotBike
-      -- before the player owns a bike -> TheseBikesAreExpensiveText
-      -- after the player owns a bike  -> CoolBikeText
-      -- The check reads the bag, not the event: the port hands out the
-      -- BICYCLE itself (a key item, so it cannot be tossed), and that also
-      -- reads right on saves written before the clerk set the event (#567).
+      -- scripts/BikeShop.asm:134
       TEXT_BIKESHOP_YOUNGSTER = {
         { "face_player" },                                            -- 1
-        { "check_item", "BICYCLE" },                                  -- 2
-        { "jump_if_true", 6 },                                        -- 3
-        { "show_text", "_BikeShopYoungsterTheseBikesAreExpensiveText" }, -- 4
-        { "jump", "end" },                                            -- 5
-        { "show_text", "_BikeShopYoungsterCoolBikeText" },            -- 6
+        { "check_flag", "EVENT_GOT_BICYCLE" },                        -- 2
+        { "jump_if_true", 8 },                                        -- 3
+        { "check_item", "BICYCLE" },                                  -- 4
+        { "jump_if_true", 8 },                                        -- 5
+        { "show_text", "_BikeShopYoungsterTheseBikesAreExpensiveText" }, -- 6
+        { "jump", "end" },                                            -- 7
+        { "show_text", "_BikeShopYoungsterCoolBikeText" },            -- 8
       },
     },
   },

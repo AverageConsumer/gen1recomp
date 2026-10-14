@@ -21,6 +21,7 @@ local LinkItems = require("src.link.LinkItems")
 local Logger = require("src.core.Logger")
 local Party = require("src.pokemon.Party")
 local Protocol = require("src.link.Protocol")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
 local TurnOrder = require("src.battle.TurnOrder")
 local Strings = require("src.core.Strings")
@@ -659,7 +660,8 @@ function LinkBattle.new(game, net, opts)
   end
 
   self.openItems = function(s)
-    s:say(Strings("Items can't be\nused in a link\nbattle!"))
+    -- engine/battle/core.asm:2178
+    s:say(RomText(game.data, "_ItemsCantBeUsedHereText", "Items can't be\nused here."))
     s.phase = "messages"
     s.afterQueue = "menu"
   end
@@ -710,8 +712,9 @@ function LinkBattle.new(game, net, opts)
         return
       end
     end
-    s:sayNext(Strings("%s is out of\nPOKéMON!\f%s wins!", game.save.player.name,
-                                                          theirName))
+    -- engine/battle/core.asm:1157
+    s:sayNext(RomText(game.data, "_LinkBattleLostText", "%s lost to\n%s!",
+      game.save.player.name, theirName))
     s.result = "lose"
     s.afterQueue = "finish"
   end
@@ -723,8 +726,9 @@ function LinkBattle.new(game, net, opts)
         return
       end
     end
-    s:sayNext(Strings("%s is out of\nPOKéMON!\f%s wins!", theirName,
-                                                          game.save.player.name))
+    -- engine/battle/core.asm:934
+    s:sayNext(RomText(game.data, "_TrainerDefeatedText", "%s defeated\n%s!",
+      game.save.player.name, theirName))
     s.result = "win"
     s.afterQueue = "finish"
   end

@@ -50,8 +50,11 @@ function ChoiceBox:update(dt)
     end
     return
   end
-  if input:wasPressed("up") or input:wasPressed("down") then
-    self.index = self.index == 1 and 2 or 1
+  -- home/window.asm:56-83
+  if input:wasPressed("up") then
+    self.index = 1
+  elseif input:wasPressed("down") then
+    self.index = 2
   elseif input:wasPressed("a") then
     -- HandleMenuInput_ (home/window.asm): SFX_PRESS_AB on A and B alike
     if not self.noSound then

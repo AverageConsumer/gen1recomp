@@ -976,7 +976,11 @@ local function paletteLookup(palettes, mapId, tileset)
   local byTileset = palettes.byTileset
   if byTileset and tileset and byTileset[tileset] then return byTileset[tileset] end
   for _, row in ipairs(palettes.byPrefix or {}) do
-    if row.prefix and mapId:find(row.prefix, 1, true) == 1 then return row.palette end
+    if row.pattern then
+      if mapId:find(row.pattern) then return row.palette end
+    elseif row.prefix and mapId:find(row.prefix, 1, true) == 1 then
+      return row.palette
+    end
   end
   return nil
 end
@@ -1152,18 +1156,21 @@ end
 -- Field-item entry points keep presentation and state transitions in the
 -- owning world instead of asking a supported facade to reproduce either one.
 function OverworldState:useBicycle()
-  local name = Game.save.player.name
+  local t = Game.data.text
+  Game.stringBuffer = Game.data.items.BICYCLE.name
   if Game.save.onBike then
     if Game.save.forcedBike then return false end
     Game.save.onBike = false
     require("src.core.Music").playMap(Game.data, self.map.id, false)
+    -- engine/items/item_effects.asm:2365-2369
     Game.stack:push(TextBox.new(Game,
-      Strings("%s got off\nthe BICYCLE.", name)))
+      TextBox.strip(t._GotOffBicycleText1) .. "\n" .. t._GotOffBicycleText2))
   elseif self:bikeAllowed(self.map.id) and not self.player.surfing then
     Game.save.onBike = true
     require("src.core.Music").playMap(Game.data, self.map.id, true)
+    -- engine/items/item_effects.asm:2359-2363
     Game.stack:push(TextBox.new(Game,
-      Strings("%s got on\nthe BICYCLE!", name)))
+      TextBox.strip(t._GotOnBicycleText1) .. "\n" .. t._GotOnBicycleText2))
   else
     return false
   end
@@ -1296,8 +1303,27 @@ end
 
 -- engine/battle/battle_transitions.asm:28
 function OverworldState:oamCulled(e)
-  if self.battleOamKeep == nil then return false end
+  if self.battleOamKeep == nil then return OverworldState.spriteOutOfView(self, e) end
   return e ~= self.player and e ~= self.battleOamKeep
+end
+
+-- engine/overworld/movement.asm:489-509
+function OverworldState:spriteOutOfView(e)
+  local p = self.player
+  if e == p or not (p and p.cellX and e.cellX) then return false end
+  if GameVersion.generation() ~= 1 then return false end
+  if self.marchers and self.marchers[e] then return false end
+  for _, mv in ipairs(self.scriptMoves or {}) do
+    if mv.entity == e then return false end
+  end
+  local r = Game and Game.renderer
+  local vw, vh = 160, 144
+  if r and r.worldViewSize then vw, vh = r:worldViewSize() end
+  if vw > 160 or vh > 144 then return false end
+  local x = e.moving and e.targetX or e.cellX
+  local y = e.moving and e.targetY or e.cellY
+  local dx, dy = x - p.cellX, y - p.cellY
+  return dy < -4 or dy > 4 or dx < -4 or dx > 5
 end
 
 -- -------------------------------------------------------------------------
@@ -1853,7 +1879,9 @@ function OverworldState:handleInput()
       -- extra check passes (CheckWarpsCollision: route-gate doorways, dock
       -- entrances, ...), and only while BIT_STANDING_ON_WARP is set (issue
       -- #230), which the map-edge path guards the same way.
-      if result == "blocked" and self:canCollisionWarp() then
+      -- home/overworld.asm:260
+      if result == "blocked" and self:canCollisionWarp()
+         and not self.player.surfing then
         local w = Warp.onCollision(self.map, Game.data.field.warpCarpets,
                                    self.player.cellX, self.player.cellY, dir)
         if w then
@@ -2169,6 +2197,13 @@ function OverworldState:checkEdgeExit(dir)
     -- of bouncing floors (issue #230), while the door mat you warped in on
     -- keeps it and exits on that same tile (issue #378).
     if not self:canCollisionWarp() then return false end
+    -- home/overworld.asm:260
+    if p.surfing then return false end
+    -- home/overworld.asm:254
+    if not Warp.extraCheck(self.map, Game.data.field.warpCarpets,
+                           p.cellX, p.cellY, dir) then
+      return false
+    end
     self:takeWarp(w.def)
     return true
   end
@@ -2879,6 +2914,9 @@ function OverworldState:tryHiddenObject(fx, fy)
       elseif h.state == "keys" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerSomeonesKeysText
           or romText(Game.data, "_GameCornerSomeonesKeysText", "Someone's keys!\nThey'll be back.")))
+      elseif self.player.facing ~= "left" and self.player.facing ~= "right" then
+        -- engine/slots/game_corner_slots2.asm:2-4
+        return true
       elseif not save.inventory.COIN_CASE then
         Game.stack:push(TextBox.new(Game, txt._GameCornerCoinCaseText
           or romText(Game.data, "_GameCornerCoinCaseText", "A COIN CASE is\nrequired!")))
@@ -3231,12 +3269,15 @@ function OverworldState:billsHousePokemonList()
         end,
       })
     end
-    table.insert(items, { label = Strings("CANCEL") })
+    local function closeHeld() Game.stack:pop() end
+    table.insert(items, { label = Strings("CANCEL"), onSelect = closeHeld })
     -- TextBoxBorder b=10,c=9 at (0,0) -> total tw=11, th=12
     local menu = Menu.new(Game, items,
-      { tx = 0, ty = 0, tw = 11, th = 12 })
+      { tx = 0, ty = 0, tw = 11, th = 12, onCancel = closeHeld })
     menu.isMenu = true
-    Game.stack:push(menu)
+    -- engine/events/hidden_events/bills_house_pc.asm:94-95
+    Game.stack:push(TextBox.new(Game, t._BillsHousePokemonListText2, nil,
+      { stay = { onShown = function() Game.stack:push(menu) end } }))
   end
   Game.stack:push(TextBox.new(Game, t._BillsHousePokemonListText1
     or Strings("BILL's favorite\nPOKéMON list!"), openList))
@@ -3786,7 +3827,11 @@ function OverworldState:openPC(onDone)
   -- them, then translate any source labels it chose to retain.
   local translatedLabels = {
     [boxPcLabel] = function()
-      return metBill and Strings("BILL'S PC") or Strings("SOMEONE'S PC")
+      -- engine/pokemon/bills_pc.asm:88-89
+      local source = metBill and "BILL'S PC" or "SOMEONE'S PC"
+      local label = metBill and Strings("BILL'S PC") or Strings("SOMEONE'S PC")
+      if label == source then return (source:gsub("'S PC$", "'s PC")) end
+      return label
     end,
     [playerPcLabel] = function() return Strings("%s's PC", playerName) end,
     ["PROF.OAK's PC"] = function() return Strings("PROF.OAK's PC") end,
@@ -4030,19 +4075,17 @@ function OverworldState:nurseHeal(onDone, npc)
           turnLeft()
           return
         end
+        if not pika then
+          turnLeft()
+          return
+        end
+        -- pokeyellow engine/events/pokecenter.asm:43
+        Follower.setVisible(self, false)
+        -- pokeyellow engine/events/pokecenter.asm:100
+        if npc then npc.facing = "up" end
+        hold(64, turnLeft)
         -- pokeyellow engine/events/pokecenter.asm:39
-        hold(64, function()
-          if not pika then
-            turnLeft()
-            return
-          end
-          -- pokeyellow engine/events/pokecenter.asm:43
-          Follower.setVisible(self, false)
-          -- pokeyellow engine/events/pokecenter.asm:100
-          if npc then npc.facing = "up" end
-          hold(64, turnLeft)
-        end)
-      end))
+      end, { auto = { delay = GameVersion.isYellow() and 64 or 0 } }))
     end)
   end, choiceLabels = { Strings("HEAL"), Strings("CANCEL") },
     choiceBox = Theme.healCancelBox }))
@@ -4734,8 +4777,11 @@ function OverworldState:applyFieldPoison()
       return
     end
     if not alive then
+      -- home/text_script.asm:197
       Game.stack:push(TextBox.new(Game,
-        Strings("%s blacked\nout!", save.player.name), function()
+        romText(Game.data, "_PlayerBlackedOutText",
+          "%s is out of\nuseable POKéMON!\f%s blacked\nout!",
+          save.player.name, save.player.name), function()
         local Pokemon = require("src.pokemon.Pokemon")
         for _, mon in ipairs(save.party) do Pokemon.heal(mon) end
         save.money = math.floor(save.money
@@ -4744,7 +4790,7 @@ function OverworldState:applyFieldPoison()
         local landing = { map = lm, x = lx, y = ly }
         Runtime.emit("world.blacked_out",
           { save = save, healTarget = self:healPoint(), landing = landing })
-        self:warpToHealPoint(nil, { landing = landing })
+        self:warpToHealPoint(nil, { landing = landing, keepFacing = true })
       end))
     end
   end
@@ -4901,6 +4947,11 @@ function OverworldState:onStepComplete()
       self:takeWarp(w.def)
       return
     end
+  end
+
+  -- home/overworld.asm:369
+  if hooks and hooks.noBattles and hooks.noBattles(Game, self, p.cellX, p.cellY) then
+    return
   end
 
   if Game.save.repelSteps and Game.save.repelSteps > 0 then
@@ -5306,8 +5357,11 @@ end
 function OverworldState:safariStep()
   local st = Game.save.safari
   if not st or not self:inSafariStepZone() then return false end
-  st.steps = st.steps - 1
-  if st.steps > 0 then return false end
+  -- engine/events/hidden_events/safari_game.asm:14-24
+  if st.steps > 0 then
+    st.steps = st.steps - 1
+    return false
+  end
   self:safariGameOver(romText(Game.data, "_TimesUpText", "PA: Ding-dong!\nTime's up!"))
   return true
 end
@@ -5318,8 +5372,9 @@ function OverworldState:safariGameOver(text)
   -- SetEvent EVENT_SAFARI_GAME_OVER -- engine/events/hidden_events/safari_game.asm:54
   Game.save.safariGameOver = true
   local t = Game.data.text
+  local over = t._GameOverText or romText(Game.data, "_GameOverText", "PA: Your SAFARI\nGAME is over!")
   Game.stack:push(TextBox.new(Game,
-    (text or "") .. "\f" .. (t._GameOverText or romText(Game.data, "_GameOverText", "PA: Your SAFARI\nGAME is over!")),
+    text and (text .. "\f" .. over) or over,
     function()
       local exit_ = FieldDefaults.fieldValue(Game.data, "safari", "exitWarp")
       -- home/overworld.asm:54
@@ -5361,15 +5416,15 @@ function OverworldState:afterBattle(result, battle)
     local landing = { map = lm, x = lx, y = ly }
     Runtime.emit("world.blacked_out",
       { save = Game.save, healTarget = self:healPoint(), landing = landing })
-    self:warpToHealPoint(nil, { landing = landing })
+    self:warpToHealPoint(nil, { landing = landing, keepFacing = true })
   else
     -- EndTrainerBattle sets BIT_CUR_MAP_LOADED_1 (home/trainers.asm), which
     -- re-runs the floor's door callback: beating the last Rocket Hideout guard
     -- opens the lift gate without leaving the map (#372)
     self:stampClosedDoors()
-    -- throwing the last SAFARI BALL ends the game
+    -- engine/events/hidden_events/safari_game.asm:64-71
     if Game.save.safari and Game.save.safari.balls <= 0 then
-      self:safariGameOver(Strings("PA: You're out of\nSAFARI BALLs!"))
+      self:safariGameOver()
     end
   end
 end
@@ -5548,7 +5603,9 @@ function OverworldState:warpToHealPoint(onDone, opts)
   else
     map, x, y = self:escapeWarpTarget()
   end
-  self:startWarpTo(map, x, y, "down", onDone, { healWarp = true })
+  -- home/overworld.asm:756
+  local facing = opts and opts.keepFacing and self.player.facing or "down"
+  self:startWarpTo(map, x, y, facing, onDone, { healWarp = true })
   -- PrepareForSpecialWarp (engine/overworld/special_warps.asm:1-29) writes the
   self:rememberOutdoor(map, x, y)
 end
@@ -5619,7 +5676,10 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
     framesIn = Timing.FADE_IN_FROM_WHITE,
   } or nil
   -- home/overworld.asm:681
-  if not specialWarp and self.dark then fadeOpts = { frames = 0 } end
+  if not specialWarp and (self.dark or Game.blackoutFaded) then
+    fadeOpts = { frames = 0 }
+  end
+  Game.blackoutFaded = nil
   Game.stack:push(Transition.new(Game, function()
     self:setMap(mapId, x, y, facing or "down", opts)
     -- the departure-side hide from flyAnim/teleportOut ends here, on the new
@@ -6426,10 +6486,14 @@ end
 -- engine/overworld/movement.asm:90
 local function grassStrip(self, e)
   local map = self.map
+  local test = map.isGrassCell
+  if e ~= self.player and GameVersion.generation() == 1 and map.isNpcGrassCell then
+    test = map.isNpcGrassCell
+  end
   local inGrass = (e.cellX ~= nil and e.cellY ~= nil
-                   and map:isGrassCell(e.cellX, e.cellY))
+                   and test(map, e.cellX, e.cellY))
                or (e.targetX ~= nil and e.targetY ~= nil
-                   and map:isGrassCell(e.targetX, e.targetY))
+                   and test(map, e.targetX, e.targetY))
   if not inGrass then return nil end
   local sprite, px, py = nil, e.px, e.py
   if e.pose then sprite, px, py = e:pose() end

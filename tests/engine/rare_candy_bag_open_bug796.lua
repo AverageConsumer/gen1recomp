@@ -242,24 +242,23 @@ do
   end
 end
 
--- Boundary the fix must not have moved: a candy is refused mid-battle, so the
--- field behavior above can never be mistaken for a battle regression.
--- item_effects.asm:800-803, ItemUseVitamin reads wIsInBattle and
--- `jp nz, ItemUseNotTime` before it ever falls into ItemUseMedicine, which is
--- why the port's battle-side branch is a guard rather than a live path.  A
--- bare table stands in for the battle: nothing on this route reads it.
+-- engine/items/item_effects.asm:800-803
 do
   local game, mon = freshGame(3)
-  local list = useFromBag(game, { fakeBattle = true }, "RARE_CANDY")
-  if check(list ~= nil, "the battle bag reached the picker") then
-    eq(mon.level, 5, "a RARE CANDY mid-battle levels nothing (ItemUseVitamin "
-                     .. "-> ItemUseNotTime)")
-    eq(game.save.inventory.RARE_CANDY, 3, "and is not consumed")
+  local list = BagMenu.new(game, { battle = { fakeBattle = true } })
+  game.stack:push(list)
+  local row = rowFor(list, "RARE_CANDY")
+  if check(row ~= nil, "RARE CANDY row in the battle bag") then
+    list.index = row
+    list.onChoose(list.items[row], list)
     local box = game.stack:top()
-    if check(isBox(box), "the refusal prints") then
+    check(not isPicker(box), "the battle bag never opens the party picker")
+    if check(isBox(box), "the refusal prints from the bag") then
       check(box.text:find("time to use", 1, true) ~= nil,
             "with ItemUseNotTime's line: " .. tostring(box.text))
     end
+    eq(mon.level, 5, "a RARE CANDY mid-battle levels nothing")
+    eq(game.save.inventory.RARE_CANDY, 3, "and is not consumed")
   end
 end
 

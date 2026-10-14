@@ -51,7 +51,9 @@ if GameVersion.isYellow() then
                           "data.scripts.yellow_jessie_james",
                           "data.scripts.yellow_beach_house",
                           "data.scripts.yellow_viridian_old_man",
-                          "data.scripts.flavor.pokecenter_chansey" }) do
+                          "data.scripts.yellow_npcs",
+                          "data.scripts.flavor.pokecenter_chansey",
+                          "data.scripts.flavor.viridian_forest" }) do
     for mapId, mod in pairs(require(file)) do
       MapScripts.attachBase(mapId, mod)
     end

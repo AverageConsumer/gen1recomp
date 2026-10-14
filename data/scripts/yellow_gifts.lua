@@ -23,7 +23,7 @@ M.CERULEAN_MELANIES_HOUSE = {
         rows[#rows + 1] = { "jump_if_false", "declined" }
         -- engine/events/give_pokemon.asm:45-46
         rows[#rows + 1] = { "give_pokemon", "BULBASAUR", 10, false, true }
-        rows[#rows + 1] = { "jump_if_false", "end" } -- party + box full
+        rows[#rows + 1] = { "jump_if_false", "box_full" }
         -- Event and HideObject before MelanieText3: give_pokemon's nickname
         -- prompt and the received text both yield, and a script that dies
         -- in that window used to leave the BULBASAUR given with the event
@@ -36,6 +36,10 @@ M.CERULEAN_MELANIES_HOUSE = {
         rows[#rows + 1] = { "jump", "end" }
         rows[#rows + 1] = { "label", "declined" }
         rows[#rows + 1] = { "show_text", "MelanieText5" }
+        rows[#rows + 1] = { "jump", "end" }
+        -- engine/events/give_pokemon.asm:40-44
+        rows[#rows + 1] = { "label", "box_full" }
+        rows[#rows + 1] = { "show_text", "_BoxIsFullText" }
       end
       ow.runner:run(rows, { npc = npc, onDone = done,
         checkpointOnDone = "release_npc" })
@@ -67,7 +71,7 @@ M.ROUTE_24 = {
       { "jump_if_false", "declined" },
       -- engine/events/give_pokemon.asm:45-46
       { "give_pokemon", "CHARMANDER", 10, false, true },
-      { "jump_if_false", "end" },
+      { "jump_if_false", "box_full" },
       -- SetEvent hoisted ahead of the received text (Route24.asm writes it
       -- after Route24Text_515e3, where nothing in between can fail): the
       -- nickname prompt and the text both yield, and a script death in that
@@ -78,6 +82,10 @@ M.ROUTE_24 = {
       { "jump", "end" },
       { "label", "declined" },
       { "show_text", "_Route24DamianText3" },
+      { "jump", "end" },
+      -- engine/events/give_pokemon.asm:40-44
+      { "label", "box_full" },
+      { "show_text", "_BoxIsFullText" },
       { "jump", "end" },
       { "label", "after" },
       { "show_text", "_Route24DamianText4" },
@@ -100,7 +108,7 @@ M.VERMILION_CITY = {
         rows[#rows + 1] = { "jump_if_false", "declined" }
         -- engine/events/give_pokemon.asm:45-46
         rows[#rows + 1] = { "give_pokemon", "SQUIRTLE", 10, false, true }
-        rows[#rows + 1] = { "jump_if_false", "end" }
+        rows[#rows + 1] = { "jump_if_false", "box_full" }
         -- event before the received text, as above (#426)
         rows[#rows + 1] = { "set_flag",
                             "EVENT_GOT_SQUIRTLE_FROM_OFFICER_JENNY" }
@@ -108,6 +116,10 @@ M.VERMILION_CITY = {
         rows[#rows + 1] = { "jump", "end" }
         rows[#rows + 1] = { "label", "declined" }
         rows[#rows + 1] = { "show_text", "_OfficerJennyText4" }
+        rows[#rows + 1] = { "jump", "end" }
+        -- engine/events/give_pokemon.asm:40-44
+        rows[#rows + 1] = { "label", "box_full" }
+        rows[#rows + 1] = { "show_text", "_BoxIsFullText" }
       end
       ow.runner:run(rows, { npc = npc, onDone = done,
         checkpointOnDone = "release_npc" })

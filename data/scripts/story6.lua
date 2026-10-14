@@ -230,7 +230,10 @@ M.CINNABAR_GYM = {
     if not machine then return false end
     local t = text(game)
     local Sound = require("src.core.Sound")
-    push(game, t._CinnabarGymQuizIntroText
+    -- pokeyellow engine/events/hidden_events/cinnabar_gym_quiz.asm:23
+    local intro = index ~= 1 and t._CinnabarGymQuizShortIntroText
+      or t._CinnabarGymQuizIntroText
+    push(game, intro
       or "POKéMON Quiz!\fGet it right and\nthe door opens!", function()
       ask(game, t["_CinnabarQuizQuestionsText" .. index] or "Well?",
         function(yes)
@@ -254,7 +257,20 @@ M.CINNABAR_GYM = {
             function()
               local npc = ow:npcByIndex(machine.npc)
               if npc and not ow:trainerDefeated(npc) then
-                ow:engageTrainer(npc, function() end)
+                -- scripts/CinnabarGym.asm:52-91
+                local nerd3 = machine.npc == 4
+                local function engage()
+                  ow.player.facing = nerd3 and "down" or "right"
+                  npc:facePlayer(ow.player)
+                  ow:engageTrainer(npc, function() end)
+                end
+                ow:scriptMove(npc, "left", 1, function()
+                  if nerd3 then
+                    ow:scriptMove(npc, "up", 1, engage)
+                  else
+                    engage()
+                  end
+                end)
               end
             end)
         end)

@@ -77,7 +77,6 @@ function TileRenderer.hasImage(path) return imageCache[path] ~= nil end
 
 -- ------------------------------------------------------------------
 -- Tile animation (home/vcopy.asm): tilesets with TILEANIM_WATER[_FLOWER]
--- rotate water tile $14 one pixel every 20 frames (4 steps right, 4
 -- left) and cycle flower tile $03 through 3 frames.
 -- Those two cycles are the *defaults* a vanilla tileset record derives
 -- from its `animation` string; a tileset that carries `animatedTiles`
@@ -311,13 +310,17 @@ end
 function TileRenderer.defaultAnimatedTiles(tileset)
   local out = {}
   local anim = tileset.animation
-  if anim == "TILEANIM_WATER" or anim == "TILEANIM_WATER_FLOWER" then
+  local flower = anim == "TILEANIM_WATER_FLOWER"
+  -- home/vcopy.asm:387-393
+  local period = flower and ANIM_PERIOD + 1 or ANIM_PERIOD
+  if anim == "TILEANIM_WATER" or flower then
     out[#out + 1] = { tile = WATER_TILE, kind = "hshift",
-                      period = ANIM_PERIOD, offsets = WATER_OFFSETS }
+                      period = period, phase = flower and 1 or 0,
+                      offsets = WATER_OFFSETS }
   end
-  if anim == "TILEANIM_WATER_FLOWER" then
+  if flower then
     out[#out + 1] = { tile = FLOWER_TILE, kind = "frames",
-                      period = ANIM_PERIOD, images = FLOWER_IMAGES,
+                      period = period, images = FLOWER_IMAGES,
                       sequence = FLOWER_FRAMES }
   end
   local spinners = TileRenderer.SPINNER_ARROW_TILES[tileset.id]
@@ -363,14 +366,14 @@ local function buildAnim(spec, tilesetImagePath, perRow, quads, gbc)
     local sequence = {}
     for i, offset in ipairs(offsets) do sequence[i] = offset + 1 end
     return { tiles = tiles, textures = textures, sequence = sequence,
-             period = period, spec = gbc and spec or nil }
+             period = period, phase = spec.phase, spec = gbc and spec or nil }
   elseif spec.kind == "frames" then
     local sequence = spec.sequence
     if not (spec.images and sequence and #sequence > 0) then return nil end
     local textures = getFrameImages(spec.images, colors, gbc and gbc.key)
     if not textures then return nil end
     return { tiles = tiles, textures = textures, sequence = sequence,
-             period = period, spec = gbc and spec or nil }
+             period = period, phase = spec.phase, spec = gbc and spec or nil }
   elseif spec.kind == "toggle" then
     if gbc then return nil end
     local image = getToggleImage(spec, tilesetImagePath, perRow)
@@ -736,7 +739,11 @@ function TileRenderer:drawBorderFill(camX, camY, vw, vh)
   -- overworld frame, so allocating a fresh Quad here churned the GC
   local q = self.borderQuad
   if self.borderFillMode == "water" and self.borderWaterTextures then
-    local step = math.floor(animFrame / ANIM_PERIOD) % #WATER_OFFSETS + 1
+    local flower = self.map and self.map.tileset
+      and self.map.tileset.animation == "TILEANIM_WATER_FLOWER"
+    local period = flower and ANIM_PERIOD + 1 or ANIM_PERIOD
+    local step = math.floor((animFrame + (flower and 1 or 0)) / period)
+      % #WATER_OFFSETS + 1
     local tex = self.borderWaterTextures[WATER_OFFSETS[step] + 1]
     if not tex then return end
     if q then
@@ -982,7 +989,8 @@ function TileRenderer:drawAnimated(camX, camY)
         -- already-static window tile shows through unchanged
         if gateOpen(anim.gate) then love.graphics.draw(batch, x, y) end
       else
-        local step = math.floor(animFrame / anim.period) % #anim.sequence + 1
+        local step = math.floor((animFrame + (anim.phase or 0)) / anim.period)
+          % #anim.sequence + 1
         batch:setTexture(anim.textures[anim.sequence[step]])
         love.graphics.draw(batch, x, y)
       end
@@ -1001,7 +1009,8 @@ function TileRenderer:drawTile(tile, x, y)
       if q then love.graphics.draw(anim.textures[1], q, x, y) end
     end
   elseif anim.sequence and anim.textures then
-    local step = math.floor(animFrame / anim.period) % #anim.sequence + 1
+    local step = math.floor((animFrame + (anim.phase or 0)) / anim.period)
+      % #anim.sequence + 1
     local tex = anim.textures[anim.sequence[step]]
     if tex then love.graphics.draw(tex, x, y) end
   end

@@ -369,7 +369,7 @@ return function(game)
     -- the box PC reads SOMEONE'S PC until EVENT_MET_BILL (pokemon_pc.asm)
     local flags = game.save.flags or {}
     local boxPC = (flags.EVENT_MET_BILL or flags.EVENT_GOT_SS_TICKET)
-                  and "BILL'S PC" or Strings("SOMEONE'S PC")
+                  and "BILL's PC" or Strings("SOMEONE's PC")
     if topIs(Menu) then
       mark = #cues
       choose(game.stack:top(), boxPC)

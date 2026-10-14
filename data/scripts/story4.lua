@@ -481,7 +481,8 @@ local function vendingMachine(game, ow, npc, done)
         -- engine/events/vending_machine.asm:67-75
         if self.done and not paid then
           paid = true
-          game.save.money = game.save.money - price
+          -- engine/math/bcd.asm:208-215
+          game.save.money = math.max(0, game.save.money - price)
         end
       end
     end
@@ -491,7 +492,8 @@ local function vendingMachine(game, ow, npc, done)
     result(t._VendingMachineText7 or "Not thirsty!")
   end
   local function buy(d)
-    if game.save.money < d.price then
+    -- engine/events/vending_machine.asm:39-45
+    if game.save.money < 200 then
       result(t._VendingMachineText4 or "Oops, not enough\nmoney!")
       return
     end
@@ -659,6 +661,8 @@ M.ROUTE_24 = {
   talk = {
     TEXT_ROUTE24_COOLTRAINER_M1 = function(game, ow, npc, done)
       local flags = game.save.flags
+      -- scripts/Route24.asm:109
+      flags.EVENT_NUGGET_REWARD_AVAILABLE = nil
       local function battleOrDone()
         if ow:trainerDefeated(npc) then
           push(game, text(game)._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
@@ -683,6 +687,8 @@ M.ROUTE_24 = {
           if not require("src.inventory.Bag").add(game.save, "NUGGET", 1,
               game.data) then
             push(game, t._Route24CooltrainerM1NoRoomText, done)
+            -- scripts/Route24.asm:145
+            flags.EVENT_NUGGET_REWARD_AVAILABLE = true
             return
           end
           flags.EVENT_GOT_NUGGET = true
@@ -702,7 +708,9 @@ M.ROUTE_24 = {
         end, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
         return
       end
-      battleOrDone()
+      -- scripts/Route24.asm:138
+      push(game, text(game)._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
+        done)
     end,
   },
   -- Route24DefaultScript forces TEXT_ROUTE24_COOLTRAINER_M1 whenever the
@@ -721,8 +729,27 @@ M.ROUTE_24 = {
       end
     end
     if not recruiter then return false end
-    ow:showMapText("TEXT_ROUTE24_COOLTRAINER_M1", recruiter)
+    ow:showMapText("TEXT_ROUTE24_COOLTRAINER_M1", recruiter, function()
+      -- scripts/Route24.asm:36
+      local flags = game.save.flags
+      if not flags.EVENT_NUGGET_REWARD_AVAILABLE then return end
+      flags.EVENT_NUGGET_REWARD_AVAILABLE = nil
+      ow:scriptMove(ow.player, "down", 1, nil, { collide = true })
+    end)
     return true
+  end,
+}
+
+-- scripts/SilphCo1F.asm:1-9
+M.SILPH_CO_1F = {
+  onEnter = function(game, ow)
+    local flags = game.save.flags
+    if not flags.EVENT_BEAT_SILPH_CO_GIOVANNI then return end
+    if flags.EVENT_SILPH_CO_RECEPTIONIST_AT_DESK then return end
+    flags.EVENT_SILPH_CO_RECEPTIONIST_AT_DESK = true
+    require("src.script.Commands").show_object(
+      { game = game, save = game.save, overworld = ow },
+      "SILPH_CO_1F", "SILPHCO1F_LINK_RECEPTIONIST")
   end,
 }
 
@@ -797,9 +824,10 @@ M.NAME_RATERS_HOUSE = {
                       title = require("src.core.Strings")("NICKNAME?"),
                       maxLen = 10,
                       mon = mon,
-                      default = mon.nickname,
                       onDone = function(name)
-                        if name and #name > 0 and name ~= def.name then
+                        -- engine/menus/naming_screen.asm:66
+                        if not name or #name == 0 then bye() return end
+                        if name ~= def.name then
                           mon.nickname = name
                         else
                           mon.nickname = nil

@@ -332,12 +332,20 @@ function ListMenu:drawItemBox()
     if item.cancel then sawCancel = true end
     local y = ITEM_TOP_Y + (row - 1) * 16
     Font.draw(item.label, ITEM_NAME_X, y)
-    if item.sub then
+    if item.level then
       -- PrintLevel, one row down and 8 columns right (home/list_menu.asm:459-461)
+      -- home/pokemon.asm:335-345
+      local lx = ITEM_QTY_X
+      if item.level < 100 then
+        require("src.render.HudTiles").battleExtraTile(0x6E, lx, y + 8)
+        lx = lx + 8
+      end
+      Font.draw(tostring(item.level), lx, y + 8)
+    elseif item.sub then
       Font.draw(item.sub, ITEM_QTY_X, y + 8)
     elseif item.price then
-      -- home/list_menu.asm:410-424
-      Font.draw(item.price, ITEM_QTY_END - Font.width(item.price), y + 8)
+      -- home/list_menu.asm:421-424
+      Font.draw(item.price, ITEM_QTY_END + 8 - Font.width(item.price), y + 8)
     elseif item.count then
       -- '×' at column 14, PrintNumber's two right-aligned digits after it
       -- (home/list_menu.asm:479-490)

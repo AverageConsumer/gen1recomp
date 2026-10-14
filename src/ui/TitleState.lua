@@ -533,7 +533,7 @@ function ContinueInfo:draw()
   Font.draw(("%3d"):format(owned), 16 * 8, 13 * 8)
   local t = math.floor(save.playTime or 0)
   Font.draw(Strings("TIME"), 40, 120)
-  Font.draw(("%3d:%02d"):format(math.floor(t / 3600),
+  Font.draw(("%3d<COLON>%02d"):format(math.floor(t / 3600),
                                 math.floor(t / 60) % 60), 104, 120)
   love.graphics.setColor(1, 1, 1, 1)
 end

@@ -48,6 +48,11 @@ local function descPages(game, def, forceOwned)
   local owned = ownedFor(game, def, forceOwned)
   local text = owned and e.text and game.data.text[e.text] or nil
   if not text then return nil end
+  local dexEnd = true
+  -- data/pokemon/dex_text.asm:1088
+  if text:sub(-6) == "{DONE}" then
+    text, dexEnd = text:sub(1, -7), false
+  end
   local pages = {}
   for chunk in (text .. "\f"):gmatch("(.-)\f") do
     local lines = {}
@@ -58,8 +63,10 @@ local function descPages(game, def, forceOwned)
     if #lines > 0 then pages[#pages + 1] = lines end
   end
   if #pages == 0 then return nil end
-  local last = pages[#pages]
-  last[#last] = last[#last] .. "."
+  if dexEnd then
+    local last = pages[#pages]
+    last[#last] = last[#last] .. "."
+  end
   return pages
 end
 
@@ -226,7 +233,7 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor, page, sta
   if sprite then
     -- engine/menus/pokedex.asm:503, home/pokemon.asm:96 (flipped)
     local w, h = sprite:getDimensions()
-    local x = 8 + math.floor((8 - w / 8) / 2) * 8
+    local x = 8 + math.max(0, 56 - math.floor((8 - w / 8) / 2) * 8 - w)
     local y = 8 + (7 - h / 8) * 8
     love.graphics.draw(sprite, x + w, y, 0, -1, 1)
     -- the unshaded pass needs the pic bounds (#350)
@@ -243,9 +250,16 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor, page, sta
   -- same number width as the list (constants.dexDigits), so a dex past 999
   -- prints the extra digit everywhere at once
   local digits = (game.data.constants or {}).dexDigits or 3
-  -- engine/menus/pokedex.asm:478
-  Font.draw(Strings("No.") .. ("%0" .. digits .. "d"):format(def.dex or 0),
-            16, 64)
+  -- engine/menus/pokedex.asm:478-485
+  if Strings.lookup("No.") == "No." then
+    require("src.render.HudTiles").statusTile(0x74, 16, 64)
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.drawCode(0xF2, 24, 64)
+    Font.draw(("%0" .. digits .. "d"):format(def.dex or 0), 32, 64)
+  else
+    Font.draw(Strings("No.") .. ("%0" .. digits .. "d"):format(def.dex or 0),
+              16, 64)
+  end
   local owned = ownedFor(game, def, forceOwned)
   local metric = e.heightM ~= nil
   local numbers = owned and e.heightFt
@@ -281,7 +295,8 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor, page, sta
     else
       Font.draw(("%2d"):format(e.heightFt), 96, 48)
       Font.draw(("%02d"):format(e.heightIn or 0), 120, 48)
-      Font.draw(("%6.1f"):format((e.weight or 0) / 10), 88, 64)
+      -- engine/menus/pokedex.asm:547-561
+      Font.draw((("%6.1f"):format((e.weight or 0) / 10):gsub("%.", "<DOT>")), 88, 64)
     end
   end
   local pages = descPages(game, def, forceOwned)

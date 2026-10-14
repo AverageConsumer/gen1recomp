@@ -5169,7 +5169,30 @@
           "lines": [],
           "mon": "PARASECT"
         }
-      ]
+      ],
+      "theEnd": {
+        "display": "T H E  E N D",
+        "height": 16,
+        "letterHeight": 16,
+        "letterWidth": 8,
+        "letters": "THEND",
+        "path": "assets/generated/credits/the_end.png",
+        "pattern": [
+          0,
+          -1,
+          1,
+          -1,
+          2,
+          -1,
+          -1,
+          2,
+          -1,
+          3,
+          -1,
+          4
+        ],
+        "width": 40
+      }
     },
     "cutTreeSwaps": [
       {
@@ -9808,22 +9831,22 @@
           "y": 9
         },
         "POKEMON_MANSION_1F": {
-          "name": "POK\u00e9MON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
         "POKEMON_MANSION_2F": {
-          "name": "POK\u00e9MON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
         "POKEMON_MANSION_3F": {
-          "name": "POK\u00e9MON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
         "POKEMON_MANSION_B1F": {
-          "name": "POK\u00e9MON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
@@ -20647,6 +20670,10 @@
       1,
       17928
     ],
+    "ItemUseMedicine.emptyPartyText": [
+      3,
+      23273
+    ],
     "IvysaurPicBack": [
       9,
       20823
@@ -21146,6 +21173,10 @@
     "OnixPicFront": [
       10,
       16740
+    ],
+    "PTile": [
+      4,
+      27356
     ],
     "PalletTown_h": [
       6,

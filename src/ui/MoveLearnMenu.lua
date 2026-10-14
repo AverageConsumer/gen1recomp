@@ -155,7 +155,8 @@ function MoveLearnMenu:finish(learned)
            "\f%s forgot\n%s!\fAnd...", name, self.forgot)
       .. "\f" .. romText(game.data, "_LearnedMove1Text",
            "%s learned\n%s!", name, mdef.name)
-    opts = { pauseSounds = { "Swap" }, auto = { sound = function()
+    -- engine/pokemon/learn_move.asm:189
+    opts = { pauseSounds = { "Swap" }, waitButton = false, auto = { sound = function()
       return require("src.core.Sound").play(game.data, self.learnedSound)
     end, wait = true } }
   else

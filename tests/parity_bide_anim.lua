@@ -207,7 +207,7 @@ do
   tb:continueBide(tb.player, tb.enemy)
   local rows = trace(tb)
   eq(tb.enemy.mon.hp, hpBefore, "nothing stored means no damage")
-  check(indexOfText(rows, "But, it failed!") ~= nil, "it prints the failure")
+  check(indexOfText(rows, "attack missed!") ~= nil, "it prints the miss")
   check(not anyAnim(rows, "BIDE"), "and plays no animation")
 end
 

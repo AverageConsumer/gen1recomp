@@ -291,7 +291,7 @@ do
   list.scroll = 1
   sellRow(3, 1)
   eq(list.scroll, 1, "selling part of a row keeps the list scroll")
-  eq(list.index, 3, "and the cursor")
+  eq(list.index, 2, "and the cursor goes to the top visible row")
   sellRow(3, 1)
   eq(rowsOf(game.save, game.data), "X_ACCURACYx99,POTIONx5", "the emptied row is gone")
   eq(list.scroll, 0, "an emptied row resets the sell list scroll")

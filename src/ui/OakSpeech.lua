@@ -798,7 +798,9 @@ function OakSpeech:draw()
     -- it like the sprite buffer does ((8 - w) >> 1) tiles across,
     -- bottom-aligned
     local w, h = self.pic:getDimensions()
-    local x = 48 + math.floor((8 - w / 8) / 2) * 8 + (self.picSlide or 0)
+    local pad = math.floor((8 - w / 8) / 2) * 8
+    if self.picFlip then pad = math.max(0, 56 - pad - w) end
+    local x = 48 + pad + (self.picSlide or 0)
     local y = 32 + (7 - h / 8) * 8
     local reveal = self.picReveal
     local off = 0

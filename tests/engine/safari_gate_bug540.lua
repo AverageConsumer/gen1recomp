@@ -178,15 +178,15 @@ T.eq(leftCell.moves[1].tiles, 1, "one cell reaches (4,2)")
 leftCell.moves[1].onDone()
 T.check(leftCellGame.save.safari ~= nil, "the join prompt runs from (4,2)")
 
--- talking to the worker from anywhere else has no warp above the player, so
--- the auto-walk stays out of the way and he walks in himself
+-- scripts/SafariZoneGate.asm:144-146
 answer = true
 local far = newWorld(2, 4)
 local farGame = newGame(far)
 farGame.save.safari = nil
 gate.talk.TEXT_SAFARIZONEGATE_SAFARI_ZONE_WORKER1(farGame, far, nil, nil)
-T.check(farGame.save.safari ~= nil, "the talk path still starts the game")
-T.eq(#far.moves, 0, "no auto-walk from a cell with no warp above it")
+T.eq(farGame.save.safari, nil, "talking to the worker only welcomes you")
+T.eq(#far.pushed, 1, "one box, no join prompt")
+T.eq(#far.moves, 0, "no auto-walk from a talk")
 
 -- declining walks the player back off the trigger cell, unchanged
 answer = false

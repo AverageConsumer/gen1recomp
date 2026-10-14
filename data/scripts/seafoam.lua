@@ -64,4 +64,43 @@ for mapId, holes in pairs(HOLE_FALLS) do
   end
 end
 
+-- scripts/SeafoamIslands1F.asm:3
+M.SEAFOAM_ISLANDS_1F.onEnter = function(game)
+  game.save.flags.EVENT_IN_SEAFOAM_ISLANDS = true
+end
+
+-- scripts/Route20.asm:2-49
+M.ROUTE_20 = {
+  onEnter = function(game, ow)
+    local f = game.save.flags
+    if not f.EVENT_IN_SEAFOAM_ISLANDS then return end
+    f.EVENT_IN_SEAFOAM_ISLANDS = nil
+    local Commands = require("src.script.Commands")
+    local ctx = { game = game, save = game.save, overworld = ow }
+    if not (f.EVENT_SEAFOAM3_BOULDER1_DOWN_HOLE
+            and f.EVENT_SEAFOAM3_BOULDER2_DOWN_HOLE) then
+      Commands.show_object(ctx, "SEAFOAM_ISLANDS_1F", "SEAFOAMISLANDS1F_BOULDER1")
+      Commands.show_object(ctx, "SEAFOAM_ISLANDS_1F", "SEAFOAMISLANDS1F_BOULDER2")
+      for _, o in ipairs({
+        { "SEAFOAM_ISLANDS_B1F", "SEAFOAMISLANDSB1F_BOULDER1" },
+        { "SEAFOAM_ISLANDS_B1F", "SEAFOAMISLANDSB1F_BOULDER2" },
+        { "SEAFOAM_ISLANDS_B2F", "SEAFOAMISLANDSB2F_BOULDER1" },
+        { "SEAFOAM_ISLANDS_B2F", "SEAFOAMISLANDSB2F_BOULDER2" },
+        { "SEAFOAM_ISLANDS_B3F", "SEAFOAMISLANDSB3F_BOULDER5" },
+        { "SEAFOAM_ISLANDS_B3F", "SEAFOAMISLANDSB3F_BOULDER6" },
+      }) do
+        Commands.hide_object(ctx, o[1], o[2])
+      end
+    end
+    if f.EVENT_SEAFOAM4_BOULDER1_DOWN_HOLE
+       and f.EVENT_SEAFOAM4_BOULDER2_DOWN_HOLE then
+      return
+    end
+    Commands.show_object(ctx, "SEAFOAM_ISLANDS_B3F", "SEAFOAMISLANDSB3F_BOULDER2")
+    Commands.show_object(ctx, "SEAFOAM_ISLANDS_B3F", "SEAFOAMISLANDSB3F_BOULDER3")
+    Commands.hide_object(ctx, "SEAFOAM_ISLANDS_B4F", "SEAFOAMISLANDSB4F_BOULDER1")
+    Commands.hide_object(ctx, "SEAFOAM_ISLANDS_B4F", "SEAFOAMISLANDSB4F_BOULDER2")
+  end,
+}
+
 return M

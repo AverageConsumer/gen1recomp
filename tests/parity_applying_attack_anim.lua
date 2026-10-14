@@ -200,10 +200,8 @@ do
   eq(tb.fx.shakeProg, nil, "type 4 arms no shake (#354 must not regress it)")
   check(tb.fx.blink ~= nil and tb.fx.blink.target == tb.enemy,
         "type 4 blinks the enemy pic")
-  -- AnimationBlinkMon (animations.asm:1360-1376) is `ld c, 6` iterations
-  -- of hide + DelayFrames 5 + show + DelayFrames 5 = 60 frames; the port
-  -- once ran it in 20, a third of its length (Timing.BLINK_MON).
-  eq(tb.waitFrames, 60, "for the 60 frames AnimationBlinkEnemyMon takes")
+  -- engine/battle/animations.asm:1360
+  eq(tb.waitFrames, 78, "for the 78 frames AnimationBlinkEnemyMon takes")
 end
 
 -- engine/battle/animations.asm PlayApplyingAttackAnimation

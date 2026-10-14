@@ -403,6 +403,8 @@ tB:handle(cA)
 eq(tA.stage, "done", "trade completes")
 local gotMon, evoTo = tA:apply(nil)
 eq(gotMon.species, "MACHOKE", "A received Machoke")
+eq(partyA[1].species .. "," .. partyA[2].species, "PIDGEY,MACHOKE",
+   "the traded slot is removed and the received mon appended")
 eq(evoTo, "MACHAMP", "trade evolution triggers (Machoke -> Machamp)")
 -- the received mon keeps its SENDER's OT, not the receiver's (#215)
 eq(gotMon.ot, "RED", "A's received Machoke keeps sender B's OT name")

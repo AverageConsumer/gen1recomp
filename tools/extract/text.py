@@ -27,7 +27,7 @@ from .util import read_asm, warn
 # Multi-char charmap sequences that expand to plain text.
 EXPANSIONS = {
     "#": "POKé",
-    "<PKMN>": "POKéMON",
+    "<PKMN>": "<PK><MN>",
     "<PC>": "PC",
     "<TM>": "TM",
     "<TRAINER>": "TRAINER",

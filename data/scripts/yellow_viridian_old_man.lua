@@ -85,7 +85,9 @@ local function oldMan2Rows(game, ow, npc)
     if pika then
       rows[#rows + 1] = { "walk_npc", pika.def.index, { "right" } }
     end
-    rows[#rows + 1] = { "walk_npc", npc.def.index, { "right" } }
+    -- scripts/ViridianCity.asm:234
+    rows[#rows + 1] = { "walk_npc", npc.def.index,
+      { "right", "down", "down", "down", "down", "down", "down" } }
   end
   rows[#rows + 1] =
     { "hide_object", "VIRIDIAN_CITY", OLD_MAN2 }

@@ -128,8 +128,8 @@ do
   end) ~= nil, "its price is one tile row below the name")
   local price = found("draw", function(c) return c[2] == "¥600" end)
   if price then
-    eq(price[3] + FontStub.width("¥600"), 136,
-       "right-aligned through the BCD field (home/list_menu.asm:410-424)")
+    eq(price[3] + FontStub.width("¥600"), 144,
+       "right-aligned through the BCD field (home/list_menu.asm:421-424)")
   end
   check(found("draw", function(c) return c[2] == "CANCEL" end) ~= nil,
         "CANCEL is a real row (home/list_menu.asm:523-528)")

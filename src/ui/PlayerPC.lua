@@ -60,6 +60,7 @@ end
 -- cb(qty) runs only on confirm.
 local function askQuantity(game, list, count, id, cb)
   local def = game.data.items[id]
+  list.pcQtyBox = nil
   if (def and def.keyItem) or id:find("^HM_") then
     cb(1)
     return
@@ -67,12 +68,20 @@ local function askQuantity(game, list, count, id, cb)
   local prompt = list.footer
   list.footer = Strings("How many?")
   local QuantityBox = require("src.ui.QuantityBox")
-  game.stack:push(QuantityBox.new(game, {
+  local box
+  box = QuantityBox.new(game, {
     max = count,
     onDone = function(qty)
-      if qty then cb(qty) else list.footer = prompt end
+      if qty then
+        -- engine/menus/players_pc.asm:136-137
+        list.pcQtyBox = box
+        cb(qty)
+      else
+        list.footer = prompt
+      end
     end,
-  }))
+  })
+  game.stack:push(box)
 end
 
 local function refreshRows(list, items)
@@ -90,6 +99,7 @@ local function pcList(game, items, opts)
   local draw = list.draw
   list.draw = function(self)
     draw(self)
+    if self.pcCompletion and self.pcQtyBox then self.pcQtyBox:draw() end
     if self.pcCompletion
        and self.pcCompletionBlink % 60 < 30 then
       Font.drawCode(Theme.moreArrow, 144, 128)
@@ -103,6 +113,7 @@ local function pcList(game, items, opts)
       if input:wasPressed("a") or input:wasPressed("b") then
         Sound.playPress(game.data)
         self.pcCompletion = nil
+        self.pcQtyBox = nil
         local after = self.pcAfter
         self.pcAfter = nil
         if after then after() end

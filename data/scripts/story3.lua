@@ -14,7 +14,7 @@ local M = {}
 -- refusedText is the .ThatsSoDisappointingText tail on NO; followText is
 -- the second half of the received chain (scripts/VermilionOldRodHouse.asm:45)
 local function rodGiver(askText, receivedText, afterText, rodItem, flag,
-                        refusedText, followText)
+                        refusedText, followText, noRoomText)
   local rows = {
     { "face_player" },
     { "check_flag", flag },
@@ -24,7 +24,7 @@ local function rodGiver(askText, receivedText, afterText, rodItem, flag,
     -- give-then-print like the three rod-house scripts (GiveItem fills
     -- wStringBuffer; the received texts read OLD/GOOD/SUPER ROD from it)
     -- scripts/VermilionOldRodHouse.asm:44
-    { "give_item", rodItem, 1, false, false, "Get_Item1" },
+    { "give_item", rodItem, 1, false, noRoomText, "Get_Item1" },
     { "set_flag", flag },
     { "show_text", receivedText },
   }
@@ -46,7 +46,8 @@ M.VERMILION_OLD_ROD_HOUSE = {
       "_VermilionOldRodHouseFishingGuruHowAreTheFishBitingText",
       "OLD_ROD", "EVENT_GOT_OLD_ROD",
       "_VermilionOldRodHouseFishingGuruThatsSoDisappointingText",
-      "_VermilionOldRodHouseFishingGuruFishingIsAWayOfLifeText"),
+      "_VermilionOldRodHouseFishingGuruFishingIsAWayOfLifeText",
+      "_VermilionOldRodHouseFishingGuruNoRoomText"),
   },
 }
 
@@ -57,7 +58,8 @@ M.FUCHSIA_GOOD_ROD_HOUSE = {
       "_FuchsiaGoodRodHouseFishingGuruReceivedGoodRodText",
       "_FuchsiaGoodRodHouseFishingGuruHowAreTheFishText",
       "GOOD_ROD", "EVENT_GOT_GOOD_ROD",
-      "_FuchsiaGoodRodHouseFishingGuruThatsSoDisappointingText"),
+      "_FuchsiaGoodRodHouseFishingGuruThatsSoDisappointingText", nil,
+      "_FuchsiaGoodRodHouseFishingGuruNoRoomText"),
   },
 }
 
@@ -69,7 +71,8 @@ M.ROUTE_12_SUPER_ROD_HOUSE = {
       "_Route12SuperRodHouseFishingGuruTryFishingText",
       "SUPER_ROD", "EVENT_GOT_SUPER_ROD",
       "_Route12SuperRodHouseFishingGuruThatsDisappointingText",
-      "_Route12SuperRodHouseFishingGuruFishingWayOfLifeText"),
+      "_Route12SuperRodHouseFishingGuruFishingWayOfLifeText",
+      "_Route12SuperRodHouseFishingGuruNoRoomText"),
   },
 }
 
@@ -248,6 +251,7 @@ end
 local function elevatorFloors(elevatorMapId, game)
   local floors = {}
   for mapId, def in pairs(game.data.maps) do
+    local found
     for i, w in ipairs(def.warps) do
       if w.destMap == elevatorMapId then
         -- short floor token pokered actually prints, e.g.
@@ -256,11 +260,11 @@ local function elevatorFloors(elevatorMapId, game)
         -- warpIdx: this floor's warp back into the elevator IS the
         -- warp the car's rewritten exit lands on (the reciprocal
         -- pair), matching wElevatorWarpMaps' (warp id, map id)
-        table.insert(floors,
-          { map = mapId, x = w.x, y = w.y, token = token, warpIdx = i })
-        break
+        -- scripts/RocketHideoutElevator.asm:51
+        found = { map = mapId, x = w.x, y = w.y, token = token, warpIdx = i }
       end
     end
+    if found then table.insert(floors, found) end
   end
   -- numeric floor order (SilphCoElevatorFloors' FLOOR_1F..FLOOR_11F),
   -- not lexicographic -- otherwise 10F/11F sort before 2F..9F

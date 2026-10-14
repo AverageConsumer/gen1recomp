@@ -36,7 +36,7 @@ local function monRow(game, mon, value)
   local def = game.data.pokemon[mon.species]
   return {
     label = mon.nickname or def.name,
-    sub = Strings(":L%d", mon.level),
+    level = mon.level,
     value = value,
   }
 end
@@ -54,8 +54,9 @@ end
 
 -- Per-mon submenu (bills_pc.asm DisplayDepositWithdrawMenu): the chosen
 -- action + STATS + CANCEL.  STATS shows the status screen and returns
--- here; CANCEL/B goes back to the list.
-local function monSubmenu(game, action, mon, onAction)
+local function monSubmenu(game, list, action, mon, onAction)
+  -- engine/pokemon/bills_pc.asm:225-226
+  local function back() list:close() end
   game.stack:push(Menu.new(game, {
     { label = action, onSelect = onAction },
     {
@@ -65,15 +66,12 @@ local function monSubmenu(game, action, mon, onAction)
         require("src.ui.Screens").push(game, "SummaryMenu", mon)
       end,
     },
-    { label = Strings("CANCEL") },
-  }, { tx = 9, ty = 10, tw = 11, th = 8, noSound = true }))
+    { label = Strings("CANCEL"), onSelect = back },
+  }, { tx = 9, ty = 10, tw = 11, th = 8, noSound = true, onCancel = back }))
 end
 
--- After a successful transfer: close the mon list (BoxMenu stays beneath
--- via keepOpen) and show the taken-out / stored text (jp BillsPCMenu).
 local function afterTransfer(game, list, text)
-  list:close()
-  game.stack:push(TextBox.new(game, text))
+  game.stack:push(TextBox.new(game, text, function() list:close() end))
 end
 
 local function withdraw(game)
@@ -102,7 +100,7 @@ local function withdraw(game)
       list.hollowIndex = list.index -- home/list_menu.asm:91
       local mon = box[item.value]
       if not mon then return end
-      monSubmenu(game, Strings("WITHDRAW"), mon, function()
+      monSubmenu(game, list, Strings("WITHDRAW"), mon, function()
         if #game.save.party >= Party.MAX then
           list.footer = Strings("The party is full!")
           return
@@ -160,7 +158,7 @@ local function deposit(game)
           or Strings("There isn't any\nresponse...")))
         return
       end
-      monSubmenu(game, Strings("DEPOSIT"), mon, function()
+      monSubmenu(game, list, Strings("DEPOSIT"), mon, function()
         if #game.save.party <= 1 then
           list.footer = Strings("You need at least\none POKéMON!")
           return
@@ -218,18 +216,26 @@ local function release(game)
             :gsub("{RAM:wNameBuffer}", name))))
         return
       end
-      game.stack:push(TextBox.new(game,
-        (t._OnceReleasedText or Strings("Once released,\n%s is\ngone forever. OK?", name))
-          :gsub("{RAM:wStringBuffer}", name), nil, {
-        defaultNo = true, noSound = true,
+      local question = (t._OnceReleasedText
+        or Strings("Once released,\n%s is\ngone forever. OK?", name))
+          :gsub("{RAM:wStringBuffer}", name)
+      game.stack:push(TextBox.new(game, question, nil, {
+        noSound = true,
         choice = function(yes)
-          if not yes then return end
+          if not yes then
+            -- engine/pokemon/bills_pc.asm:307-309
+            list.footer, list.listPrompt = question, question
+            return
+          end
           table.remove(box, list.index)
           require("src.core.Sound").playCry(game.data, mon.species)
+          -- engine/pokemon/bills_pc.asm:318
           game.stack:push(TextBox.new(game,
             ((t._MonWasReleasedText or Strings("%s was\nreleased outside.\fBye %s!", name, name))
-              :gsub("{RAM:wStringBuffer}", name))))
-          list:removeCurrent()
+              :gsub("{RAM:wStringBuffer}", name)), function()
+              list:removeCurrent()
+              list:close()
+            end))
         end,
       }))
     end,
@@ -302,10 +308,12 @@ local function changeBox(game)
 end
 
 -- bills_pc.asm BillsPCMenu chrome: What? text box + BOX No. overlay
-local function drawChrome(game)
-  Font.drawBox(0, 12, 20, 6)
-  love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(Strings("What?"), 8, 112)
+local function drawChrome(game, what)
+  if what then
+    Font.drawBox(0, 12, 20, 6)
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.draw(Strings("What?"), 8, 112)
+  end
   Font.drawBox(9, 14, 11, 4)
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(Strings("BOX No."), 80, 128)
@@ -392,9 +400,12 @@ function BoxMenu.new(game)
     return baseUpdate(self, dt)
   end
   local baseDraw = menu.draw
+  local yellow = require("src.core.GameVersion").isYellow()
   function menu:draw()
+    -- pokeyellow engine/pokemon/bills_pc.asm:119-124
+    if yellow then Font.drawBox(0, 12, 20, 6) end
     baseDraw(self)
-    drawChrome(game)
+    drawChrome(game, not yellow)
   end
   menu.isMenu = true
   return menu

@@ -348,7 +348,7 @@ local function takeGuardDrink(game)
   return false
 end
 
-local function saffronGate(guardText, triggers, horizontal)
+local function saffronGate(guardText, triggers, horizontal, face)
   return {
     talk = {
       [guardText] = function(game, ow, npc, done)
@@ -386,21 +386,18 @@ local function saffronGate(guardText, triggers, horizontal)
       if game.save.flags.EVENT_GAVE_GUARDS_DRINK then return false end
       local TextBox = require("src.render.TextBox")
       local t = game.data.text
-      -- Stepping on the trigger WITH a drink hands it over right here.
-      --
+      local back
+      if horizontal then
+        back = ow.player.facing == "left" and "right" or "left"
+      else
+        back = ow.player.facing == "up" and "down" or "up"
+      end
+      -- scripts/Route7Gate.asm:32-33
+      if face then ow.player.facing = face end
       -- Route5GateDefaultScript (scripts/Route5Gate.asm) runs
       -- `farcall RemoveGuardDrink` before it decides anything: the coord
       -- trigger itself takes the drink and sets
       -- BIT_GAVE_SAFFRON_GUARDS_DRINK, and only a player carrying nothing
-      -- gets the thirsty line and the walk-back. We had the removal on the
-      -- guard's TALK handler only, so walking up with a FRESH_WATER in the
-      -- bag was turned away and the four gates stayed shut unless you
-      -- happened to talk to him -- which vanilla never requires.
-      --
-      -- Saffron is the middle of the map, so this sealed it: every route
-      -- through the city (Celadon <-> Lavender, Vermilion <-> Cerulean the
-      -- short way) was unreachable, and the bot could not get to Lavender
-      -- for the POKE_FLUTE at all.
       if takeGuardDrink(game) then
         game.stack:push(TextBox.new(game,
           t._SaffronGateGuardImParchedText or "Whoa, boy!\nI'm parched!",
@@ -410,12 +407,6 @@ local function saffronGate(guardText, triggers, horizontal)
                "You can go on\nthrough!")))
           end, TextBox.soundOpts(game, "Get_Key_Item")))
         return true
-      end
-      local back
-      if horizontal then
-        back = ow.player.facing == "left" and "right" or "left"
-      else
-        back = ow.player.facing == "up" and "down" or "up"
       end
       game.stack:push(TextBox.new(game,
         t._SaffronGateGuardGeeImThirstyText or "Gee, I'm thirsty\nthough!\nThe road's closed.",
@@ -427,10 +418,15 @@ local function saffronGate(guardText, triggers, horizontal)
   }
 end
 
-M.ROUTE_5_GATE = saffronGate("TEXT_ROUTE5GATE_GUARD", { { 3, 3 }, { 4, 3 } })
-M.ROUTE_6_GATE = saffronGate("TEXT_ROUTE6GATE_GUARD", { { 3, 2 }, { 4, 2 } })
-M.ROUTE_7_GATE = saffronGate("TEXT_ROUTE7GATE_GUARD", { { 3, 3 }, { 3, 4 } }, true)
-M.ROUTE_8_GATE = saffronGate("TEXT_ROUTE8GATE_GUARD", { { 2, 3 }, { 2, 4 } }, true)
+-- scripts/Route5Gate.asm:26
+M.ROUTE_5_GATE = saffronGate("TEXT_ROUTE5GATE_GUARD", { { 3, 3 }, { 4, 3 } },
+  false, "left")
+M.ROUTE_6_GATE = saffronGate("TEXT_ROUTE6GATE_GUARD", { { 3, 2 }, { 4, 2 } },
+  false, "right")
+M.ROUTE_7_GATE = saffronGate("TEXT_ROUTE7GATE_GUARD", { { 3, 3 }, { 3, 4 } },
+  true, "up")
+M.ROUTE_8_GATE = saffronGate("TEXT_ROUTE8GATE_GUARD", { { 2, 3 }, { 2, 4 } },
+  true, "left")
 
 -- -------------------------------------------------------------------
 -- Bike Voucher chain (scripts/PokemonFanClub.asm, BikeShop.asm)
@@ -451,7 +447,8 @@ M.POKEMON_FAN_CLUB = {
       { "show_text", "_PokemonFanClubChairmanStoryText" },        -- 6
       -- give-then-print like scripts/PokemonFanClub.asm (GiveItem
       -- fills wStringBuffer; the received text reads it)
-      { "give_item", "BIKE_VOUCHER", 1, false },                  -- 7
+      { "give_item", "BIKE_VOUCHER", 1, false,
+        "_PokemonFanClubBagFullText" },                           -- 7
       { "show_text", "_PokemonFanClubReceivedBikeVoucherText" },  -- 8
       { "set_flag", "EVENT_RECEIVED_BIKE_VOUCHER" },              -- 9
       { "show_text", "_PokemonFanClubExplainBikeVoucherText" },   -- 10
@@ -707,6 +704,10 @@ M.MT_MOON_B2F = {
     end
     return false
   end,
+  -- scripts/MtMoonB2F.asm:8
+  noBattles = function(game, ow, x, y)
+    return x >= 11 and x <= 14 and y >= 5 and y <= 8 and superNerdBeaten(ow)
+  end,
   talk = {
     -- MtMoonB2FSuperNerdText: once beaten his line turns on the fossils
     -- (scripts/MtMoonB2F.asm:187), which the header's flat `after` can't hold
@@ -780,9 +781,14 @@ local function museumClerk(game, ow, done, onDecline)
           t._Museum1FScientist1ThankYouText or "Right, ¥50!\nThank you!", done,
           { money = money }))
       elseif yes then
+        -- scripts/Museum1F.asm:90-92
         game.stack:push(TextBox.new(game,
           t._Museum1FScientist1DontHaveEnoughMoneyText
-            or "You don't have\nenough money.", onDecline or done, { money = money }))
+            or "You don't have\nenough money.", function()
+            game.stack:push(TextBox.new(game,
+              t._Museum1FScientist1ComeAgainText, onDecline or done,
+              { money = money }))
+          end, { money = money }))
       else
         game.stack:push(TextBox.new(game,
           t._Museum1FScientist1ComeAgainText
@@ -1102,14 +1108,14 @@ M.DAYCARE = {
                 game.stack:push(TextBox.new(game,
                   (t._DaycareGentlemanAllRightThenText or "All right then,\n")
                     .. (t._DaycareGentlemanComeAgainText or "come again."),
-                  done))
+                  done, { money = showMoney }))
                 return
               end
               if (game.save.money or 0) < fee then
                 mon.level = startLevel
                 game.stack:push(TextBox.new(game,
                   t._DaycareGentlemanNotEnoughMoneyText
-                    or "Hey, you don't\nhave enough ¥!", done))
+                    or "Hey, you don't\nhave enough ¥!", done, { money = showMoney }))
                 return
               end
               game.save.money = game.save.money - fee
@@ -1173,7 +1179,24 @@ M.DAYCARE = {
               local PartyMenu = require("src.ui.PartyMenu")
               game.stack:push(PartyMenu.new(game, {
                 pickOnly = true,
+                -- scripts/Daycare.asm:37
+                onCancel = function()
+                  game.stack:push(TextBox.new(game,
+                    t._DaycareGentlemanAllRightThenText, done))
+                end,
                 onSwitch = function(mon)
+                  -- scripts/Daycare.asm:39
+                  local hm = {}
+                  for _, id in ipairs(game.data.constants.hmMoves or {}) do
+                    hm[id] = true
+                  end
+                  for _, mv in ipairs(mon.moves or {}) do
+                    if hm[mv.id] then
+                      game.stack:push(TextBox.new(game,
+                        t._DaycareGentlemanCantAcceptMonWithHMText, done))
+                      return
+                    end
+                  end
                   for i, m in ipairs(game.save.party) do
                     if m == mon then table.remove(game.save.party, i) break end
                   end

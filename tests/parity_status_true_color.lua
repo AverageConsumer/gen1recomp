@@ -71,13 +71,13 @@ check(screen.spriteTrueColor == true,
 local pw, ph = screen.sprite:getDimensions()
 local py = math.max(0, 56 - ph)
 
--- LoadFlippedFrontSpriteByMonIndex: the draw is a negative x scale anchored
--- at 8 + pw, so the covered rect still starts at x = 8
+-- home/pics.asm:68-76
+local px = 8 + math.max(0, 56 - math.floor((8 - pw / 8) / 2) * 8 - pw)
 local page1 = uiRects(function() screen:draw() end)
 eq(#page1, 1, "page 1 reports one true-color rect")
 if page1[1] then
   eq(("%d,%d,%d,%d"):format(page1[1].x, page1[1].y, page1[1].w, page1[1].h),
-     ("%d,%d,%d,%d"):format(8, py, pw, ph),
+     ("%d,%d,%d,%d"):format(px, py, pw, ph),
      "and it is the mirrored draw's rect, not the unflipped one")
   check(page1[1].colors == false,
         "and it is an unshaded zone, not a palette")

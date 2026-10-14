@@ -7,7 +7,7 @@
 -- random byte).  hpBelow means "only when HP < max/N".  onStatus means
 -- "always, but only when the active mon has a status condition".
 
-return {
+local classes = {
   OPP_JUGGLER      = { uses = 3, chance = 64,  switch = true },
   OPP_BLACKBELT    = { uses = 2, chance = 32,  item = "X_ATTACK" },
   OPP_GIOVANNI     = { uses = 1, chance = 64,  item = "GUARD_SPEC" },
@@ -31,3 +31,14 @@ return {
                        item = "SUPER_POTION", hpBelow = 4 },
   OPP_LANCE        = { uses = 1, chance = 128, item = "HYPER_POTION", hpBelow = 5 },
 }
+
+if require("src.core.GameVersion").isYellow() then
+  -- pokeyellow engine/battle/trainer_ai.asm:391
+  classes.OPP_KOGA = { uses = 2, chance = 32, item = "X_ATTACK" }
+  -- pokeyellow engine/battle/trainer_ai.asm:396
+  classes.OPP_BLAINE = { uses = 2, chance = 64, item = "SUPER_POTION", hpBelow = 10 }
+  -- pokeyellow engine/battle/trainer_ai.asm:404
+  classes.OPP_SABRINA = { uses = 1, chance = 64, item = "X_DEFEND" }
+end
+
+return classes

@@ -25,7 +25,8 @@ local PALETTES = {
   },
   -- Pokemon Tower / Agatha, then the caves
   byTileset = { CEMETERY = "GRAYMON", CAVERN = "CAVE" },
-  byPrefix = { { prefix = "ROUTE_", palette = "ROUTE" } },
+  -- engine/gfx/palettes.asm:147-149
+  byPrefix = { { pattern = "^ROUTE_%d+$", palette = "ROUTE" } },
   default = "ROUTE",
 }
 

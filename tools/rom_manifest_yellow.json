@@ -4670,6 +4670,10 @@
             {
               "column": 3,
               "text": "YELLOW VERSION"
+            },
+            {
+              "column": 3,
+              "text": "    STAFF"
             }
           ],
           "mon": "VENUSAUR"
@@ -4924,6 +4928,10 @@
             {
               "column": 5,
               "text": "SHOGAKUKAN"
+            },
+            {
+              "column": 5,
+              "text": "PRODUCTION"
             }
           ],
           "mon": "OMASTAR"
@@ -4932,8 +4940,8 @@
           "fade": true,
           "lines": [
             {
-              "column": 6,
-              "text": "××××××××"
+              "column": 3,
+              "text": "PIKACHU VOICE"
             },
             {
               "column": 4,
@@ -5156,7 +5164,30 @@
           "lines": [],
           "mon": "GENGAR"
         }
-      ]
+      ],
+      "theEnd": {
+        "display": "T H E  E N D",
+        "height": 16,
+        "letterHeight": 16,
+        "letterWidth": 8,
+        "letters": "THEND",
+        "path": "assets/generated/credits/the_end.png",
+        "pattern": [
+          0,
+          -1,
+          1,
+          -1,
+          2,
+          -1,
+          -1,
+          2,
+          -1,
+          3,
+          -1,
+          4
+        ],
+        "width": 40
+      }
     },
     "cutTreeSwaps": [
       {
@@ -5618,27 +5649,6 @@
             "y": 4
           }
         ],
-        "SAFARI_ZONE_EAST_REST_HOUSE": [
-          {
-            "facing": "left",
-            "x": 0,
-            "y": 4
-          }
-        ],
-        "SAFARI_ZONE_NORTH_REST_HOUSE": [
-          {
-            "facing": "left",
-            "x": 0,
-            "y": 4
-          }
-        ],
-        "SAFARI_ZONE_WEST_REST_HOUSE": [
-          {
-            "facing": "left",
-            "x": 0,
-            "y": 4
-          }
-        ],
         "SAFFRON_POKECENTER": [
           {
             "facing": "up",
@@ -5756,13 +5766,6 @@
         ]
       },
       "pcTiles": {
-        "CELADON_HOTEL": [
-          {
-            "facing": "up",
-            "x": 13,
-            "y": 3
-          }
-        ],
         "CELADON_MANSION_2F": [
           {
             "facing": "up",
@@ -5846,27 +5849,6 @@
           }
         ],
         "ROCK_TUNNEL_POKECENTER": [
-          {
-            "facing": "up",
-            "x": 13,
-            "y": 3
-          }
-        ],
-        "SAFARI_ZONE_EAST_REST_HOUSE": [
-          {
-            "facing": "up",
-            "x": 13,
-            "y": 3
-          }
-        ],
-        "SAFARI_ZONE_NORTH_REST_HOUSE": [
-          {
-            "facing": "up",
-            "x": 13,
-            "y": 3
-          }
-        ],
-        "SAFARI_ZONE_WEST_REST_HOUSE": [
           {
             "facing": "up",
             "x": 13,
@@ -6105,16 +6087,23 @@
       ],
       "CERULEAN_CAVE_1F": [
         {
-          "item": "RARE_CANDY",
-          "x": 14,
-          "y": 11
+          "item": "PP_UP",
+          "x": 18,
+          "y": 7
+        }
+      ],
+      "CERULEAN_CAVE_2F": [
+        {
+          "item": "PP_UP",
+          "x": 16,
+          "y": 13
         }
       ],
       "CERULEAN_CAVE_B1F": [
         {
-          "item": "ULTRA_BALL",
-          "x": 27,
-          "y": 3
+          "item": "PP_UP",
+          "x": 8,
+          "y": 14
         }
       ],
       "CERULEAN_CITY": [
@@ -9943,22 +9932,22 @@
           "y": 9
         },
         "POKEMON_MANSION_1F": {
-          "name": "POKéMON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
         "POKEMON_MANSION_2F": {
-          "name": "POKéMON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
         "POKEMON_MANSION_3F": {
-          "name": "POKéMON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
         "POKEMON_MANSION_B1F": {
-          "name": "POKéMON MANSION",
+          "name": "<PK><MN> MANSION",
           "x": 2,
           "y": 15
         },
@@ -23013,6 +23002,10 @@
       10,
       16778
     ],
+    "PTile": [
+      4,
+      22146
+    ],
     "PalletTownFisherText": [
       6,
       20497
@@ -26252,6 +26245,10 @@
     "SpearowPicFront": [
       9,
       18497
+    ],
+    "SpecialTrainerMoves": [
+      14,
+      23659
     ],
     "SpinnerArrowAnimTiles": [
       17,

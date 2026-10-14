@@ -58,10 +58,10 @@ for _, y in ipairs({ 2, 3 }) do
   local iJump, jumpRow = find(rows, "jump_if_false")
   check(iJump ~= nil and type(jumpRow[2]) == "string",
         ("(3,%d): the loss branch jumps to a label, not a row number"):format(y))
-  local iLabel = find(rows, "label", jumpRow and jumpRow[2])
   local iHide = find(rows, "hide_object")
-  check(iLabel and iHide and iHide == iLabel + 1,
-        ("(3,%d): the loss label sits right before hide_object"):format(y))
+  -- scripts/SilphCo7F.asm:209
+  eq(jumpRow and jumpRow[2], "end",
+     ("(3,%d): a lost battle halts with the rival still shown"):format(y))
 
   local iWalk, walkRow = find(rows, "walk_npc")
   check(iWalk ~= nil and find(rows, "move_npc_to", 9) ~= nil,

@@ -88,7 +88,6 @@ local PIKA_X = 68              -- Fixed screen X while riding (center 80, 24px p
 local TOTAL_SECTIONS = 24      -- wSurfingMinigameDistance byte 0 reaches $18 (24)
 local SECTION_ACC_MAX = 65536  -- 16-bit distance acc overflow (256px per section in 8.8 fixed)
 local SECTION_PX = 256         -- pixels advanced per section (65536 >> 8)
-local BG_HEIGHT = 128          -- Rows the BG shows; HP window covers the rest (y=128..144)
 local COAST_SPEED_FIXED = 9 * 256       -- SurfingMinigame_CoastAfterGoal: 9.0 px/frame
 local BG_SCROLL_STEP = 384                -- ScrollAndGenerateBGMap: 1.5 px/frame (8.8 fixed)
 local RDIV_PER_FRAME = 17                 -- rDIV @ 16384 Hz ≈ 273 ticks per 59.7275 Hz frame (mod 256)
@@ -1531,24 +1530,25 @@ end
 
 -- Draw HUD status bar with inverted progress marker (moving right-to-left towards beach)
 function SurfingMinigame:drawHUD()
-  -- White background in bottom 16 rows
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.rectangle("fill", 0, BG_HEIGHT, 160, 16)
+  -- engine/minigame/surfing_pikachu.asm:247
+  local wy = 126
+  love.graphics.rectangle("fill", 0, wy, 160, 144 - wy)
 
   -- Window tilemap (SurfingPikachuMinigame_DrawStaticTilemapLayout):
   -- row 0 cols 1-2: $15,$16 island; row 1 cols 1-9: $17,$18,$19×7;
   -- row 1 cols 12-13: $1b,$1c "HP:"; digits are OAM sprites at X=$80.
   if self.bg and self.tq then
-    love.graphics.draw(self.bg, self.tq[0x15], 8, BG_HEIGHT)
-    love.graphics.draw(self.bg, self.tq[0x16], 16, BG_HEIGHT)
+    love.graphics.draw(self.bg, self.tq[0x15], 8, wy)
+    love.graphics.draw(self.bg, self.tq[0x16], 16, wy)
 
-    love.graphics.draw(self.bg, self.tq[0x17], 8, BG_HEIGHT + 8)
-    love.graphics.draw(self.bg, self.tq[0x18], 16, BG_HEIGHT + 8)
+    love.graphics.draw(self.bg, self.tq[0x17], 8, wy + 8)
+    love.graphics.draw(self.bg, self.tq[0x18], 16, wy + 8)
     for i = 1, 7 do
-      love.graphics.draw(self.bg, self.tq[0x19], 16 + i * 8, BG_HEIGHT + 8)
+      love.graphics.draw(self.bg, self.tq[0x19], 16 + i * 8, wy + 8)
     end
-    love.graphics.draw(self.bg, self.tq[0x1b], 96, BG_HEIGHT + 8)
-    love.graphics.draw(self.bg, self.tq[0x1c], 104, BG_HEIGHT + 8)
+    love.graphics.draw(self.bg, self.tq[0x1b], 96, wy + 8)
+    love.graphics.draw(self.bg, self.tq[0x1c], 104, wy + 8)
   end
 
   -- Mini-Pikachu progress marker (tile $fe)
@@ -1556,17 +1556,17 @@ function SurfingMinigame:drawHUD()
   local markerStartX = 72   -- OAM X $50 (80) minus 8-pixel OAM offset
   local markerX = markerStartX - (self.distanceSection or 0) * 2
   if self.ob and self.oq and self.oq[0xfe] then
-    love.graphics.draw(self.ob, self.oq[0xfe], markerX, BG_HEIGHT + 6)
+    love.graphics.draw(self.ob, self.oq[0xfe], markerX, 134)
   end
 
-  -- 4 HP countdown digits (OAM X $80..$98)
+  -- engine/minigame/surfing_pikachu.asm:294
   local s = string.format("%04d", math.max(0, math.floor(self.hp)))
   for i = 1, 4 do
     local d = tonumber(s:sub(i, i)) or 0
     if self.ob and self.oq and self.oq[0xd0 + d] then
-      love.graphics.draw(self.ob, self.oq[0xd0 + d], 128 + (i - 1) * 8, BG_HEIGHT + 8)
+      love.graphics.draw(self.ob, self.oq[0xd0 + d], 120 + (i - 1) * 8, 135)
     else
-      Font.draw(tostring(d), 128 + (i - 1) * 8, BG_HEIGHT + 8)
+      Font.draw(tostring(d), 120 + (i - 1) * 8, 135)
     end
   end
 end

@@ -303,13 +303,10 @@ T.eq(Timing.SHAKE_HORIZ_SLOW, 48, "type 3 slow horizontal, lb bc, 6, 2")
 T.eq(Timing.SHAKE_HORIZ_LIGHT, 18, "type 5 fast horizontal b=2")
 T.eq(Timing.SHAKE_HORIZ_SLOW2, 24, "type 6 slow horizontal, lb bc, 3, 2")
 
--- Type 4 is the player's plain damaging move -- the most-seen animation in
--- the game.  AnimationBlinkMon is `ld c, 6` of hide/DelayFrames 5/show/
--- DelayFrames 5 (animations.asm:1360-1376): 60 frames, not the 20 the port
--- used to run.
-T.eq(Timing.BLINK_MON, 60, "AnimationBlinkMon is 6 x (5 hidden + 5 shown)")
-T.eq(Timing.BLINK_MON % 10, 0,
-  "and divides into whole 10-frame blinks, matching fxHidden's period")
+-- engine/battle/animations.asm:1360
+T.eq(Timing.BLINK_MON, 78, "AnimationBlinkMon is 6 x (5 hidden + 8 shown)")
+T.eq(Timing.BLINK_MON % 13, 0,
+  "and divides into whole 13-frame blinks, matching fxHidden's period")
 
 -- SlideDownFaintedMonPic: b = PIC_HEIGHT slide steps of DelayFrames 2
 T.eq(Timing.FAINT_SLIDE, 14, "the faint slide is 7 steps x 2 frames")
@@ -384,6 +381,13 @@ do
   T.eq(b.waitFrames, Timing.BLINK_MON,
     "the enemy blink still runs with animations off (#1384)")
   T.check(b.fx and b.fx.blink ~= nil, "and it targets the enemy pic")
+  local pattern = {}
+  for _ = 1, 13 do
+    pattern[#pattern + 1] = b:fxHidden(b.enemy) and "h" or "s"
+    b.fx.blink.frames = b.fx.blink.frames - 1
+  end
+  T.eq(table.concat(pattern), "hhhhhssssssss",
+    "each blink is 5 frames hidden then 8 shown")
 end
 
 -- animations.asm:415-419

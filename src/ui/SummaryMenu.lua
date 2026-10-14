@@ -155,16 +155,19 @@ function SummaryMenu:draw()
   if self.sprite then
     local pw, ph = self.sprite:getDimensions()
     local py = math.max(0, 56 - ph)
-    love.graphics.draw(self.sprite, 8 + pw, py, 0, -1, 1)
+    -- home/pics.asm:68-76
+    local px = 8 + math.max(0, 56 - math.floor((8 - pw / 8) / 2) * 8 - pw)
+    love.graphics.draw(self.sprite, px + pw, py, 0, -1, 1)
     -- a full-color pic has to sit out the SGB monPal recolor, so mark the
     -- rect the mirrored draw covers for the unshaded pass (#430)
     if self.spriteTrueColor then
-      require("src.render.PaletteFX").markTrueColor(8, py, pw, ph)
+      require("src.render.PaletteFX").markTrueColor(px, py, pw, ph)
     end
   end
   local HudTiles = require("src.render.HudTiles")
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(mon.nickname or def.name, 72, 8)
+  -- engine/pokemon/status_screen.asm:414-420
+  Font.draw(self.page == 2 and def.name or (mon.nickname or def.name), 72, 8)
   -- status_screen.asm:109-113 backs hl up from DrawLineBox's end to write
   -- the single-tile '№' at (1,7) and '<DOT>' at (2,7); :143-146 then
   -- PrintNumbers the dex number (LEADING_ZEROES, 3 digits) at (3,7).
@@ -251,12 +254,15 @@ function SummaryMenu:draw()
       if mv then
         local mdef = data.moves[mv.id]
         Font.draw(mdef.name, 16, y)
-        Font.draw(Strings("PP"), 88, y + 8)
-        local maxPP = mdef.pp + (mv.ppUps or 0) * math.floor(mdef.pp / 5)
+        -- engine/pokemon/status_screen.asm:321-324
+        HudTiles.statusTile(0x72, 88, y + 8)
+        HudTiles.statusTile(0x72, 96, y + 8)
+        local maxPP = require("src.pokemon.Pokemon").maxPP(mdef.pp, mv.ppUps)
         Font.draw(("%2d/%2d"):format(mv.pp, maxPP), 112, y + 8)
       else
         Font.draw("-", 16, y)
-        Font.draw("--", 112, y + 8)
+        -- engine/pokemon/status_screen.asm:325-330
+        Font.draw("--", 88, y + 8)
       end
     end
   end

@@ -244,6 +244,8 @@ local imagePadBottom = setmetatable({}, WEAK_KEYS)
 -- this is subtracted from hlcoord 1,5 so opaque pixels match hardware,
 -- where those columns were white-on-white rather than shifted content
 local imagePadLeft = setmetatable({}, WEAK_KEYS)
+local imageBackCrop = setmetatable({}, WEAK_KEYS)
+local BACK_PIC_SIZE, BACK_PIC_CROP = 32, 28
 -- image -> { path, pal } so palette-fade variants (see fadeImage) can be
 -- rebuilt for any battle pic, whatever code loaded it
 local imageMeta = setmetatable({}, WEAK_KEYS)
@@ -272,7 +274,7 @@ local function getImage(path, pal, trueColor)
   end
   local key = pal and (path .. "#" .. pal.name) or path
   if not imageCache[key] then
-    local img, pad, padL = nil, 0, 0
+    local img, pad, padL, backCrop = nil, 0, 0, false
     if love.image and love.image.newImageData then
       local id = Assets.imageData(path)
       if pal then
@@ -308,6 +310,10 @@ local function getImage(path, pal, trueColor)
         end
         pad = h - 1 - bottom
         padL = left
+        -- engine/battle/scale_sprites.asm:1-3
+        if w == BACK_PIC_SIZE and h == BACK_PIC_SIZE and path:find("/battle/back/", 1, true) then
+          pad, padL, backCrop = BACK_PIC_SIZE - BACK_PIC_CROP, 0, true
+        end
       end
       img = love.graphics.newImage(id)
     else
@@ -316,6 +322,7 @@ local function getImage(path, pal, trueColor)
     imageCache[key] = img
     imagePadBottom[img] = pad
     imagePadLeft[img] = padL
+    imageBackCrop[img] = backCrop or nil
     imageMeta[img] = { path = path, pal = pal, trueColor = trueColor or nil }
   end
   return imageCache[key]
@@ -524,7 +531,9 @@ function BattleState:picImage(img)
   -- set mirrors PaletteFX.ensureZones / effectiveColors -- keep them in sync.
   local mono = PaletteFX.mode == "og" or PaletteFX.mode == "og_inv"
                or PaletteFX.mode == "classic" or PaletteFX.forcesRawGrays()
-  if self.grayPics or mono then return grayImage(img) end
+  if self.grayPics then return grayImage(img) end
+  -- engine/battle/animations.asm:1097
+  if mono then return fadeImage(grayImage(img), self:activeBgp()) end
   -- SET_PAL_BATTLE_BLACK covers every battle palette slot, so the pics go
   -- dark with the HP bars while the blackout text is up (#292).  The intro
   -- silhouette slide (SlidePlayerAndEnemySilhouettesOnScreen) darkens the
@@ -903,6 +912,24 @@ local function setThirdMove(data, mon, moveId)
 end
 
 local function applySpecialMoves(data, oppClass, partyIndex, party)
+  -- pokeyellow engine/battle/read_trainer_party.asm:87
+  if require("src.core.GameVersion").isYellow() then
+    local trainer = data.trainers and data.trainers[oppClass]
+    for _, entry in ipairs(trainer and trainer.specialMoves or {}) do
+      if entry.party == partyIndex then
+        for _, row in ipairs(entry.moves) do
+          local mon = party[row.mon]
+          if mon then
+            local mdef = data.moves[row.move]
+            mon.moves[math.min(row.slot, #mon.moves + 1)] =
+              { id = row.move, pp = mdef and mdef.pp or 0 }
+          end
+        end
+        return
+      end
+    end
+    return
+  end
   local lone = LONE_MOVES[oppClass]
   if lone and (not lone.onlyParty or lone.onlyParty == partyIndex) then
     setThirdMove(data, party[lone[1]], lone[2])
@@ -1827,9 +1854,6 @@ end
 -- asleep (IsPlayerPikachuAsleepInParty); PrintBeginningBattleText does the
 -- same for the BATTLE_TYPE_PIKACHU intro (engine/battle/common_text.asm:
 -- 12-19).  Without a clip the bare playCry reached for clip 1, the long
--- title-screen "Pikachuuu" (#837).  Every PIKACHU gets it here, the same
--- starter approximation the rest of the port makes
--- (PikachuFollower.starterInParty).
 function BattleState:playEntranceCry(battler)
   local mon = battler and battler.mon
   if not mon then return end
@@ -1939,10 +1963,6 @@ function BattleState:enter()
     -- _PlayerBlackedOutText2 (data/text/text_2.asm:896): the two paragraphs
     -- playerMonFainted queues on the battle screen; there is no battle
     -- screen to queue them on here, so they print over the map.
-    -- _PlayerBlackedOutText (no "2") extracts to the identical wording from
-    -- a different ROM address and is unused anywhere in this engine -- not
-    -- a fallback for this one, just pokered printing the same paragraph
-    -- from a second call site elsewhere.
     self.game.stack:push(require("src.render.TextBox").new(self.game,
       self:romText("_PlayerBlackedOutText2",
         "%s is out of\nuseable POKéMON!\f%s blacked\nout!", name, name),
@@ -2295,24 +2315,21 @@ function BattleState:chooseMenu(choice)
     return nil, "battle menu is not ready"
   end
   self:clearTurnFlinches()
-  if choice == "fight" and self.ghost then
-    self:say(Strings("%s is too\nscared to move!", self.player.name))
-    self.phase = "messages"
-    self.afterQueue = "menu"
-    self:act(function()
-      self:executeAction(self.enemy, self.player, self:enemyAction())
-    end)
-    -- A scared turn still ticks the player's residual effects.
-    self:queueResidual(self.player, self.enemy)
-    self:act(function() self:endOfTurn() end)
-  elseif choice == "fight" then
+  if choice == "fight" then
     -- Trapping, Bide, and similar locks skip the move list.
     local fightLock = self:fightLockedAction(self.player)
+    local status = self.player.mon.status
     if fightLock then
       self:resolveTurn(fightLock)
+    -- engine/battle/core.asm:310
+    elseif status == "SLP" or status == "FRZ" then
+      local moves = self.player.curMoves
+      self:resolveTurn(moves[self.playerMoveListIndex or 1] or moves[1])
     elseif not self:playerHasPP() then
       -- No usable PP goes straight to Struggle.
-      self:say(Strings("%s has no\nmoves left!", self.player.name))
+      -- engine/battle/core.asm:2751-2754
+      self:sayAuto(self:romText("_NoMovesLeftText", "%s has no\nmoves left!",
+        self.player.name), 60)
       self:resolveTurn({ id = "STRUGGLE", pp = 1, struggle = true })
     else
       self.phase = "moveSelect"
@@ -2339,11 +2356,12 @@ function BattleState:chooseMove(index)
   if self.player.disabledSlot == index then
     self:say(self:romText("_MoveDisabledText", "The move is\ndisabled!"))
     self.phase = "messages"
-    self.afterQueue = "menu"
+    -- engine/battle/core.asm:2679
+    self.afterQueue = "moveSelect"
   elseif move.pp <= 0 then
     self:say(self:romText("_MoveNoPPText", "No PP left for\nthis move!"))
     self.phase = "messages"
-    self.afterQueue = "menu"
+    self.afterQueue = "moveSelect"
   else
     self.playerMoveListIndex = index
     self:resolveTurn(move)
@@ -2493,6 +2511,10 @@ function BattleState:update(dt)
         self.msgHold = nil
         self.shown = nil
         self:enterCommandMenu()
+      elseif destination == "moveSelect" then
+        self.msgHold = nil
+        self.shown = nil
+        self.phase = "moveSelect"
       elseif destination == "finish" then
         self:finish()
       end
@@ -2514,7 +2536,9 @@ function BattleState:update(dt)
 
   if self.phase == "menu" and self.safari then
     if self.safari.balls <= 0 then
-      self:say(Strings("PA: You're out of\nSAFARI BALLs!\nGame over!"))
+      -- engine/battle/core.asm:174-179
+      self:say(romText(self.data, "_OutOfSafariBallsText",
+        "PA: Ding-dong!\fYou are out of\nSAFARI BALLs!"))
       self.phase = "messages"
       self.result = "run"
       self.afterQueue = "finish"
@@ -3397,7 +3421,6 @@ end
 -- charge hide is a cleared tilemap that must survive until SE_SHOW_* /
 -- SE_SLIDE_MON_UP (or cancelMoveAnim on a missed Dig/Fly release):
 -- clearing it here made Dig pop in before emerge and wrap/bounce (#100).
--- Other hides (Acid Armor, etc.) still clear so the next anim restores.
 function BattleState:resetPicFx()
   if not self.picFx then return end
   local digFly = self.animName == "DIG" or self.animName == "FLY"
@@ -3407,6 +3430,7 @@ function BattleState:resetPicFx()
     pf.kind, pf.t = nil, nil
     pf.ox, pf.oy = 0, 0
     local keepHide = battler.invulnerable or battler == digFlyUser
+      or pf.persistHide
     if not keepHide then
       pf.hidden = nil
     end
@@ -3449,18 +3473,15 @@ end
 local function startPicKind(pf, kind)
   if not pf then return end
   pf.kind, pf.t = kind, 0
-  pf.hidden = nil
+  pf.hidden, pf.persistHide = nil, nil
 end
 
--- PredefShakeScreenHorizontally (engine/gfx/screen_effects.asm): the window
--- jumps right by b for 5 frames then home for 4, b counting down to 1.
--- b = 8 for SE_SHAKE_SCREEN and the heavy applying-attack shake, b = 2 for
--- the light one.
+-- engine/gfx/screen_effects.asm:40
 local function fastShakeProg(b)
-  local prog = {}
-  for i = b, 1, -1 do
-    prog[#prog + 1] = { dx = i, frames = 5 }
-    prog[#prog + 1] = { dx = 0, frames = 4 }
+  local prog = { { dx = b, frames = 5 }, { dx = 0, frames = 4 } }
+  for i = b - 1, 1, -1 do
+    prog[#prog + 1] = { dx = 0, frames = 5 }
+    prog[#prog + 1] = { dx = i, frames = 4 }
   end
   return prog
 end
@@ -3528,10 +3549,8 @@ function BattleState:applyAnimEffect(ev)
     fx.shakeProg = { { dx = 1, frames = 5 }, { dx = 0, frames = 4 },
                      { dy = 1, frames = 3 }, { dy = 0, frames = 3 } }
   elseif e == "SE_SHAKE_ENEMY_HUD" then
-    -- AnimationShakeEnemyHUD: SCX +-2 for 2 frames each, 8 times; the
-    -- window + a sprite copy of the back pic keep everything below the
-    -- enemy HUD still, so only the HUD area moves
-    local prog = {}
+    -- engine/battle/animations.asm:2472
+    local prog = { { dx = 0, frames = 20 } }
     for _ = 1, 8 do
       prog[#prog + 1] = { dx = 2, frames = 2 }
       prog[#prog + 1] = { dx = -2, frames = 2 }
@@ -3554,7 +3573,10 @@ function BattleState:applyAnimEffect(ev)
   elseif e == "SE_SLIDE_MON_DOWN" then
     startPicKind(self:picFxFor(self:animFxBattler(false)), "slideDown")
   elseif e == "SE_SLIDE_MON_DOWN_AND_HIDE" then
-    startPicKind(self:picFxFor(self:animFxBattler(false)), "slideDownHide")
+    local pf = self:picFxFor(self:animFxBattler(false))
+    startPicKind(pf, "slideDownHide")
+    -- engine/battle/animations.asm:1757-1777
+    if pf then pf.persistHide = true end
   elseif e == "SE_SHAKE_BACK_AND_FORTH" then
     startPicKind(self:picFxFor(self:animFxBattler(false)), "shakeBF")
   elseif e == "SE_BOUNCE_UP_AND_DOWN" then
@@ -3571,7 +3593,7 @@ function BattleState:applyAnimEffect(ev)
     local b = self:animFxBattler(false)
     local pf = self:picFxFor(b)
     if pf then
-      pf.kind, pf.hidden = nil, nil
+      pf.kind, pf.hidden, pf.persistHide = nil, nil, nil
       pf.ox = b.isPlayer and 8 or -8
       pf.oy = 0
     end
@@ -3582,10 +3604,10 @@ function BattleState:applyAnimEffect(ev)
     end
   elseif e == "SE_SHOW_MON_PIC" then
     local pf = self:picFxFor(self:animFxBattler(false))
-    if pf then pf.kind, pf.hidden, pf.ox, pf.oy = nil, nil, 0, 0 end
+    if pf then pf.kind, pf.hidden, pf.persistHide, pf.ox, pf.oy = nil, nil, nil, 0, 0 end
   elseif e == "SE_SHOW_ENEMY_MON_PIC" then
     local pf = self:picFxFor(self:animFxBattler(true))
-    if pf then pf.kind, pf.hidden, pf.ox, pf.oy = nil, nil, 0, 0 end
+    if pf then pf.kind, pf.hidden, pf.persistHide, pf.ox, pf.oy = nil, nil, nil, 0, 0 end
   elseif e == "SE_HIDE_MON_PIC" or e == "SE_HIDE_ATTACKER_PIC" then
     local pf = self:picFxFor(self:animFxBattler(false))
     if pf then pf.kind, pf.hidden = nil, true end
@@ -3602,7 +3624,7 @@ function BattleState:applyAnimEffect(ev)
   elseif e == "SE_FLASH_MON_PIC" or e == "SE_FLASH_ENEMY_MON_PIC" then
     -- ChangeMonPic reloads the mon's own pic (clears a minimize)
     local pf = self:picFxFor(self:animFxBattler(e == "SE_FLASH_ENEMY_MON_PIC"))
-    if pf then pf.kind, pf.hidden, pf.minimized = nil, nil, nil end
+    if pf then pf.kind, pf.hidden, pf.minimized, pf.persistHide = nil, nil, nil, nil end
   elseif e == "SE_TRANSFORM_MON" then
     -- AnimationTransformMon redraws the user as the opposing species
     local user = self:animFxBattler(false)
@@ -3998,7 +4020,7 @@ function BattleState:updateFx()
           pf.kind = nil -- AnimationShowMonPic after the last bounce
         elseif k == "squish" and t >= 24 then
           pf.kind, pf.hidden = nil, true
-        elseif k == "blink" and t >= 60 then
+        elseif k == "blink" and t >= 78 then
           pf.kind = nil -- ends shown
         end
       end
@@ -4120,6 +4142,12 @@ function BattleState:executeAction(user, target, action)
     -- GetOutText (ExecuteEnemyMove -> PrintGhostText, core.asm:5462-5463)
     if self.ghost and not user.isPlayer then
       self:sayNext(self.data.text._GetOutText or Strings("GHOST: Get out...\nGet out..."))
+      return
+    end
+    -- engine/battle/core.asm:3089
+    if self.ghost and user.isPlayer and action.special ~= "bound"
+       and user.mon.status ~= "SLP" and user.mon.status ~= "FRZ" then
+      self:sayNext(self:romText("_ScaredText", "%s is too\nscared to move!", displayName(user)))
       return
     end
 
@@ -4563,7 +4591,9 @@ function BattleState:performMove(user, target, moveInst, isCalled)
     -- 100%-accuracy early-out (even Thunder Wave misses on the 255
     -- roll) and misses outright against a mid-Fly/Dig target; the
     -- never-miss paths (X ACCURACY) live inside Damage.accuracyRoll
-    if record.accuracyChecked
+    -- engine/battle/effects.asm:44
+    local alreadyAsleep = move.effect == "SLEEP_EFFECT" and target.mon.status == "SLP"
+    if record.accuracyChecked and not alreadyAsleep
        and (target.invulnerable
             or not self:accuracyRoll(move, user, target)) then
       -- SleepEffect/PoisonEffect/... call PlayCurrentMoveAnimation only
@@ -4580,10 +4610,30 @@ function BattleState:performMove(user, target, moveInst, isCalled)
     elseif SLOW_SHAKE_EFFECTS[move.effect] and self.moveAnimRow then
       self.moveAnimRow.hit = { animType = user.isPlayer and 6 or 3 }
     end
-    for _, m in ipairs(msgs) do
-      self:sayNext(m)
+    local first = 1
+    -- engine/battle/move_effects/heal.asm:42
+    if msgs.restLead and self.moveAnimRow then
+      local row = self.moveAnimRow
+      for i, item in ipairs(self.queue) do
+        if item == row then
+          table.remove(self.queue, i)
+          if self.nextInsert and i <= self.nextInsert then
+            self.nextInsert = self.nextInsert - 1
+          end
+          break
+        end
+      end
+      self:sayNext(msgs[1])
+      self.nextInsert = (self.nextInsert or 0) + 1
+      table.insert(self.queue, self.nextInsert, row)
+      first = 2
     end
-    self:drainNext() -- REST/RECOVER/SOFTBOILED move the user's bar
+    -- engine/battle/move_effects/heal.asm:99
+    if msgs.hpBarFirst then self:drainNext() end
+    for i = first, #msgs do
+      self:sayNext(msgs[i])
+    end
+    if not msgs.hpBarFirst then self:drainNext() end
     return
   end
   if move.power == 0 and not (record and record.kind == "full") then
@@ -4598,7 +4648,8 @@ function BattleState:performMove(user, target, moveInst, isCalled)
 end
 
 function BattleState:continueTrapping(user, target)
-  self:sayNext(self:romText("_AttackContinuesText", "%s's\nattack continues!", displayName(user)))
+  -- engine/battle/core.asm:3642
+  self:sayNextAuto(self:romText("_AttackContinuesText", "%s's\nattack continues!", displayName(user)))
   -- .MultiturnMoveCheck (core.asm:3554-3566) prints AttackContinuesText
   -- then jumps to GetPlayerAnimationType, so the trapping move's full
   -- animation replays each locked turn (same damage, animation shown).
@@ -4629,9 +4680,10 @@ function BattleState:continueBide(user, target)
   self:sayNext(self:romText("_UnleashedEnergyText", "%s\nunleashed energy!", displayName(user)))
   local dmg = (user.bideDamage or 0) * 2
   user.bideTurns, user.bideDamage = nil, nil
+  -- engine/battle/core.asm:3521
   if dmg <= 0 then
     self:cancelMoveAnim()
-    self:sayNext(self:romText("_ButItFailedText", "But, it failed!"))
+    self:sayNext(self:romText("_AttackMissedText", "%s's\nattack missed!", displayName(user)))
     return
   end
   -- .UnleashEnergy (core.asm:3501-3529) re-points wPlayerMoveNum at BIDE
@@ -4654,11 +4706,12 @@ function BattleState:applyDamage(target, dmg)
   if target.substituteHP then
     target.substitutePending = nil
     target.substituteHP = target.substituteHP - dmg
+    -- engine/battle/core.asm:4857
+    self:sayNext(self:romText("_SubstituteTookDamageText", "The SUBSTITUTE\ntook damage for\n%s!", displayName(target)))
     if target.substituteHP <= 0 then
       target.substituteHP = nil
+      -- engine/battle/core.asm:4884
       self:sayNext(self:romText("_SubstituteBrokeText", "%s's\nSUBSTITUTE broke!", displayName(target)))
-    else
-      self:sayNext(self:romText("_SubstituteTookDamageText", "The SUBSTITUTE\ntook damage for\n%s!", displayName(target)))
     end
     return dmg
   end
@@ -5148,7 +5201,8 @@ function BattleState:learnMove(mon, moveId)
     require("src.world.PikachuFollower")
       .onMoveLearned(self.game.save, mon, moveId)
     Runtime.emit("pokemon.move_learned", { mon = mon, moveId = moveId })
-    self:sayNextWaitSfx(self:romText("_MimicLearnedMoveText", "%s learned\n%s!", mon.nickname or self.data.pokemon[mon.species].name,
+    -- engine/pokemon/learn_move.asm:93
+    self:sayNextWaitSfx(self:romText("_LearnedMove1Text", "%s learned\n%s!", mon.nickname or self.data.pokemon[mon.species].name,
                                             mdef.name), function()
       return require("src.core.Sound").play(self.data, "Level_Up")
     end)
@@ -5363,16 +5417,21 @@ function BattleState:safariAction(choice)
   end
 
   if choice == "bait" then
-    self:say(self:romText("_ThrewBaitText", "%s threw some\nBAIT.", playerName))
+    -- engine/items/item_effects.asm:1434
+    self:sayAuto(self:romText("_ThrewBaitText", "%s threw some\nBAIT.", playerName))
     self.safariCatchRate = math.floor(self.safariCatchRate / 2)
     self.baitFactor = math.min(255, self.baitFactor + self.rng(1, 5))
     self.escapeFactor = 0
   else -- rock
-    self:say(self:romText("_ThrewRockText", "%s threw a\nROCK.", playerName))
+    self:sayAuto(self:romText("_ThrewRockText", "%s threw a\nROCK.", playerName))
     self.safariCatchRate = math.min(255, self.safariCatchRate * 2)
     self.escapeFactor = math.min(255, self.escapeFactor + self.rng(1, 5))
     self.baitFactor = 0
   end
+  -- engine/items/item_effects.asm:1479
+  table.insert(self.queue, { anim = choice == "bait" and "BAIT_ANIM" or "ROCK_ANIM",
+                             attackerIsPlayer = true })
+  table.insert(self.queue, { wait = 70 })
   self:act(function() self:safariEnemyTurn() end)
 end
 
@@ -5511,6 +5570,9 @@ function BattleState:itemUsed(messages, opts)
         b.shownPx = Timing.hpBarPixels(b.mon.hp, math.max(1, b.mon.stats.hp))
       end
     end
+  end
+  if opts and opts.anim then
+    table.insert(self.queue, { anim = opts.anim, attackerIsPlayer = true })
   end
   for _, m in ipairs(messages or {}) do self:say(m) end
   if not barShown then
@@ -5957,6 +6019,23 @@ function BattleState:finish()
   self:restoreMimicked(self.enemy)
   -- end_of_battle.asm clears wLowHealthAlarm at battle teardown
   require("src.core.Sound").stopLoop("Low_Health_Alarm")
+  if self.result == "lose" and self.kind ~= "link" and not self.demo
+     and not BattleState.isOaksLabStarterRival(self) then
+    local game, onFinish, Music = self.game, self.onFinish, require("src.core.Music")
+    -- home/overworld.asm:759
+    game.stack:push(require("src.render.Transition").new(game, function()
+      Music.restoreMap(self.data)
+      game.stack:pop()
+      Runtime.emit("battle.ended", { battle = self, result = "lose" })
+      game.blackoutFaded = true
+      if onFinish then onFinish("lose") end
+      game.blackoutFaded = nil
+    end, nil, false, { frames = require("src.core.Timing").FADE_OUT_TO_BLACK,
+                       framesIn = 0, hold = 110 }))
+    -- home/overworld.asm:760
+    Music.fadeOut(8)
+    return
+  end
   -- the victory theme already started when the win was decided
   -- (FaintEnemyPokemon .wild_win / TrainerBattleVictory) and loops until
   -- the battle screen closes; leaving battle brings back the map theme,
@@ -6107,12 +6186,11 @@ end
 -- battler hidden this frame? (damage blink)
 --
 -- AnimationBlinkMon hides the pic, waits DelayFrames 5, shows it, waits
--- DelayFrames 5, six times over (animations.asm:1360-1376) -- a 10-frame
--- period, not 8.  With Timing.BLINK_MON that is exactly six blinks.
+-- engine/battle/animations.asm:1360
 function BattleState:fxHidden(battler)
   local fx = self.fx
   if fx and fx.blink and fx.blink.target == battler and fx.blink.frames > 0 then
-    return self.frame % 10 < 5
+    return (Timing.BLINK_MON - fx.blink.frames) % 13 < 5
   end
   return false
 end
@@ -6309,7 +6387,13 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
   local pf = self.picFx and self.picFx[battler]
   if not pf or (not pf.kind and not pf.hidden and not pf.minimized
                 and (pf.ox or 0) == 0 and (pf.oy or 0) == 0) then
-    love.graphics.draw(img, x, y, 0, scale, scale)
+    if battler.isPlayer and imageBackCrop[img] then
+      local quad = self:picQuad(battler, 0, 0, BACK_PIC_CROP, BACK_PIC_CROP,
+                                img:getWidth(), img:getHeight())
+      love.graphics.draw(img, quad, x, y, 0, scale, scale)
+    else
+      love.graphics.draw(img, x, y, 0, scale, scale)
+    end
     return
   end
   if pf.hidden then return end
@@ -6364,7 +6448,7 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
   end
 
   local skipDraw = (k == "squish" and xscale <= 0)
-                    or (k == "blink" and math.floor(t / 5) % 2 == 0)
+                    or (k == "blink" and t % 13 < 5)
 
   if skipDraw then
     -- draw nothing this frame, but still restore the scissor rect
@@ -6628,10 +6712,12 @@ function BattleState:animSpriteColors(s, px, py, memo)
   local key = s.obp or "f0"
   local P
   -- engine/battle/animations.asm:551 (.notSGB)
+  if PaletteFX.runsNotSGB() then
+    if key == "f0" then key = "e4" elseif key == "f0x" then key = "e4x" end
+  end
   if PaletteFX.usesSpriteObp() then
     -- engine/battle/init_battle_variables.asm:18
     P = PaletteFX.ogObjBase()
-    if key == "f0" then key = "e4" elseif key == "f0x" then key = "e4x" end
   elseif memo then
     local pals = memo.pals
     if pals == nil then
@@ -6816,7 +6902,8 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
     else
       local dx, dy = BattleState.frontPlacement(ex, ey,
         img:getWidth(), img:getHeight(), s)
-      self:drawBattlerPic(self.enemy, dx, dy, s, sx - slide, sy)
+      self:drawBattlerPic(self.enemy, dx, dy, s,
+        sx - slide + ((self.fx and self.fx.hudShakeX) or 0), sy)
     end
   end
 
@@ -6927,8 +7014,13 @@ function BattleState:drawHUDs(slide)
     if self.enemy.shownStatus then
       Font.draw(self:statusLabel({ status = self.enemy.shownStatus }), 40, 8)
     elseif LevelDisplay.visible(self.enemy.mon, "battle.enemy", self.game) then
-      hudTile(0x6E, 32, 8) -- <LV>
-      Font.draw(tostring(self.enemy.mon.level), 40, 8)
+      -- home/pokemon.asm:335-345
+      if self.enemy.mon.level < 100 then
+        hudTile(0x6E, 32, 8) -- <LV>
+        Font.draw(tostring(self.enemy.mon.level), 40, 8)
+      else
+        Font.draw(tostring(self.enemy.mon.level), 32, 8)
+      end
     end
     hudTile(0x73, 8, 16)
     drawHPBar(barData, 2, 2,
@@ -7011,8 +7103,13 @@ function BattleState:drawHUDs(slide)
     if self.player.shownStatus then
       Font.draw(self:statusLabel({ status = self.player.shownStatus }), 120, 64)
     elseif LevelDisplay.visible(self.player.mon, "battle.player", self.game) then
-      hudTile(0x6E, 112, 64) -- <LV>
-      Font.draw(tostring(self.player.mon.level), 120, 64)
+      -- home/pokemon.asm:335-345
+      if self.player.mon.level < 100 then
+        hudTile(0x6E, 112, 64) -- <LV>
+        Font.draw(tostring(self.player.mon.level), 120, 64)
+      else
+        Font.draw(tostring(self.player.mon.level), 112, 64)
+      end
     end
     drawHPBar(barData, 10, 9,
               { hp = shownHP(self.player), stats = self.player.mon.stats },
@@ -7080,11 +7177,9 @@ function BattleState:drawTextArea()
         pen = pen + Font.advanceOf(line[i])
       end
     end
-    -- the blinking down arrow ('▼', glyph $EE) while a \v CONT wait
-    -- (_ContText) or a typed-out page (PromptText) holds the box; both write
-    -- it at (18,16), bottom-right, like TextBox / home/text.asm (#317)
+    -- home/text.asm:440
     if (self.msgWaiting or self.msgPrompt) and self.frame % 60 < 30 then
-      drawGlyph(0xEE, (0 + 20 - 2) * 8, (12 + 6 - 1) * 8 - 4)
+      drawGlyph(0xEE, 18 * 8, 16 * 8)
     end
   elseif self.phase == "menu" and self.demo then
     -- engine/battle/core.asm:2038-2049
@@ -7175,7 +7270,7 @@ function BattleState:drawTextArea()
         -- the same call convention as the pre-battle screens (SummaryMenu,
         -- HallOfFame) that genuinely need the explicit data.
         Font.draw(def.type and TypeChart.displayName(def.type, self.data) or "", 16, 80)
-        local maxPP = def.pp + (sel.ppUps or 0) * math.floor(def.pp / 5)
+        local maxPP = Pokemon.maxPP(def.pp, sel.ppUps)
         Font.draw(("%2d/%2d"):format(sel.pp, maxPP), 40, 88)
       end
     end

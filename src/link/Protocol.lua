@@ -1216,7 +1216,9 @@ function TradeSession:apply(game)
   -- a mod validates its own extra namespace here, before the mon is filed
   Runtime.emit("pokemon.received",
                { mon = received, from = "link", peerName = self.peerName })
-  self.party[self.myPick] = received
+  -- engine/link/cable_club.asm:800
+  table.remove(self.party, self.myPick)
+  self.party[#self.party + 1] = received
   -- PIKAHAPPY_TRADE (engine/link/cable_club.asm:801): trading the
   -- companion away is the biggest happiness hit and zeroes the mood
   if game and sent then

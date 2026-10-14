@@ -49,9 +49,12 @@ local stackStub = {
   end,
 }
 local textBoxStub = {
-  new = function(_, text, onDone)
-    local box = { kind = "text", text = text, onDone = onDone }
+  new = function(_, text, onDone, opts)
+    local box = { kind = "text", text = text, onDone = onDone, opts = opts }
     if onDone then onDone() end
+    if opts and type(opts.stay) == "table" and opts.stay.onShown then
+      opts.stay.onShown()
+    end
     return box
   end,
 }
@@ -221,6 +224,12 @@ for _, p in ipairs(pushed) do
   if p.kind == "menu" then menu = p break end
 end
 check(menu ~= nil, "post-leave PC opens a menu")
+local held
+for _, p in ipairs(pushed) do
+  if p.kind == "text" and p.opts and p.opts.stay then held = p break end
+end
+-- engine/events/hidden_events/bills_house_pc.asm:94-95
+check(held ~= nil, "BillsHousePokemonListText2 is held under the list")
 local labels = {}
 for _, item in ipairs(menu.items) do labels[#labels + 1] = item.label end
 eq(table.concat(labels, ","), "EEVEE,FLAREON,JOLTEON,VAPOREON,CANCEL",

@@ -31,6 +31,30 @@ do
 end
 
 do
+  -- engine/overworld/movement.asm:489-509
+  local me = { cellX = 10, cellY = 9 }
+  local ow = { player = me, scriptMoves = {} }
+  local function at(x, y, extra)
+    local e = { cellX = x, cellY = y }
+    for k, v in pairs(extra or {}) do e[k] = v end
+    return e
+  end
+  check(OW.oamCulled(ow, at(10, 13)) == false, "an NPC 4 rows below draws")
+  check(OW.oamCulled(ow, at(10, 14)) == true, "an NPC 5 rows below is hidden")
+  check(OW.oamCulled(ow, at(10, 5)) == false, "an NPC 4 rows above draws")
+  check(OW.oamCulled(ow, at(10, 4)) == true, "an NPC 5 rows above is hidden")
+  check(OW.oamCulled(ow, at(15, 9)) == false, "an NPC 5 columns right draws")
+  check(OW.oamCulled(ow, at(16, 9)) == true, "an NPC 6 columns right is hidden")
+  check(OW.oamCulled(ow, at(6, 9)) == false, "an NPC 4 columns left draws")
+  check(OW.oamCulled(ow, at(5, 9)) == true, "an NPC 5 columns left is hidden")
+  check(OW.oamCulled(ow, at(10, 14, { moving = true, targetX = 10, targetY = 13 }))
+        == false, "a walking NPC is placed by its destination cell")
+  local walker = at(10, 14)
+  ow.scriptMoves = { { entity = walker } }
+  check(OW.oamCulled(ow, walker) == false, "a scripted walker skips the view test")
+end
+
+do
   local got
   local ctx = { npc = trainer, overworld = {
     pushBattle = function(_, _, keep) got = keep end } }

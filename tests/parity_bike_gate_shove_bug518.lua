@@ -86,14 +86,20 @@ do
         "first box is the guard's stop line")
   dismissTop()
 
+  -- scripts/Route16Gate1F.asm:16-80
+  check(#ow.scriptMoves > 0 or ow.player.moving,
+        "closing the stop line queues the walk up to the counter")
+  check(Game.stack:top() == ow, "the explanation waits for the walk")
+  runFrames(ow, 200)
+  eq(ow.player.cellY, 7, "the player reached the counter before the explanation")
   local box2 = Game.stack:top()
-  check(box2 ~= nil, "the second (explanation) box opened")
+  check(box2 ~= ow, "the second (explanation) box opened at the counter")
   eq(box2.text, Data.text._Route16Gate1FGuardNoPedestriansAllowedText,
      "second box is the guard's no-pedestrians explanation, verbatim")
   dismissTop()
 
   check(#ow.scriptMoves > 0 or ow.player.moving,
-        "closing the explanation queues the walk-up-then-shove movement")
+        "closing the explanation queues the shove")
   runFrames(ow, 200)
   check(not ow.player.moving, "the scripted movement has settled")
   eq(#ow.scriptMoves, 0, "no scripted move is left hanging")

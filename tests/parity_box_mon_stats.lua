@@ -246,7 +246,7 @@ do
     }), "stubbed ListMenu on withdraw")
     -- the WITHDRAW row is what fires onAction; run it straight
     check(setUpvalue(withdraw, "monSubmenu",
-                     function(_, _, _, onAction) onAction() end),
+                     function(_, _, _, _, onAction) onAction() end),
           "stubbed monSubmenu on withdraw")
     check(setUpvalue(withdraw, "afterTransfer", function() end),
           "stubbed afterTransfer on withdraw")

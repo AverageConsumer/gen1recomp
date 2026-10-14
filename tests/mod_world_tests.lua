@@ -59,7 +59,7 @@ local function oldPaletteNameFor(def, lastOutdoorId)
   elseif ts == "CAVERN" then return "CAVE"
   elseif id == "LORELEIS_ROOM" then return "PALLET"
   elseif id == "BRUNOS_ROOM" then return "CAVE"
-  elseif TOWN_PALS[id] or id:match("^ROUTE_") then
+  elseif TOWN_PALS[id] or id:match("^ROUTE_%d+$") then
     return TOWN_PALS[id] or "ROUTE"
   end
   local last = lastOutdoorId or BOOT_HEAL_MAP
@@ -72,7 +72,8 @@ do
   -- every map, with no outdoor memory and with each of the outdoor maps
   -- remembered, must land on the palette the literals used to pick
   -- "" stands for no outdoor memory at all
-  local lasts = { "", "PALLET_TOWN", "ROUTE_1", "INDIGO_PLATEAU", "CELADON_CITY" }
+  local lasts = { "", "PALLET_TOWN", "ROUTE_1", "INDIGO_PLATEAU", "CELADON_CITY",
+                  "SAFFRON_CITY" }
   local mapIds = {}
   for id in pairs(Data.maps) do mapIds[#mapIds + 1] = id end
   table.sort(mapIds)
@@ -90,6 +91,14 @@ do
     end
   end
   check(compared >= #mapIds * 2, "palette oracle covered every map")
+  for _, gate in ipairs({ "ROUTE_5_GATE", "ROUTE_6_GATE", "ROUTE_7_GATE", "ROUTE_8_GATE" }) do
+    local def = Data.maps[gate]
+    if def then
+      local state = setmetatable({ lastOutdoor = { id = "SAFFRON_CITY" } }, { __index = OW })
+      check(state:paletteNameFor({ id = gate, def = def }) == "SAFFRON",
+        gate .. " entered from Saffron wears SAFFRON")
+    end
+  end
 end
 
 do

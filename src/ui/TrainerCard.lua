@@ -149,8 +149,8 @@ function TrainerCard:draw()
   Font.draw(Strings("MONEY/¥%d", save.money or 0), 16, 32)
   local t = math.floor(save.playTime or 0)
   -- home/print_num.asm:217
-  Font.draw(Strings("TIME/  %d:%02d", math.floor(t / 3600),
-                    math.floor(t / 60) % 60), 16, 48)
+  Font.draw((Strings("TIME/  %d:%02d", math.floor(t / 3600),
+                     math.floor(t / 60) % 60):gsub("(%d):(%d%d)$", "%1<COLON>%2")), 16, 48)
 
   -- the circle-dotted BADGES banner (TrainerInfo_BadgesText)
   -- engine/menus/start_sub_menus.asm:544

@@ -16,14 +16,14 @@ local function mkSelf()
   return setmetatable({ game = game, allowMatchesCounter = 0 }, SlotMachine)
 end
 
--- translated: the fake suffix reaches self.message, with the symbol
--- concatenated in front and the payout substituted into the fake text
+-- engine/slots/slot_machine.asm:617-631
 do
   local self = mkSelf()
   Data.text._LinedUpText = " FAKE-SUFFIX {RAM:wStringBuffer}!"
   self:resolveWin({ symbol = "CHERRY", payout = 8 })
-  T.eq(self.message, "CHERRY FAKE-SUFFIX 8!",
+  T.eq(self.message, " FAKE-SUFFIX 8!",
     "a translated _LinedUpText reaches the lined-up message")
+  T.eq(self.winSymbol, "CHERRY", "the winning symbol is kept for its picture")
   Data.text._LinedUpText = nil
 end
 
@@ -32,7 +32,7 @@ end
 do
   local self = mkSelf()
   self:resolveWin({ symbol = "CHERRY", payout = 8 })
-  T.eq(self.message, "CHERRY lined up!\nScored 8 coins!",
+  T.eq(self.message, " lined up!\nScored 8 coins!",
     "no catalog entry still falls back to the English literal")
 end
 

@@ -53,10 +53,8 @@ local STAT_LABEL = {
 -- ---------------------------------------------------------------------
 
 local function changeStage(battle, who, stat, delta, fromEnemy)
+  -- engine/battle/core.asm:5285
   if fromEnemy and (who.substituteHP or who.mist) then
-    if who.mist then
-      return { Strings("%s is\nprotected by MIST!", displayName(who)), failed = true }
-    end
     return butItFailed(battle)
   end
   local cur = who.stages[stat] or 0
@@ -262,15 +260,17 @@ MoveEffects.primary = {
       mon.sleepTurns = 2
       if not Status.toxicSurvivesCure(battle) then user.toxicCounter = nil end
       -- engine/battle/move_effects/heal.asm:35
-      if hadStatus then
-        return { romText(battle.data, "_FellAsleepBecameHealthyText",
-          "%s\nfell asleep and\nbecame healthy!", displayName(user)) }
-      end
-      return { romText(battle.data, "_StartedSleepingEffect", "%s\nstarted sleeping!", displayName(user)) }
+      local lead = hadStatus
+        and romText(battle.data, "_FellAsleepBecameHealthyText",
+          "%s\nfell asleep and\nbecame healthy!", displayName(user))
+        or romText(battle.data, "_StartedSleepingEffect", "%s\nstarted sleeping!", displayName(user))
+      return { lead, romText(battle.data, "_RegainedHealthText", "%s\nregained health!", displayName(user)),
+               restLead = true, hpBarFirst = true }
     end
     if healFails(battle, mon) then return butItFailed(battle) end
     mon.hp = math.min(mon.stats.hp, mon.hp + math.floor(mon.stats.hp / 2))
-    return { romText(battle.data, "_RegainedHealthText", "%s\nregained health!", displayName(user)) }
+    return { romText(battle.data, "_RegainedHealthText", "%s\nregained health!", displayName(user)),
+             hpBarFirst = true }
   end,
 
   LIGHT_SCREEN_EFFECT = function(battle, user)

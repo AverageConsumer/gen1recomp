@@ -139,4 +139,23 @@ do
   Input:reset()
 end
 
+-- home/overworld.asm:254
+do
+  local ow = bootOn("SS_ANNE_2F_ROOMS", 23, 5, "right")
+  check(ow:canCollisionWarp(), "the cabin exit mat keeps the flag")
+  check(ow:checkEdgeExit("right") == false,
+        "RIGHT off the east edge on the SHIP tileset needs a carpet tile")
+  check(ow.taken == nil, "so the cabin mat does not warp sideways")
+end
+
+-- home/overworld.asm:260
+do
+  local ow = bootOn("SEAFOAM_ISLANDS_B4F", 20, 17, "down")
+  ow.player.surfing = true
+  ow.standingOnWarp = true
+  check(ow:checkEdgeExit("down") == false,
+        "a surfing collision never checks warps")
+  check(ow.taken == nil, "so DOWN on the water stairs stays on B4F")
+end
+
 S.finish()

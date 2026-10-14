@@ -79,7 +79,7 @@ DexEntryMenu.render(game, def, nil, false, false, 1, {})
 skeleton("owned")
 check(hasText(" 6", 96, 48), "owned: feet in cols 12-13")
 check(hasText("11", 120, 48), "owned: inches in cols 15-16")
-check(hasText("1014.0", 88, 64), "owned: weight right-aligned into cols 11-16")
+check(hasText("1014<DOT>0", 88, 64), "owned: weight right-aligned into cols 11-16")
 check(not hasText("?", 104, 48), "owned: no leftover placeholder digits")
 check(hasText("Very lazy. Just", 8, 88), "owned: the description prints")
 

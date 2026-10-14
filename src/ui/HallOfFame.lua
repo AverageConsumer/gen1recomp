@@ -343,16 +343,18 @@ end
 function HallOfFame:drawPic(img, trueColor)
   if not img then return end
   love.graphics.setColor(1, 1, 1, 1)
-  local x = self.scrollX or PIC_X
-  love.graphics.draw(img, x, PIC_Y)
+  local w, h = img:getDimensions()
+  -- home/pics.asm:68-76
+  local x = (self.scrollX or PIC_X) + math.floor((8 - w / 8) / 2) * 8
+  local y = PIC_Y + math.max(0, 56 - h)
+  love.graphics.draw(img, x, y)
   -- SET_PAL_POKEMON_WHOLE_SCREEN (HoFShowMonOrPlayer) colors the WHOLE
   -- screen in the mon's palette, so sgbPalettes above hands the blit a
   -- whole-canvas zone -- and a full-color pic has to sit that remap out.
   -- Report the rect the pic covers for the unshaded pass, the way
   -- SummaryMenu does for the status screen pic (#637; #430).
   if trueColor then
-    require("src.render.PaletteFX").markTrueColor(x, PIC_Y,
-                                                 img:getDimensions())
+    require("src.render.PaletteFX").markTrueColor(x, y, w, h)
   end
 end
 
@@ -393,8 +395,9 @@ function HallOfFame:drawPlayerStats()
   Font.draw(("%3d:%02d"):format(math.floor(t / 3600), math.floor(t / 60) % 60),
             5 * 8, 7 * 8)
   Font.draw(Strings("MONEY"), 1 * 8, 9 * 8)
-  -- PrintBCDNumber with MONEY_SIGN; port uses ¥ like TrainerCard
-  Font.draw(("¥%d"):format(save.money or 0), 4 * 8, 10 * 8)
+  -- engine/movie/hall_of_fame.asm:238-241
+  local digits = tostring(math.max(0, math.floor(save.money or 0)))
+  Font.draw("¥" .. digits, (4 + 6 - #digits) * 8, 10 * 8)
 end
 
 function HallOfFame:draw()

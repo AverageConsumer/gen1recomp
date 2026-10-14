@@ -118,7 +118,7 @@ local function moveCopies(game, battle)
     out[slot] = { slot = slot, id = move.id, name = def.name or move.id,
       pp = move.pp,
       maxPp = (def.pp or move.pp or 0)
-        + (move.ppUps or 0) * math.floor((def.pp or 0) / 5),
+        + (move.ppUps or 0) * require("src.pokemon.Pokemon").ppUpBonus(def.pp),
       type = def.type, power = def.power, accuracy = def.accuracy,
       displayPower = displayPower, hitChance = hitChance,
       effectiveness = mult,

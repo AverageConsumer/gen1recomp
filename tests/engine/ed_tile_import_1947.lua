@@ -68,6 +68,7 @@ local BASE_SYMBOLS = {
   FontGraphics = { 4, 0 },
   TextBoxGraphics = { 4, 4096 },
   PokedexTileGraphics = { 4, 8192 },
+  PTile = { 4, 12288 },
 }
 
 local function fakeExtractor(withEd)
@@ -105,7 +106,7 @@ do
   T.check(ok, "extractFont runs against the fake ROM: " .. tostring(data))
   local edRead
   for _, read in ipairs(reads) do
-    if read.length == 8 then edRead = read end
+    if read.length == 8 and read.bank == 1 then edRead = read end
   end
   T.check(edRead ~= nil, "the Fonts stage reads an 8-byte tile")
   if edRead then

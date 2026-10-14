@@ -31,8 +31,8 @@ Timing.FADE_IN_FROM_WHITE  = 24 -- fade.asm:48, b = 3
 Timing.WARP_FADE_OUT = Timing.FADE_OUT_TO_BLACK
 Timing.WARP_FADE_IN  = 0
 
--- home/overworld.asm:351-352 -- after a battle, before EnterMap
-Timing.POST_BATTLE_RETURN = 10
+-- home/overworld.asm:351
+Timing.POST_BATTLE_RETURN = 20
 
 -- engine/overworld/player_animations.asm:5-7 -- EnterMapAnim, the fly /
 -- teleport / dungeon-warp arrival: Delay3 then GBFadeInFromWhite
@@ -114,13 +114,8 @@ Timing.SHAKE_HORIZ_SLOW   = 48 -- type 3, lb bc, 6, 2: 2 x 4x6
 Timing.SHAKE_HORIZ_LIGHT  = 18 -- type 5, b=2: 2 x 9
 Timing.SHAKE_HORIZ_SLOW2  = 24 -- type 6, lb bc, 3, 2: 2 x 4x3
 
--- Type 4 -- the player's damaging move with no added effect, and so the
--- single most common animation in the game -- is AnimationBlinkMon
--- (animations.asm:1360-1376): `ld c, 6` iterations of hide + DelayFrames 5
--- + show + DelayFrames 5.  The asm's own comment calls it "a second or
--- two"; the port ran it in 20 frames, three times too fast, which is a
--- large part of why trading blows felt hurried.
-Timing.BLINK_MON = 60
+-- engine/battle/animations.asm:1360
+Timing.BLINK_MON = 78
 
 -- SlideDownFaintedMonPic (engine/battle/core.asm:1181-1222): b = PIC_HEIGHT
 -- (7) outer iterations, each closing with `ld c, 2 / call DelayFrames`.

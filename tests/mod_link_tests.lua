@@ -498,7 +498,7 @@ sessionB:handle(wire(sessionA:confirm(true)))
 eq(sessionA.stage, "done", "the subset trade completes")
 local received = sessionA:apply(nil)
 eq(received.species, "PIDGEY", "the vanilla game received the agreed mon")
-eq(partyVanilla[1], received, "and it landed in the slot that was given")
+eq(partyVanilla[#partyVanilla], received, "and it was appended after the slot that was given")
 
 -- a full-verdict session sends the whole party and indexes it directly
 local fullSession = Protocol.TradeSession.new(Data, partyVanilla, { strict = true })

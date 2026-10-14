@@ -78,7 +78,10 @@ def derive(red, pokered, symbols_path):
     util.ASM_DEFINES = {"_BLUE"}
     try:
         blue["field"]["presetNames"] = field.parse_preset_names(pokered)
+        the_end = blue["field"]["credits"].get("theEnd")
         blue["field"]["credits"] = field.parse_credits(pokered)
+        if the_end:
+            blue["field"]["credits"]["theEnd"] = the_end
     finally:
         util.ASM_DEFINES = saved
 

@@ -98,6 +98,7 @@ function Transition.new(game, onMidpoint, onDone, warp, opts)
   self.color = opts.color or { 0, 0, 0 }
   local style = styleOf(game, "warp_fade")
   self.frames = opts.frames or style.frames or FRAMES
+  self.hold = opts.hold
   if opts.framesIn ~= nil then
     self.framesIn = opts.framesIn
   elseif warp then
@@ -119,7 +120,8 @@ end
 
 function Transition:update(dt)
   self.t = self.t + 1
-  local len = (self.phase == "out") and self.frames or self.framesIn
+  local len = (self.phase == "out") and self.frames + (self.hold or 0)
+              or self.framesIn
   if self.t >= len then
     self.t = 0
     if self.phase == "out" then

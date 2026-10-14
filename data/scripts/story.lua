@@ -154,7 +154,7 @@ M.BLUES_HOUSE = {
       { "show_text", "_BluesHouseDaisyOfferMapText" },
       -- _GotMapText: "{PLAYER} got a\n{RAM:wStringBuffer}!" -- the
       -- buffer supplies "TOWN MAP" (scripts/BluesHouse.asm GotMapText)
-      { "give_item", "TOWN_MAP", 1, false },
+      { "give_item", "TOWN_MAP", 1, false, "_BluesHouseDaisyBagFullText" },
       { "hide_object", "BLUES_HOUSE", "BLUESHOUSE_TOWN_MAP" },
       { "show_text", "_GotMapText" },
       { "set_flag", "EVENT_GOT_TOWN_MAP" },
@@ -340,6 +340,11 @@ M.VERMILION_CITY = {
     local puz = game.save.trashPuzzle or {}
     game.save.trashPuzzle = puz
     puz.first = love.math.random(0, 7) * 2
+    -- pokeyellow scripts/VermilionCity.asm:20
+    if require("src.core.GameVersion").isYellow()
+       and game.save.flags.EVENT_RECEIVED_BIKE_VOUCHER then
+      game.save.flags.EVENT_LEFT_FANCLUB_AFTER_BIKE_VOUCHER = true
+    end
   end,
   -- VermilionCityDefaultScript's per-frame SSAnneTicketCheckCoords check:
   -- the unguarded cell (18,30) just west of the sailor leads straight
@@ -564,6 +569,9 @@ M.POKEMON_TOWER_7F = {
         Commands.hide_object(ctx, "POKEMON_TOWER_7F", r.name)
       end
     end
+    if game.save.flags.EVENT_RESCUED_MR_FUJI then
+      Commands.hide_object(ctx, "POKEMON_TOWER_7F", "POKEMONTOWER7F_MR_FUJI")
+    end
   end,
   -- runVictoryHook fires after every trainer win on the map (both the sight
   -- and talk paths route through engageTrainer -> checkVictoryRewards), so
@@ -599,6 +607,8 @@ M.POKEMON_TOWER_7F = {
       { "show_object", "MR_FUJIS_HOUSE", "MRFUJISHOUSE_MR_FUJI" },   -- 5
       { "hide_object", "SAFFRON_CITY", "SAFFRONCITY_ROCKET8" },      -- 6
       { "show_object", "SAFFRON_CITY", "SAFFRONCITY_ROCKET9" },      -- 7
+      -- scripts/PokemonTower7F.asm:70-72
+      { "hide_object", "POKEMON_TOWER_7F", "POKEMONTOWER7F_MR_FUJI" }, -- 8
       -- pokered warps to wDestinationWarpID $1 (0-based) -- the house's
       -- SECOND warp, the door mat at (3,7) -- facing UP
       -- (PokemonTower7FWarpToMrFujiHouseScript: SPRITE_FACING_UP +
@@ -609,7 +619,7 @@ M.POKEMON_TOWER_7F = {
       -- collected and the Route 16 SNORLAX sealed the map. The arrival
       -- mat itself is inert until stepped off (warpEntryCell), which is
       -- what makes the vanilla coordinates safe.
-      { "warp", "MR_FUJIS_HOUSE", 3, 7, "up", true },     -- 8
+      { "warp", "MR_FUJIS_HOUSE", 3, 7, "up", true },     -- 9
     },
   },
 }
@@ -632,7 +642,8 @@ M.MR_FUJIS_HOUSE = {
       { "jump_if_false", 14 },                                          -- 5
       { "show_text", "_MrFujisHouseMrFujiIThinkThisMayHelpYourQuestText" }, -- 6
       -- give-then-print like scripts/MrFujisHouse.asm
-      { "give_item", "POKE_FLUTE", 1, false },                          -- 7
+      { "give_item", "POKE_FLUTE", 1, false,
+        "_MrFujisHouseMrFujiPokeFluteNoRoomText" },                     -- 7
       { "show_text", "_MrFujisHouseMrFujiReceivedPokeFluteText" },      -- 8
       { "set_flag", "EVENT_GOT_POKE_FLUTE" },                           -- 9
       { "show_text", "_MrFujisHouseMrFujiPokeFluteExplanationText" },   -- 10
@@ -718,7 +729,8 @@ M.SAFARI_ZONE_SECRET_HOUSE = {
       { "jump_if_true", 9 },                                                 -- 3
       { "show_text", "_SafariZoneSecretHouseFishingGuruYouHaveWonText" },    -- 4
       -- give-then-print like scripts/SafariZoneSecretHouse.asm
-      { "give_item", "HM_SURF", 1, false },                                  -- 5
+      { "give_item", "HM_SURF", 1, false,
+        "_SafariZoneSecretHouseFishingGuruHM03NoRoomText" },                 -- 5
       { "show_text", "_SafariZoneSecretHouseFishingGuruReceivedHM03Text" },  -- 6
       { "set_flag", "EVENT_GOT_HM03" },                                      -- 7
       { "jump", 10 },                                                        -- 8
@@ -881,6 +893,8 @@ M.SILPH_CO_11F = {
       or "Ah {PLAYER}!\nSo we meet again!",
       function()
         ow:scriptMove(gio, "down", 3, function()
+          -- scripts/SilphCo11F.asm:244-255
+          ow.player.facing = (x == 7 and y == 12) and "up" or "left"
           gio:facePlayer(ow.player)
           ow:engageTrainer(gio, function()
             -- SilphCo11FGiovanniAfterBattleScript: the "Blast it all!"
@@ -917,7 +931,8 @@ M.SILPH_CO_11F = {
       { "jump_if_true", 9 },                                                 -- 3
       { "show_text", "_SilphCo11FSilphPresidentText" },                      -- 4
       -- give-then-print like scripts/SilphCo11F.asm
-      { "give_item", "MASTER_BALL", 1, false, false, "Get_Key_Item" },       -- 5 scripts/SilphCo11F.asm:322
+      { "give_item", "MASTER_BALL", 1, false,
+        "_SilphCo11FSilphPresidentNoRoomText", "Get_Key_Item" },             -- 5 scripts/SilphCo11F.asm:322
       { "show_text", "_SilphCo11FSilphPresidentReceivedMasterBallText" },    -- 6
       { "set_flag", "EVENT_GOT_MASTER_BALL" },                               -- 7
       { "jump", "end" },                                                     -- 8
@@ -1118,6 +1133,8 @@ local championsRoomRivalScript = {
   { "show_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 15
   { "move_npc", 2, "up", 5 },                               -- 16 OakEntranceAfterVictoryMovement
   -- OakCongratulatesPlayerScript: rival faces left, Oak faces down
+  -- scripts/ChampionsRoom.asm:142-143
+  { "face_player_dir", "left" },
   { "face_object", 1, "left" },                             -- 17
   { "face_object", 2, "down" },                             -- 18
   { "load_player_starter_name" },

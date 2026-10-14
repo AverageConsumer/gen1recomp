@@ -70,6 +70,12 @@ local function startGame(game, ow, t, done, balls, introText)
     opts = TextBox.soundOpts(game, "Get_Item1", opts)
   end
   game.stack:push(TextBox.new(game, paid, function()
+    -- pokeyellow scripts/SafariZoneGate_2.asm:57
+    if introText then
+      if done then done() end
+      walkIntoZone(game, ow)
+      return
+    end
     game.stack:push(TextBox.new(game, pa, function()
       if done then done() end
       walkIntoZone(game, ow)
@@ -152,17 +158,11 @@ end
 
 M.SAFARI_ZONE_GATE = {
   talk = {
+    -- scripts/SafariZoneGate.asm:144-146
     TEXT_SAFARIZONEGATE_SAFARI_ZONE_WORKER1 = function(game, ow, npc, done)
       local TextBox = require("src.render.TextBox")
-      local t = game.data.text
-      if game.save.safari then
-        game.stack:push(TextBox.new(game,
-          t._SafariZoneGateSafariZoneWorker1GoodLuckText or "Good Luck!", done))
-        return
-      end
       game.stack:push(TextBox.new(game,
-        t._SafariZoneGateSafariZoneWorker1Text or "Welcome to the\nSAFARI ZONE!",
-        function() joinPrompt(game, ow, done) end))
+        game.data.text._SafariZoneGateSafariZoneWorker1Text, done))
     end,
   },
 

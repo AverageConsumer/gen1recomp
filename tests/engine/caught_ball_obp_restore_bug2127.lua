@@ -77,6 +77,13 @@ for _, v in ipairs({ { "yellow", "ogred" }, { "red", "gbc" }, { "blue", "gbc" } 
   T.eq(shades("f0"), "0,3,3", v[1] .. "/" .. v[2] .. " $f0 maps to shades 0,3,3")
   T.eq(shades("e4"), "1,2,3", v[1] .. "/" .. v[2] .. " $e4 maps to the zone's shades 1,2,3")
 end
+-- engine/battle/animations.asm:571-573
+for _, v in ipairs({ { "red", "og" }, { "yellow", "og" }, { "blue", "classic" }, { "red", "og_inv" } }) do
+  GameVersion.set(v[1])
+  PaletteFX.setMode(v[2])
+  T.eq(shades("f0"), "1,2,3", v[1] .. "/" .. v[2] .. " wAnimPalette is $e4 off the SGB")
+  T.eq(shades("f0x"), "2,1,3", v[1] .. "/" .. v[2] .. " the ball flicker xors $e4")
+end
 GameVersion.set(prevVersion)
 PaletteFX.setMode(prevMode)
 

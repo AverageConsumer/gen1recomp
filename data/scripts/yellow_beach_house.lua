@@ -49,9 +49,7 @@ return {
           or (t._SummerBeachHouseSurfinDudeText1
               or "Whoa!\nYour PIKACHU knows\nhow to SURF!\fGive it a go?")
         ow.surfinDudeAsked = true
-        push(game, ask, function()
-          local ChoiceBox = require("src.ui.ChoiceBox")
-          game.stack:push(ChoiceBox.new(game, function(yes)
+        push(game, ask, nil, { choice = function(yes)
             if not yes then
               push(game, t._SummerBeachHouseSurfinDudeText2
                 or "Come SURF anytime,\nmy friend!", done)
@@ -63,8 +61,7 @@ return {
               require("src.core.Music").playMap(game.data, ow.map.id)
               done()
             end))
-          end))
-        end)
+          end })
       end,
 
       TEXT_SUMMERBEACHHOUSE_PIKACHU = function(game, ow, npc, done)
@@ -94,9 +91,7 @@ return {
             return
           end
           push(game, t._SummerBeachHousePrinterText3
-            or "The Hi-Score is\nshown.\fPRINT it out?", function()
-            local ChoiceBox = require("src.ui.ChoiceBox")
-            game.stack:push(ChoiceBox.new(game, function(yes)
+            or "The Hi-Score is\nshown.\fPRINT it out?", nil, { choice = function(yes)
               if not yes then
                 done()
                 return
@@ -121,8 +116,7 @@ return {
               push(game, saved
                 and (Strings("Printed!\f") .. Printer.savedWhereText(saved))
                 or Strings("Printer error!\n%s", tostring(err)), done)
-            end))
-          end)
+            end })
         end)
       end,
     },

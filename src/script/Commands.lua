@@ -842,6 +842,10 @@ function Commands.give_pokemon(ctx, species, level, skipNickname, gotText)
   -- engine/events/give_pokemon.asm:46
   if gotText and ctx.runner then
     Commands.text_sound(ctx, "Get_Item1")
+    -- engine/events/give_pokemon.asm:71-74
+    if not gift.nickname and not skipNickname then
+      ctx.textOpts.auto.wait = false
+    end
     Commands.show_text(ctx, "_GotMonText", { RAM = species })
   end
   -- AskName: both AddPartyMon and SendNewMonToBox; skip mod-set nicks
@@ -1175,6 +1179,16 @@ function Commands.trade(ctx, tradeIndex, doneFlag)
     onDone = function() runner:resume() end,
   })
   runner:yield()
+  -- pokeyellow engine/events/in_game_trades.asm:236
+  if require("src.core.GameVersion").isYellow() then
+    local Evolution = require("src.pokemon.Evolution")
+    local evolved = Evolution.pendingFor(ctx.game, newMon, { kind = "trade" })
+    if evolved then
+      Evolution.evolve(ctx.game, newMon, evolved,
+        function() runner:resume() end, "TRADE")
+      runner:yield()
+    end
+  end
   -- TradedForText carries sound_get_key_item after the text, so the jingle
   -- rides the box and blocks it (home/text.asm TextCommand_SOUND), then the
   -- dialogset's thanks

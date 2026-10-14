@@ -473,6 +473,19 @@ function RomExtractor:extractFont()
     self:save(ed, "fonts/ed.png")
     data.imageEd = "assets/generated/fonts/ed.png"
   end
+  -- engine/pokemon/status_screen.asm:236
+  local pSymbol = self:symbol("PTile")
+  local pRaw = self.rom:bytes(pSymbol.bank, pSymbol.address, 8)
+  local boldP = ImageWriter.blank(8, 8, 0, 0, 0, 0)
+  for y = 0, 7 do
+    local row = pRaw[y + 1]
+    for x = 0, 7 do
+      if bit.band(row, 2 ^ (7 - x)) ~= 0 then
+        boldP:setPixel(x, y, 0, 0, 0, 1)
+      end
+    end
+  end
+  self:save(boldP, "fonts/bold_p.png")
   self:write("font", data)
   self:tick("Fonts", 2, 2)
   return data
@@ -1387,6 +1400,32 @@ function RomExtractor:extractTrainers()
     }
     self:tick("Trainers", index, #order)
   end
+  -- pokeyellow engine/battle/read_trainer_party.asm:87
+  if self.symbols.SpecialTrainerMoves then
+    local special = self:symbol("SpecialTrainerMoves")
+    local bank, at = special.bank, special.address
+    while true do
+      local class = self.rom:byte(bank, at)
+      if class == 0xFF then break end
+      local partyNo = self.rom:byte(bank, at + 1)
+      at = at + 2
+      local rows = {}
+      while true do
+        local mon = self.rom:byte(bank, at)
+        at = at + 1
+        if mon == 0 then break end
+        rows[#rows + 1] = { mon = mon, slot = self.rom:byte(bank, at),
+                            move = self:move(self.rom:byte(bank, at + 1)) }
+        at = at + 2
+      end
+      local trainer = order[class] and out["OPP_" .. order[class]]
+      if trainer then
+        trainer.specialMoves = trainer.specialMoves or {}
+        trainer.specialMoves[#trainer.specialMoves + 1] =
+          { party = partyNo, moves = rows }
+      end
+    end
+  end
   -- Yellow's Jessie & James fight as OPP_ROCKET but carry their own pic
   -- (home/trainers2.asm IsFightingJessieJames); only Yellow's manifest has
   -- the symbol, so Red and Blue skip this (#439).
@@ -1529,6 +1568,11 @@ function RomExtractor:extractText()
       local s = self:symbol(label)
       texts[label] = self.rom:readString(s.bank, s.address, self.manifest.charmap)
     end
+  end
+  -- pokered engine/items/item_effects.asm:828
+  if self.symbols["ItemUseMedicine.emptyPartyText"] then
+    texts["ItemUseMedicine.emptyPartyText"] = self:decodeTextCommands(
+      self:symbol("ItemUseMedicine.emptyPartyText"), {})
   end
   local trainerHeaders = {}
   for mapLabel, headers in pairs(metadata.trainerHeaders) do
@@ -1926,7 +1970,7 @@ function RomExtractor:extractField()
   self:raw1bpp("Version_GFX", 80, 8,
     "title/red_version.png"); tick()
   self:raw2bpp("PlayerCharacterTitleGraphics", 40, 56,
-    "title/player.png", { matte = true }); tick()
+    "title/player.png", { transparent = true }); tick()
   self:raw2bpp("NintendoCopyrightLogoGraphics", 152, 8,
     "title/copyright.png"); tick()
   self:raw2bpp("GameFreakLogoGraphics", 72, 8,

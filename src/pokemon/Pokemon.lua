@@ -5,26 +5,22 @@ local Stats = require("src.pokemon.Stats")
 
 local Pokemon = {}
 
--- Starting moves: level-1 moves plus learnset entries at or below the level,
--- keeping the most recent four (engine/pokemon/learn_move.asm behavior).
+-- engine/pokemon/evos_moves.asm:383
 function Pokemon.movesAtLevel(speciesDef, level)
   local moves = {}
-  local function add(id)
-    for _, existing in ipairs(moves) do
-      if existing == id then return end
-    end
-    table.insert(moves, id)
-  end
   for _, m in ipairs(speciesDef.level1Moves) do
-    add(m)
+    if #moves < 4 then table.insert(moves, m) end
   end
   for _, entry in ipairs(speciesDef.learnset) do
-    if entry.level <= level then
-      add(entry.move)
+    if entry.level > level then break end
+    local known = false
+    for _, existing in ipairs(moves) do
+      if existing == entry.move then known = true break end
     end
-  end
-  while #moves > 4 do
-    table.remove(moves, 1)
+    if not known then
+      if #moves >= 4 then table.remove(moves, 1) end
+      table.insert(moves, entry.move)
+    end
   end
   return moves
 end
@@ -84,9 +80,17 @@ function Pokemon.new(data, species, level, rng)
   }
 end
 
+-- engine/items/item_effects.asm:2418
+function Pokemon.ppUpBonus(basePP)
+  return math.min(7, math.floor((basePP or 0) / 5))
+end
+
+function Pokemon.maxPP(basePP, ppUps)
+  return (basePP or 0) + (ppUps or 0) * Pokemon.ppUpBonus(basePP)
+end
+
 -- Pokémon Center / blackout heal (engine/events/heal_party.asm
 -- HealParty): full HP, status cleared, and every move's PP restored to
--- its base plus the PP-Up bonus (RestoreBonusPP adds maxPP/5 per PP UP).
 function Pokemon.heal(mon)
   mon.hp = mon.stats.hp
   mon.status = nil
@@ -95,7 +99,7 @@ function Pokemon.heal(mon)
     for _, mv in ipairs(mon.moves) do
       local mdef = moves[mv.id]
       if mdef then
-        mv.pp = mdef.pp + (mv.ppUps or 0) * math.floor(mdef.pp / 5)
+        mv.pp = Pokemon.maxPP(mdef.pp, mv.ppUps)
       end
     end
   end

@@ -47,6 +47,9 @@ local STATUS_PAGES = {
     image = "assets/generated/battle/battle_hud_3.png", base = 0x76, count = 2 },
   { id = "battle_hud_2",
     image = "assets/generated/battle/battle_hud_2.png", base = 0x78, count = 1 },
+  -- engine/pokemon/status_screen.asm:98-101
+  { id = "bold_p",
+    image = "assets/generated/fonts/bold_p.png", base = 0x72, count = 1 },
 }
 
 -- engine/menus/naming_screen.asm:93
@@ -119,6 +122,9 @@ function HudTiles.namingTile(code, x, y, tint)
   if not namingTiles then namingTiles = build(NAMING_PAGES, true) end
   put(namingTiles[code], x, y, tint)
 end
+
+-- home/load_font.asm:33
+HudTiles.battleExtraTile = HudTiles.namingTile
 
 -- lazy: the next tile() rebuilds every page from the search path
 function HudTiles.invalidate()

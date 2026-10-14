@@ -450,7 +450,9 @@ local function locationName(game, mapId, def)
   local entry = type(locations) == "table" and locations[mapId]
   if type(entry) == "table" then
     local name = entry.name or entry.label
-    if type(name) == "string" and name ~= "" then return name end
+    if type(name) == "string" and name ~= "" then
+      return (name:gsub("<PK><MN>", "POKéMON"))
+    end
   end
   local def = game and game.data and game.data.maps and game.data.maps[mapId]
   if def and type(def.label) == "string" and def.label ~= "" then

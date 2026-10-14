@@ -24,7 +24,9 @@ local function coinGiver(opts)
         push("_GameCornerOopsForgotCoinCaseText", "Oops! Forgot the\nCOIN CASE!")
         return
       end
-      if (game.save.coins or 0) >= 9990 then
+      local coins = game.save.coins or 0
+      if (opts.exact9990 and coins == 9990)
+          or (not opts.exact9990 and coins >= 9990) then
         push(opts.coinCaseFullLabel, opts.coinCaseFullFallback)
         return
       end
@@ -69,15 +71,11 @@ return {
         alreadyGotFallback = "Darn! I need more\ncoins for the\vPOKéMON I want!",
       }),
 
-      -- GameCornerGentlemanText (pokered/scripts/GameCorner.asm): gives 20
-      -- coins once (EVENT_GOT_20_COINS). Note the original ASM uses
-      -- Has9990Coins' `jr z` (only the exact-9990 case) here rather than
-      -- Clerk1/Clerk2's `jr nc` (>=9990); ported as >=9990 to match their
-      -- "coin case is basically full" intent and avoid a coin-count
-      -- edge case where 9991-9999 would otherwise slip past the check.
+      -- pokered/scripts/GameCorner.asm:378
       TEXT_GAMECORNER_GENTLEMAN = coinGiver({
         event = "EVENT_GOT_20_COINS",
         amount = 20,
+        exact9990 = true,
         askLabel = "_GameCornerGentlemanThrowingMeOffText",
         askFallback = "Hey, what? You're\nthrowing me off!\vHere are some\vcoins, shoo!",
         receivedLabel = "_GameCornerGentlemanReceived20CoinsText",
@@ -116,9 +114,11 @@ return {
         alreadyGotFallback = "Darn! I need more\ncoins for the\vPOKéMON I want!",
       }),
 
+      -- pokeyellow/scripts/GameCorner.asm:382
       TEXT_GAMECORNER_FISHING_GURU2 = coinGiver({
         event = "EVENT_GOT_20_COINS",
         amount = 20,
+        exact9990 = true,
         askLabel = "_GameCornerFishingGuru2ThrowingMeOffText",
         askFallback = "Hey, what? You're\nthrowing me off!\vHere are some\vcoins, shoo!",
         receivedLabel = "_GameCornerFishingGuru2Received20CoinsText",

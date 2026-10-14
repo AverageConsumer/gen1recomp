@@ -74,9 +74,11 @@ for _, mapId in ipairs(UNCOUNTED_MAPS) do
   eq(fakeGame.save.safari.steps, 10, mapId .. " leaves the safari step counter untouched")
 end
 
--- Boundary: hitting 0 steps on a rest/secret house ends the game
--- (SafariZoneCheckSteps's dec bc + zero-check, safari_game.asm:9-27).
+-- safari_game.asm:14-24
 fakeGame.save.safari = { balls = 30, steps = 1 }
+local early = safariStepOn("SAFARI_ZONE_SECRET_HOUSE")
+check(not early and fakeGame.save.safari.steps == 0,
+      "the step that reaches 0 is still allowed")
 local fired = safariStepOn("SAFARI_ZONE_SECRET_HOUSE")
 check(fired, "safariStep reports the game-over trigger at 0 steps")
 check(fakeGame.save.safari == nil,

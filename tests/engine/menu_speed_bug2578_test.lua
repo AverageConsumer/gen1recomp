@@ -99,6 +99,7 @@ T.eq(g:logicSpeed(), 4, "main PC cancel restores OVERWORLD SPEED")
 for i, id in ipairs({ "EEVEE", "FLAREON", "JOLTEON", "VAPOREON" }) do
   g.data.pokemon[id] = { id = id, name = id, dex = 132 + i }
 end
+g.data.text._BillsHousePokemonListText2 = "Which POKéMON do\nyou want to see?{DONE}"
 OW:billsHousePokemonList()
 T.eq(g:logicSpeed(), 4, "Bill viewer opening text retains OVERWORLD SPEED")
 local bill = advanceToMenu()

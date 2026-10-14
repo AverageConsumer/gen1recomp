@@ -35,7 +35,12 @@ function Menu.new(game, items, opts)
   end
   self.rowStep = opts.rowStep or 2
   -- home/window.asm:56-83
-  self.noWrap = opts.noWrap or false
+  if opts.noWrap ~= nil then
+    self.noWrap = opts.noWrap
+  else
+    local GameVersion = require("src.core.GameVersion")
+    self.noWrap = GameVersion.generation(GameVersion.get()) == 1
+  end
   -- engine/movie/oak_speech/oak_speech2.asm:162 (DisplayIntroNameTextBox)
   self.title = opts.title
   self.itemY = opts.itemY

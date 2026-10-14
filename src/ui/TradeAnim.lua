@@ -817,14 +817,35 @@ end
 function TradeAnim:drawMonInfo(mon, ot, otId, boxTy)
   Font.drawBox(4, boxTy, 12, 8)
   local y0 = boxTy * 8
-  local no = Strings("No.%03d", dexOf(self.game, mon))
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.rectangle("fill", 56, y0, Font.width(no), 8)
-  love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(no, 56, y0)
+  local HudTiles = require("src.render.HudTiles")
+  local dex = dexOf(self.game, mon)
+  -- engine/movie/trade2.asm:1-21
+  if Strings.lookup("No.%03d") == "No.%03d" then
+    local no = ("%03d"):format(dex)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 56, y0, 16 + Font.width(no), 8)
+    HudTiles.statusTile(0x74, 56, y0)
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.drawCode(0xF2, 64, y0)
+    Font.draw(no, 72, y0)
+  else
+    local no = Strings("No.%03d", dex)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 56, y0, Font.width(no), 8)
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.draw(no, 56, y0)
+  end
   Font.draw(speciesName(self.game, mon), 40, y0 + 16)
   Font.draw(Strings("OT/%s", ot or "????"), 40, y0 + 32)
-  Font.draw(Strings("IDNo.%05d", otId or 0), 40, y0 + 48)
+  if Strings.lookup("IDNo.%05d") == "IDNo.%05d" then
+    HudTiles.statusTile(0x73, 40, y0 + 48)
+    HudTiles.statusTile(0x74, 48, y0 + 48)
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.drawCode(0xF2, 56, y0 + 48)
+    Font.draw(("%05d"):format(otId or 0), 64, y0 + 48)
+  else
+    Font.draw(Strings("IDNo.%05d", otId or 0), 40, y0 + 48)
+  end
   love.graphics.setColor(1, 1, 1, 1)
 end
 

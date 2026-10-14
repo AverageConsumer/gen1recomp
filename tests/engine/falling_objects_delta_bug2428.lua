@@ -19,6 +19,9 @@ local data = {
 local p = AnimPlayer.new(data)
 local ok, err = pcall(p.start, p, "PETALS_TEST", true)
 T.check(ok, "petals compile past delta index 8: " .. tostring(err))
+-- engine/battle/animations.asm:2338
+T.eq(p.steps[1].dur, 10, "InitMultipleObjectsOAM reloads the tileset first")
+table.remove(p.steps, 1)
 T.eq(#p.steps, 53, "52 three-frame ticks plus the ClearSprites frame")
 T.eq(#p.steps[1].sprites, 20, "twenty petals")
 T.eq(#p.steps[53].sprites, 0, "ClearSprites empties OAM")
@@ -39,6 +42,8 @@ T.check(obj(9, 1).xf and obj(9, 1).x == 92, "index 9 wraps to 0 and flips left")
 T.eq(obj(10, 1).x, 91, "then walks the table leftward")
 
 p:start("LEAVES_TEST", true)
+T.eq(p.steps[1].dur, 10, "leaves reload the tileset first too")
+table.remove(p.steps, 1)
 T.eq(#p.steps, 53, "leaves run the same 52 ticks")
 T.eq(#p.steps[1].sprites, 3, "three leaves")
 

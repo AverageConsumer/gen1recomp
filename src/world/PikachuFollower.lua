@@ -54,12 +54,11 @@ local HAPPINESS_CHANGES = {
   TRADE           = { -10, -10, -20, mood = 0x00 },
 }
 
--- the companion mon: a healthy (or any) party PIKACHU stands in for the
--- original's OT-checked starter, same approximation as shouldSpawn
+-- engine/pikachu/pikachu_status.asm:1
 function PikachuFollower.starterInParty(save, needHealthy)
   for _, mon in ipairs(save.party or {}) do
-    if mon.species == "PIKACHU"
-       and (not needHealthy or (mon.hp or 0) > 0) then
+    if PikachuFollower.isStarterPikachu(save, mon) then
+      if needHealthy and (mon.hp or 0) <= 0 then return nil end
       return mon
     end
   end
@@ -154,10 +153,7 @@ function PikachuFollower.onMoveLearned(save, mon, moveId)
   save.pikachuMood = 0x85
 end
 
--- ShouldPikachuSpawn, approximated: Yellow, the lab gift happened, and a
--- healthy Pikachu is in the party (the original checks the starter's OT
--- identity; a traded second Pikachu standing in is accepted here).
--- Surfing and biking hide the follower (BIT_PIKACHU_SPAWN flags).
+-- engine/pikachu/pikachu_follow.asm:9
 local function shouldSpawn(game, ow)
   if not GameVersion.isYellow() then return false end
   local save = game.save
@@ -173,10 +169,7 @@ local function shouldSpawn(game, ow)
   if not (game.data.sprites and game.data.sprites.SPRITE_PIKACHU) then
     return false
   end
-  for _, mon in ipairs(save.party or {}) do
-    if mon.species == "PIKACHU" and (mon.hp or 0) > 0 then return true end
-  end
-  return false
+  return PikachuFollower.starterInParty(save, true) ~= nil
 end
 
 function PikachuFollower.setShouldSpawn(fn)

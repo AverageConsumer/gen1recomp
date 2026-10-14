@@ -114,7 +114,7 @@ M.MT_MOON_B2F = {
       { "save_end_battle_text", "_MtMoonJessieJamesText3" },
       { "start_battle", "trainer", "OPP_ROCKET", 42 },
       { "check_battle_result", "win" },
-      { "jump_if_false", "end" },
+      { "jump_if_false", "lost" },
       partingRows("_MtMoonJessieJamesText4", 2, 6),
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
@@ -124,6 +124,11 @@ M.MT_MOON_B2F = {
       { "fade", "in" },
       { "play_default_music" },
       { "set_flag", "EVENT_BEAT_MT_MOON_3_JESSIE_JAMES" },
+      { "jump", "end" },
+      -- pokeyellow scripts/MtMoonB2F.asm:40
+      { "label", "lost" },
+      { "hide_object", "MT_MOON_B2F", "MTMOONB2F_JESSIE" },
+      { "hide_object", "MT_MOON_B2F", "MTMOONB2F_JAMES" },
     }), {})
     return true
   end,

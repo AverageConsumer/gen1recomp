@@ -296,6 +296,9 @@ return {
     if flags.EVENT_FOLLOWED_OAK_INTO_LAB and not flags.EVENT_GOT_STARTER
        and y >= 6 then
       ow.runner:run({
+        -- scripts/OaksLab.asm:158-167
+        { "face_object", 5, "down" },
+        { "face_object", 1, "down" },
         { "show_text", "_OaksLabOakDontGoAwayYetText" },
         { "move_player", "up", 1 },
       }, {})

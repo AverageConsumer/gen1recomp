@@ -236,6 +236,8 @@ eq(mv[1], "TACKLE", "Rattata L3 move 1")
 eq(mv[2], "TAIL_WHIP", "Rattata L3 move 2")
 local mv7 = Pokemon.movesAtLevel(Data.pokemon.RATTATA, 7)
 eq(mv7[3], "QUICK_ATTACK", "Rattata learns Quick Attack at 7")
+eq(table.concat(Pokemon.movesAtLevel(Data.pokemon.VICTREEBEL, 29), ","), "RAZOR_LEAF,WRAP,POISONPOWDER,SLEEP_POWDER", "Victreebel L29 relearns pushed-out SLEEP_POWDER")
+eq(table.concat(Pokemon.movesAtLevel(Data.pokemon.VILEPLUME, 29), ","), "PETAL_DANCE,POISONPOWDER,STUN_SPORE,SLEEP_POWDER", "Vileplume L29 relearns pushed-out moves")
 
 -- ---------------------------------------------------------------- screens & focus energy
 local reflDef = battler(fixedMon("RATTATA", 3), Data.pokemon.RATTATA)
@@ -271,6 +273,16 @@ eq(result, "failed", "burn heal fails on healthy mon")
 hurt.hp = 0
 ItemEffects.use(Data, save, "REVIVE", hurt)
 eq(hurt.hp, 9, "revive restores half HP")
+do
+  local ppMon = fixedMon("BULBASAUR", 5)
+  ppMon.moves = { { id = "GROWL", pp = 40 } }
+  eq(ItemEffects.use(Data, save, "PP_UP", ppMon, nil, 1), "consumed", "PP UP on GROWL consumed")
+  eq(ppMon.moves[1].pp, 47, "PP UP adds at most 7 to a 40-PP move")
+  eq(ItemEffects.use(Data, save, "MAX_ETHER", ppMon, nil, 1), "consumed", "MAX ETHER on full PP-UPped move is used up")
+  ppMon.moves[1].ppUps = 0
+  ppMon.moves[1].pp = 40
+  eq(ItemEffects.use(Data, save, "MAX_ETHER", ppMon, nil, 1), "failed", "MAX ETHER on full plain move has no effect")
+end
 local r2, payload = ItemEffects.use(Data, save, "TM_TOXIC", hurt)
 eq(r2, "learn", "TM06 teaches Toxic to Bulbasaur")
 eq(payload, "TOXIC", "TM payload is the move id")
@@ -449,8 +461,8 @@ eq(misted.stages.attack, -1, "secondary stat drop pierces MIST")
 local misted2 = { stages = {}, mist = true, name = "MISTY", mon = {} }
 local mistMsgs = MoveEffects.primary.ATTACK_DOWN1_EFFECT(sideRng, sideUser, misted2)
 check(misted2.stages.attack == nil
-      and mistMsgs[1]:find("MIST", 1, true) ~= nil,
-      "primary stat drop still blocked by MIST")
+      and mistMsgs[1]:find("But, it failed!", 1, true) ~= nil,
+      "primary stat drop blocked by MIST prints But, it failed!")
 
 -- Substitute boundary: the move must fail when its quarter-HP cost would
 -- consume all current HP, preventing a zero-HP user with a live substitute.
@@ -1763,6 +1775,12 @@ SaveData.save(Game.save)
 local loaded = SaveData.load()
 eq(loaded.inventory.POTION, 2, "save/load round trip")
 eq(loaded.party[1].species, "BULBASAUR", "party persisted")
+do
+  local probe = { version = Game.save.version, player = { id = Game.save.player.id } }
+  check(not SaveData.previousFileDiffers(probe), "same trainer id: no older-file prompt")
+  probe.player.id = (Game.save.player.id or 0) + 1
+  check(SaveData.previousFileDiffers(probe), "other trainer id: older-file prompt")
+end
 
 -- ---------------------------------------------------------------- save/load deep round trip
 -- A representative save table survives SaveData.save -> load exactly

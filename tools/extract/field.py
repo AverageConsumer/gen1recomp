@@ -1160,6 +1160,7 @@ def parse_credits(pokered):
     pointers = []
     strings = {}
     label = None
+    open_label = None
     path = os.path.join(pokered, "data/credits/credits_text.asm")
     for lineno, line in read_asm(path):
         s = line.strip()
@@ -1171,14 +1172,26 @@ def parse_credits(pokered):
         if m and m.group(1) != "CreditsTextPointers":
             label = m.group(1)
             continue
-        # Optional trailing @ terminator (Yellow omits it on some lines).
         m = re.match(r'db\s+(-\d+),\s*"([^"]*)"$', s)
-        if m and label:
-            strings[label] = {
-                "column": 9 + int(m.group(1)),   # hlcoord 9,6 + signed offset
+        if m and label and label not in strings:
+            strings[label] = [{
+                "column": 9 + int(m.group(1)),
                 "text": text.decode_string(m.group(2), lineno,
                                            "data/credits/credits_text.asm"),
-            }
+            }]
+            open_label = None if m.group(2).endswith("@") else label
+            continue
+        m = re.match(r'next\s+"([^"]*)"$', s)
+        if m and label and label == open_label:
+            first = strings[label][0]
+            strings[label].append({
+                "column": first["column"],
+                "text": text.decode_string(m.group(1), lineno,
+                                           "data/credits/credits_text.asm"),
+            })
+            open_label = None if m.group(1).endswith("@") else label
+            continue
+        open_label = None
     if len(pointers) != len(cred_names) or any(n is None for n in cred_names):
         util.die("credits: text pointer table does not match CRED_* constants")
 
@@ -1221,7 +1234,7 @@ def parse_credits(pokered):
                 label = pointers[cred_index[tok]]
                 if label not in strings:
                     util.die(f"credits_order.asm:{lineno}: no string for {tok}")
-                current["lines"].append(dict(strings[label]))
+                current["lines"].extend(dict(line) for line in strings[label])
             else:
                 util.die(f"credits_order.asm:{lineno}: unknown token {tok}")
     if not the_end_seen or current["lines"]:

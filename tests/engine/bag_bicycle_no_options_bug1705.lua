@@ -40,6 +40,11 @@ local Data = Fixtures.fresh()
 -- name/keyItem/machine off a def; the branches under test key on the id
 Data.items.BICYCLE = { id = "BICYCLE", index = 6, name = "BICYCLE", price = 0,
                        keyItem = true }
+Data.text = Data.text or {}
+Data.text._GotOnBicycleText1 = "{PLAYER} got on the{DONE}"
+Data.text._GotOnBicycleText2 = "{RAM:wStringBuffer}!{PROMPT}"
+Data.text._GotOffBicycleText1 = "{PLAYER} got off{DONE}"
+Data.text._GotOffBicycleText2 = "the {RAM:wStringBuffer}.{PROMPT}"
 Data.items.TOWN_MAP = { id = "TOWN_MAP", index = 5, name = "TOWN MAP",
                         price = 0, keyItem = true }
 Data.items.FIX_POTION = Data.items.FIX_POTION

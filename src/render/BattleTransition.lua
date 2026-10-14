@@ -23,32 +23,10 @@ local FLASH_STEPS = { 1 / 3, 2 / 3, 1, 2 / 3, 1 / 3, 0,
 local FLASH_HOLD = 2   -- frames per palette step
 local FLASH_CYCLES = 3
 
--- The screen stays black after the wipe lands.  Shrink and Split ask for it
--- outright (BattleTransition_BlackScreen, then `ld c, 10 / jp DelayFrames`:
--- battle_transitions.asm:390-392 and 422-424); the other six get the same gap
--- for free, because BattleTransition_BlackScreen has already set rBGP/rOBP0/
--- rOBP1 to $ff (:168-174) while DoBattleTransitionAndInitBattleVariables
--- reloads the HUD tile patterns and clears the screen (core.asm:6152-6185),
--- InitBattleCommon decompresses the front pic (core.asm:6694-6730), and
--- SlidePlayerAndEnemySilhouettesOnScreen rebuilds the whole tilemap between
--- DisableLCD and EnableLCD (core.asm:9-49) before anything moves.  This port
--- has no load to hide behind, so the hold has to be explicit (#315).  This is
--- a frame budget for that work, not a number pokered states.
---
--- 60 comes from pokered-c (BTRANS_BLACK_HOLD_FRAMES), which itemized the
--- derivable floor at ~13 frames -- LoadHpBarAndStatusTilePatterns 4,
--- LoadHudTilePatterns 2, ClearScreen's Delay3 3, the DisableLCD LY wait 1,
--- Delay3 after EnableLCD 3 -- and then noted that the two sprite
--- decompressors (UncompressSpriteFromDE for the 7x7 front pic,
--- LoadPlayerBackPic's uncompress + ScaleSpriteByTwo) are bit-level RLE/delta
--- decoders whose cost cannot be cycle-counted from the asm at all.  So the
--- derivation bottoms out around 25-30 with an unbounded remainder, and 60
--- was set by ear against the real ROM ("a solid second") and confirmed as
--- ~95% right rather than frame-matched.  The credible range is 30-60; do NOT
--- "correct" this down toward the floor on the strength of the derivation,
--- because the omitted decompressors are exactly the unbounded part.  It
--- wants a frame-by-frame capture against hardware to pin exactly.
-local BLACK_HOLD = 60
+-- engine/battle/core.asm:6151
+local BLACK_HOLD = 70
+-- engine/battle/battle_transitions.asm:391
+local BLACK_HOLD_DELAYED = 91
 
 local TILE = 8
 local COLS, ROWS = 160 / TILE, 144 / TILE -- 20 x 18 tiles
@@ -242,9 +220,9 @@ BattleTransition.STYLES = {
   circle       = { kind = "wipe", frames = 60, flash = true },
   spiralout    = { kind = "wipe", frames = 120 },
   hstripes     = { kind = "wipe", frames = 60 },
-  shrink       = { kind = "wipe", frames = 54 },
+  shrink       = { kind = "wipe", frames = 54, hold = BLACK_HOLD_DELAYED },
   vstripes     = { kind = "wipe", frames = 54 },
-  split        = { kind = "wipe", frames = 54 },
+  split        = { kind = "wipe", frames = 54, hold = BLACK_HOLD_DELAYED },
 }
 
 -- the eight wipes plus Transition's two warp fades: one registrant owns
@@ -323,6 +301,7 @@ function BattleTransition.new(game, onDone, opts)
   -- only the circle wipes flash first (battle_transitions.asm:585,628)
   self.phase = def.flash and "flash" or "wipe"
   self.wipeLen = def.frames
+  self.hold = def.hold or BLACK_HOLD
   return self
 end
 
@@ -334,7 +313,7 @@ function BattleTransition:update(dt)
       self.t = 0
     end
   else
-    if self.t >= self.wipeLen + BLACK_HOLD then
+    if self.t >= self.wipeLen + self.hold then
       self.game.stack:pop()
       if self.onDone then self.onDone() end
     end

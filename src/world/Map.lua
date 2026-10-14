@@ -233,6 +233,13 @@ function Map:isGrassCell(cx, cy)
   return grass ~= nil and self:cellTile(cx, cy) == grass
 end
 
+-- engine/overworld/movement.asm:526-551
+function Map:isNpcGrassCell(cx, cy)
+  if not self:inBounds(cx, cy) then return false end
+  local grass = self.tileset.grassTile
+  return grass ~= nil and self:tileAt(cx * 2 + 1, cy * 2) == grass
+end
+
 -- Water and eastern-shore tiles, from the tileset's waterTiles/shoreTiles
 -- (hash sets built in Map.new).  Tileset membership in water_tilesets.asm
 -- is checked by the caller.

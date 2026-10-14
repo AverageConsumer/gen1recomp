@@ -509,7 +509,6 @@ function LinkState:updateTrade(input)
     -- would lose it and a reset would clone the sent mon (#222).  Guarded so
     -- headless LinkBattle-style fake games with no writeSave are unaffected.
     if self.game.writeSave then self.game:writeSave() end
-    local name = received.nickname or self.game.data.pokemon[received.species].name
     local game = self.game
     -- engine/link/cable_club.asm:870  #758
     local again = self.verdict == "full" and self.net ~= nil
@@ -530,27 +529,22 @@ function LinkState:updateTrade(input)
       playerOtId = sent.otId or game.save.player.id,
       enemyOtId = received.otId,
       onDone = function()
-        game.stack:push(TextBox.new(game,
-          Strings("Trade completed!\f%s received\n%s!", game.save.player.name, name),
-          function()
-            local nextRound = function()
+        -- engine/link/cable_club.asm:850-866
+        local function completed()
+          game.stack:push(TextBox.new(game, Strings("Trade completed!"),
+            function()
               if again then self:beginRound() end
-            end
-            if evoTo then
-              -- via="TRADE": a trade evolution cannot be B-cancelled
-              -- (pokered LINK_STATE_TRADING skips the flash B-poll) (#213).
-              -- Re-save once the evolution movie finishes so the evolved
-              -- species (not the pre-evo landed by t:apply) is what persists,
-              -- keeping disk in step with the autosave above (#222).
-              require("src.pokemon.Evolution").evolve(game, received, evoTo,
-                function()
-                  if game.writeSave then game:writeSave() end
-                  nextRound()
-                end, "TRADE")
-            else
-              nextRound()
-            end
-          end))
+            end, { auto = { delay = 50 } }))
+        end
+        if evoTo then
+          require("src.pokemon.Evolution").evolve(game, received, evoTo,
+            function()
+              if game.writeSave then game:writeSave() end
+              completed()
+            end, "TRADE")
+        else
+          completed()
+        end
       end,
     })
     return
@@ -607,13 +601,19 @@ function LinkState:updateTrade(input)
       self.index = self.index + 1
     end
   elseif t.stage == "picking" and input:wasPressed("right") then
-    if t.theirParty and #t.theirParty > 0 then
+    -- engine/link/cable_club.asm:428-447
+    if self.side == "mine" and t.theirParty and #t.theirParty > 0 then
       self.side = "theirs"
-      self.theirIndex = math.min(self.theirIndex, #t.theirParty)
+      self.theirIndex = math.min(self.index, #t.theirParty)
     end
   elseif t.stage == "picking" and input:wasPressed("left") then
-    self.side = "mine"
-  elseif self.confirmed == nil and input:wasPressed("b") then
+    -- engine/link/cable_club.asm:372-388
+    if self.side == "theirs" then
+      self.side = "mine"
+      self.index = math.max(1, math.min(self.theirIndex, #self.game.save.party))
+    end
+  elseif t.stage == "confirming" and self.confirmed == nil
+      and input:wasPressed("b") then
     -- once confirm=true has been sent to the peer, backing out here
     -- would desync the two sides (the peer may already be committing
     -- the trade) -- B is dead after that, matching the A branch's own

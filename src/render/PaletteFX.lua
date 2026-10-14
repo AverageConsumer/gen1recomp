@@ -514,6 +514,13 @@ function PaletteFX.usesSpriteObp(mode)
   return mode == "ogred" and not GameVersion.isYellow()
 end
 
+-- engine/battle/animations.asm:551
+function PaletteFX.runsNotSGB(mode)
+  mode = mode or PaletteFX.mode
+  return mode == "og" or mode == "og_inv" or mode == "classic"
+      or PaletteFX.usesSpriteObp(mode)
+end
+
 -- ------- post-zone sprite redraw (OG RED): OBP-baked draws recorded here and
 -- replayed by Renderer:endFrame on top of the zone pass (usesSpriteObp, #301)
 local spriteRedraws = {}

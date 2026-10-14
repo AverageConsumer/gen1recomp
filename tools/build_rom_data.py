@@ -1794,7 +1794,7 @@ def extract_field(rom, symbols, manifest, out_dir, assets_dir):
     raw_1bpp("Version_GFX", 80, 8, "title/red_version.png")
     raw_2bpp(
         "PlayerCharacterTitleGraphics", 40, 56, "title/player.png",
-        matte=True)
+        transparent=True)
     raw_2bpp(
         "NintendoCopyrightLogoGraphics", 152, 8,
         "title/copyright.png")

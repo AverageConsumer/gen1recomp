@@ -6,6 +6,13 @@
 local M = {}
 
 M.MR_FUJIS_HOUSE = {
+  -- data/events/hidden_events.asm:515-517
+  onInteract = function(game, ow, fx, fy)
+    if fy ~= 1 or not (fx == 0 or fx == 1 or fx == 7) then return false end
+    game.stack:push(require("src.render.TextBox").new(game,
+      game.data.text._MagazinesText))
+    return true
+  end,
   talk = {
     -- scripts/MrFujisHouse.asm MrFujisHouseSuperNerdText: CheckEvent
     -- EVENT_RESCUED_MR_FUJI branches between "he's not here" and

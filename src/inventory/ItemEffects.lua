@@ -110,6 +110,20 @@ function ItemEffects.isBattleMedicine(id)
       or id == "REVIVE" or id == "MAX_REVIVE"
 end
 
+-- engine/items/item_effects.asm:803
+function ItemEffects.notTimeInBattle(id, itemDef)
+  return (VITAMINS[id] or STONES[id] or id == "PP_UP"
+          or id == "RARE_CANDY" or id == "COIN_CASE"
+          or REPELS[id] or (itemDef and itemDef.machine)) and true or false
+end
+
+-- engine/items/item_effects.asm:805-808
+function ItemEffects.usesMedicineMenu(id)
+  return HEAL_AMOUNT[id] or STATUS_HEAL[id] or id == "MAX_POTION"
+      or id == "FULL_RESTORE" or id == "REVIVE" or id == "MAX_REVIVE"
+      or id == "RARE_CANDY" or VITAMINS[id] or false
+end
+
 -- Does this item need a party-member target?
 -- 'data' is optional for compat purposes; targeting falls back to itemDef/vanilla detection
 function ItemEffects.needsTarget(id, itemDef, data)
@@ -238,10 +252,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   -- ItemUseVitamin / ItemUsePPUp / ItemUseEvoStone / ItemUseCoinCase /
   -- ItemUseTMHM / ItemUseRepelCommon all refuse mid-battle
   -- (jp nz, ItemUseNotTime)
-  if battle and (VITAMINS[itemId] or STONES[itemId] or itemId == "PP_UP"
-                 or itemId == "RARE_CANDY" or itemId == "COIN_CASE"
-                 or REPELS[itemId]
-                 or (itemDef and itemDef.machine)) then
+  if battle and ItemEffects.notTimeInBattle(itemId, itemDef) then
     return "failed", { notTime(data, save) }
   end
 
@@ -349,6 +360,8 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       end
       return "consumed", { used }, {
         useJingle = true,
+        -- engine/items/item_effects.asm:1657
+        battleAnim = "XSTATITEM_ANIM",
         afterMessages = { Strings("%s's\n%s rose!", b.name,
                                   Strings(STAT_LABEL[stat])) },
       }
@@ -384,8 +397,9 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     local allMoves = itemId == "ELIXER" or itemId == "MAX_ELIXER"
     local function restore(mv)
       local mdef = data.moves[mv.id]
-      local maxPP = mdef and (mdef.pp + (mv.ppUps or 0) * math.floor(mdef.pp / 5))
-      if maxPP and mv.pp < maxPP then
+      local maxPP = mdef and require("src.pokemon.Pokemon").maxPP(mdef.pp, mv.ppUps)
+      -- engine/items/item_effects.asm:2078
+      if maxPP and (mv.pp < maxPP or (full and (mv.ppUps or 0) > 0)) then
         mv.pp = full and maxPP or math.min(maxPP, mv.pp + 10)
         return true
       end
@@ -578,8 +592,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     local mdef = mv and data.moves[mv.id]
     if mdef and (mv.ppUps or 0) < 3 then
       mv.ppUps = (mv.ppUps or 0) + 1
-      -- each PP UP adds maxPP/5 uses on top of the base maximum
-      mv.pp = mv.pp + math.floor(mdef.pp / 5)
+      mv.pp = mv.pp + require("src.pokemon.Pokemon").ppUpBonus(mdef.pp)
       return "consumed", { romText(data, "_PPIncreasedText",
         "%s's PP\nincreased!", mdef.name) }
     end
@@ -673,6 +686,10 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       return "failed", { notTime(data, save) }
     end
     return "itemfinder"
+  end
+  if itemId == "OAKS_PARCEL" then
+    -- engine/items/item_effects.asm:1918-1919
+    return "failed", { data.text._ItemUseNotYoursToUseText }
   end
   if itemId == "COIN_CASE" then
     return "failed", { romText(data, "_CoinCaseNumCoinsText",
