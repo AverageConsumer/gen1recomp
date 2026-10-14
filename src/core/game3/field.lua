@@ -1497,7 +1497,6 @@ function Field.executeFieldMove(payload)
     showMon(function()
       if payload.se then Audio.playSe(payload.se) end
       FieldEffects.startSweetScent(function()
-        Field.locked = false
         Field.finishSweetScent(payload)
       end)
     end)
@@ -1514,18 +1513,68 @@ function Field.finishSweetScent(payload)
     local Map = package.loaded["src.core.game3.map"]
     mapId = Map and Map.current
   end
+
+  local function showFailMessage()
+    local RomText = lazyReq("src.core.game3.rom_text")
+    local Message = lazyReq("src.ui.game3.message")
+    local failText = payload and payload.failText
+    local failKey = payload and payload.failKey
+    local textToShow
+    if type(failText) == "table" then
+      textToShow = failText
+    elseif failKey and RomText and RomText.has and RomText.has(failKey) then
+      textToShow = RomText.box(failKey)
+    elseif type(failText) == "string" and RomText and RomText.has and RomText.has(failText) then
+      textToShow = RomText.box(failText)
+    elseif type(failText) == "string" and #failText > 0 and not failText:match("^Text_") and not failText:match("^gText_") then
+      textToShow = failText
+    else
+      local FieldMoves = lazyReq("src.core.game3.field_moves")
+      local k = FieldMoves and FieldMoves.textKey and FieldMoves.textKey("NO_SWEET_SCENT_MONS")
+      if k and RomText and RomText.has and RomText.has(k) then
+        textToShow = RomText.box(k)
+      else
+        textToShow = "Looks like there's nothing here…"
+      end
+    end
+
+    local ok, err = pcall(function()
+      Message.show(textToShow, {
+        session = session,
+        done = function()
+          Field.locked = false
+          Message.close()
+        end,
+      })
+    end)
+    if not ok then
+      Field.locked = false
+      print("[game3/field] sweet scent fail message error: " .. tostring(err))
+    end
+  end
+
   local rules = Encounters.rules()
   if rules.sweetScentFacility then
     local handled = rules.sweetScentFacility(mapId)
     if handled == true then return end
     if handled == false then
-      if not payload.failText then return end
-      local Message = lazyReq("src.ui.game3.message")
-      Message.show(RomText.box(payload.failText), { session = session, done = function() Message.close() end })
+      showFailMessage()
       return
     end
   end
-  local terrain = Encounters.terrainAt(Player.cellX, Player.cellY)
+
+  -- Weather suppression check: heavy precipitation (rain, downpour, snow) & fog suppress sweet scent
+  local Weather = lazyReq("src.core.game3.weather")
+  local curWeather = Weather and Weather.get and Weather.get()
+  local weatherSuppressed = curWeather == Weather.RAIN
+    or curWeather == Weather.SNOW
+    or curWeather == Weather.RAIN_THUNDERSTORM
+    or curWeather == Weather.DOWNPOUR
+    or curWeather == Weather.FOG_HORIZONTAL
+    or curWeather == Weather.FOG_DIAGONAL
+
+  local px, py = (Player and Player.cellX) or 0, (Player and Player.cellY) or 0
+  local terrain = not weatherSuppressed and Encounters.terrainAt(px, py) or nil
   local enc = (terrain == "land" or terrain == "water") and Encounters.rollSweetScent(mapId, terrain) or nil
   if enc then
     local BattleBridge = lazyReq("src.core.game3.battle_bridge")
@@ -1533,9 +1582,8 @@ function Field.finishSweetScent(payload)
     if ok then return end
     print("[game3/field] sweet scent startWild failed: " .. tostring(err))
   end
-  if not payload.failText then return end
-  local Message = lazyReq("src.ui.game3.message")
-  Message.show(RomText.box(payload.failText), { session = session, done = function() Message.close() end })
+
+  showFailMessage()
 end
 
 -- pokefirered/src/wild_encounter.c:446
