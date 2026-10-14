@@ -2,6 +2,8 @@
 -- Owns the presented frame when Runtime is active: own canvas, own letterbox,
 -- own UI. Field map is composited under the UI; Gen2 Chrome/StartMenu are not used.
 
+local GameViewport = require("src.render.GameViewport")
+
 local Display = {}
 
 Display.W = 240
@@ -458,6 +460,7 @@ local function presentFlat(game, winW, winH)
     error(err)
   end
 
+  GameViewport.setTarget()
   -- Void bars + blit our frame (game3 letterbox, not Gen2 Playfield).
   love.graphics.setColor(0.02, 0.04, 0.08, 1)
   love.graphics.rectangle("fill", 0, 0, winW, winH)

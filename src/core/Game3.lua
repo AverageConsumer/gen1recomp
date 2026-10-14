@@ -9,6 +9,7 @@ end
 
 local FixedStep = require("src.core.FixedStep")
 local Input = require("src.core.Input")
+local GameViewport = require("src.render.GameViewport")
 local SaveData = require("src.core.SaveData")
 local Schema = require("src.core.game3.save_schema_firered")
 local MapIds = require("src.core.game3.map_ids")
@@ -810,14 +811,9 @@ function Game3:_drawHud(w, h)
   love.graphics.pop()
 end
 
-function Game3:draw()
-  local w = love.graphics.getWidth()
-  local h = love.graphics.getHeight()
-
+function Game3:_drawFrame(w, h)
   if self.phase == "arena" then
     if self.arena then self.arena:draw(w, h) end
-    self:_drawHud(w, h)
-    if self.touchControls then self.touchControls:draw() end
     return
   end
 
@@ -836,40 +832,42 @@ function Game3:draw()
         drawBootFrame()
         love.graphics.setCanvas()
         love.graphics.pop()
+        GameViewport.setTarget()
         local scale, ox, oy, _, _, scaleY = Display.fit(w, h)
         love.graphics.setColor(0.02, 0.04, 0.08, 1)
         love.graphics.rectangle("fill", 0, 0, w, h)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(canvas, ox, oy, 0, scale, scaleY)
       else
+        GameViewport.setTarget()
         drawBootFrame()
       end
-    end
-    self:_drawHud(w, h)
-    if self.touchControls then
-      self.touchControls:draw()
     end
     return
   end
 
   if Runtime.isActive() then
     if Display.present(self, w, h) then
-      self:_drawHud(w, h)
-      if self.touchControls then
-        self.touchControls:draw()
-      end
       return
     end
   end
 
+  GameViewport.setTarget()
   love.graphics.clear(0.05, 0.05, 0.12)
   love.graphics.setColor(0.4, 0.8, 0.4)
   local map = self.session and self.session.map or "?"
   love.graphics.printf("Fire Red field: " .. tostring(map), 0, h * 0.45, w, "center")
+end
+
+function Game3:draw()
+  GameViewport.begin(3)
+  local w, h = GameViewport.dimensions()
+  GameViewport.setTarget()
+  self:_drawFrame(w, h)
   self:_drawHud(w, h)
-  if self.touchControls then
-    self.touchControls:draw()
-  end
+  GameViewport.finish(self)
+  -- Touch controls belong to the full OS window, outside the game viewport.
+  if self.touchControls then self.touchControls:draw() end
 end
 
 function Game3:_hotkey(key)
