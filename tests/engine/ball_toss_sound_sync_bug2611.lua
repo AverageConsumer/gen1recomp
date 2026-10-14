@@ -15,6 +15,7 @@ local animData = {
   subanims = { ARC = { type = "NORMAL", blocks = blocks } },
   frameBlocks = { BALL = { { x = 0, y = 0, tile = 2 } } },
   baseCoords = { ARC = { x = 60, y = 40 } },
+  idEffects = {},
 }
 for _, id in ipairs({ "TOSS_ANIM", "GREATTOSS_ANIM", "ULTRATOSS_ANIM", "TACKLE" }) do
   animData.moveAnims[id] = { seq = { { subanim = "ARC", tileset = 0,

@@ -1559,7 +1559,25 @@ local function renderEffectData(data, header, options)
   return result
 end
 
+-- audio/engine_2.asm:259
+local function effectChannelFrames(data, header, options)
+  if not header then return nil end
+  options = options or {}
+  options.sfx = true
+  options.allowLoops = false
+  local engine = Engine.new(data, header, options)
+  local frames = {}
+  for _, channel in ipairs(engine.channels) do
+    for _ = 1, 100000 do
+      if channel.ended or not channel:nextEvent() then break end
+    end
+    frames[channel.number] = channel.timeTicks / FRAME_TICKS
+  end
+  return frames
+end
+
 ChipSynth.newEngine = Engine.new
+ChipSynth.effectChannelFrames = effectChannelFrames
 ChipSynth.soundData = soundData
 ChipSynth.renderInto = renderInto
 ChipSynth.newBuffer = newBuffer

@@ -100,4 +100,23 @@ slots.yesno = 2
 local onNo = record(function() slots:drawBottom() end)
 eq(cursor(onNo) and cursor(onNo)[4], 15 * 8, "and moves to the NO row")
 
+local function arrow(list)
+  for _, c in ipairs(list) do
+    if c[1] == "code" and c[2] == 0xEE then return c end
+  end
+end
+
+-- engine/slots/slot_machine.asm:631-632
+slots:resolveWin({ symbol = "CHERRY", payout = 8 })
+slots.flashLeft = 1
+slots.flashTimer = 4
+game.input = { wasPressed = function() return false end }
+slots:update(1 / 60)
+eq(slots.stage, "message", "the flash ends on the lined-up message")
+local won = record(function() slots:drawBottom() end)
+local wonArrow = arrow(won)
+check(wonArrow ~= nil, "the lined-up text shows the down arrow")
+eq(wonArrow and wonArrow[3], 18 * 8, "at column 18")
+eq(wonArrow and wonArrow[4], 16 * 8, "on row 16")
+
 T.finish()

@@ -20334,6 +20334,34 @@
       9,
       20950
     ],
+    "AnimationFlashScreen": [
+      30,
+      20926
+    ],
+    "AnimationIdSpecialEffects": [
+      30,
+      20213
+    ],
+    "DoBlizzardSpecialEffects": [
+      30,
+      20502
+    ],
+    "DoExplodeSpecialEffects": [
+      30,
+      20489
+    ],
+    "DoRockSlideSpecialEffects": [
+      30,
+      20441
+    ],
+    "FlashScreenEveryEightFrameBlocks": [
+      30,
+      20471
+    ],
+    "FlashScreenEveryFourFrameBlocks": [
+      30,
+      20480
+    ],
     "FallingObjects_DeltaXs": [
       30,
       23821
@@ -32889,6 +32917,42 @@
     "_ZubatDexEntry": [
       43,
       24717
+    ],
+    "CancelTextString": [
+      1,
+      22464
+    ],
+    "DrawText": [
+      4,
+      30820
+    ],
+    "TradeCanceled": [
+      1,
+      23098
+    ],
+    "TradeCenter_SelectMon.statsTrade": [
+      1,
+      22303
+    ],
+    "TradeCompleted": [
+      1,
+      23081
+    ],
+    "TwoOptionMenuStrings.TradeCancelMenu": [
+      1,
+      30408
+    ],
+    "WaitingText": [
+      1,
+      19496
+    ],
+    "YouLoseText": [
+      4,
+      30811
+    ],
+    "YouWinText": [
+      4,
+      30803
     ]
   },
   "text": {

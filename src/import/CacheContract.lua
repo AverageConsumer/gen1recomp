@@ -10,7 +10,7 @@ local CacheContract = {}
 
 -- engine/battle/animations.asm:2418, engine/battle/core.asm:2051
 -- engine/movie/title.asm:97
-CacheContract.FORMAT = "rom-cache-v14-gen1:"
+CacheContract.FORMAT = "rom-cache-v15-gen1:"
 CacheContract.VERSION_FORMAT = {
   -- v11: Gen 2 maps carry their object list's ROM address, which a .sav
   -- export re-anchoring a save onto another map writes back into
@@ -25,7 +25,9 @@ CacheContract.VERSION_FORMAT = {
   -- data/pikachu/pikachu_pic_animation.asm:340, engine/movie/title.asm:76
   -- engine/pikachu/pikachu_pic_animation.asm:412, engine/battle/core.asm:2135-2138
   -- engine/battle/read_trainer_party.asm:87
-  yellow = "rom-cache-v12-yellow6:",
+  -- engine/events/diploma2.asm:6
+  -- engine/events/hidden_events/vermilion_gym_trash2.asm:70
+  yellow = "rom-cache-v12-yellow7:",
   -- v8: M4A tracks retain reachable patterns and explicit entry offsets.
   firered = "rom-cache-v25-firered:",
   leafgreen = "rom-cache-v10-leafgreen:",
@@ -128,6 +130,10 @@ CacheContract.VERSION_REQUIRED_FILES = {
     "assets/generated/minigame/surf_1c.png",
     "assets/generated/minigame/title_bg.png",
     "assets/generated/minigame/intro_pika_0.png",
+    "assets/generated/minigame/hiscore_tiles.png",
+    "assets/generated/diploma/yellow_tiles.png",
+    "assets/generated/printer/hp.png",
+    "assets/generated/printer/lv.png",
   },
 }
 

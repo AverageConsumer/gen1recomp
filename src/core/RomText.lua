@@ -29,7 +29,10 @@ local Strings = require("src.core.Strings")
 
 return function(data, label, fallback, ...)
   local text = data and data.text and data.text[label]
-  if not text then return Strings(fallback, ...) end
+  if not text then
+    if fallback == nil then error("ROM text " .. tostring(label) .. " is not in the cache", 2) end
+    return Strings(fallback, ...)
+  end
   local args = { ... }
   if #args == 0 then return text end
 
@@ -55,6 +58,7 @@ return function(data, label, fallback, ...)
   elseif #args == slots - named then
     fillNamed = false
   else
+    if fallback == nil then error("ROM text " .. tostring(label) .. " does not fit the call", 2) end
     return Strings(fallback, ...)
   end
 

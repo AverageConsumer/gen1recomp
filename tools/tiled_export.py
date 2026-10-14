@@ -113,7 +113,7 @@ PALETTE_BY_MAP = {
     "LORELEIS_ROOM": "PALLET", "BRUNOS_ROOM": "CAVE",
 }
 PALETTE_BY_TILESET = {"CEMETERY": "GRAYMON", "CAVERN": "CAVE"}
-PALETTE_BY_PREFIX = [("ROUTE_", "ROUTE")]
+PALETTE_BY_PATTERN = [(re.compile(r"^ROUTE_\d+$"), "ROUTE")]
 PALETTE_DEFAULT = "ROUTE"
 
 # Mod map ids start here so they cannot collide with the ROM's byte-wide table
@@ -185,8 +185,8 @@ def resolve_map_palettes(maps):
         if tileset in PALETTE_BY_TILESET:
             resolved[map_id] = PALETTE_BY_TILESET[tileset]
             continue
-        for prefix, palette in PALETTE_BY_PREFIX:
-            if map_id.startswith(prefix):
+        for pattern, palette in PALETTE_BY_PATTERN:
+            if pattern.match(map_id):
                 resolved[map_id] = palette
                 break
 

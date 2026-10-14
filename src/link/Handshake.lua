@@ -264,6 +264,9 @@ function Handshake.checkCompat(localHello, remoteHello)
   if major(remoteHello.engineVersion) ~= major(localHello.engineVersion) then
     return "refused", "engine_mismatch"
   end
+  if tonumber(remoteHello.protocol) ~= tonumber(localHello.protocol) then
+    return "refused", "protocol_mismatch"
+  end
   -- A lockstep battle needs the same engine RELEASE, not just the same
   -- major: the fingerprint only covers the data/mod link surface, and
   -- battle logic changes between minor releases (parity fixes, move
@@ -404,6 +407,12 @@ function Handshake.describe(localHello, remoteHello, verdict, mode)
       wrap(lines, "with no mods.")
       wrap(lines, "Your mods can't")
       wrap(lines, "link with it.")
+    elseif tonumber(remoteHello.protocol)
+           ~= tonumber(localHello and localHello.protocol) then
+      wrap(lines, "The other game's")
+      wrap(lines, "link version")
+      wrap(lines, "differs. Update")
+      wrap(lines, "both games.")
     else
       wrap(lines, "The two games are")
       wrap(lines, "different engine")

@@ -13,7 +13,7 @@ local data = { moveAnims = {
   REST      = row("player_rest"),
   CONF_ANIM = row("enemy_conf"),
   SLP_ANIM  = row("enemy_slp"),
-} }
+}, idEffects = {} }
 
 local function firstSound(moveId, attackerIsPlayer)
   local p = AnimPlayer.new(data)

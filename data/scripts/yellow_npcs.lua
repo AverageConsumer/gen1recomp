@@ -161,19 +161,10 @@ end
 
 local function printPortrait(game, mon)
   local Printer = require("src.core.Printer")
-  local Font = require("src.render.Font")
   local Strings = require("src.core.Strings")
-  local def = game.data.pokemon[mon.species] or {}
-  local ok, img = pcall(love.graphics.newImage, def.spriteFront or "")
+  -- engine/printer/printer.asm:345
   local saved, err = Printer.save("fanclub_portrait", 160, 144, function()
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.rectangle("line", 4.5, 4.5, 151, 135)
-    love.graphics.setColor(1, 1, 1, 1)
-    if ok and img then
-      local w, h = img:getDimensions()
-      love.graphics.draw(img, math.floor(80 - w / 2), math.floor(64 - h / 2))
-    end
-    Font.draw(mon.nickname or def.name or mon.species, 16, 112)
+    require("src.ui.PrinterMonStats").render(game, mon)
   end)
   return saved and (Strings("Printed!\f") .. Printer.savedWhereText(saved))
     or Strings("Printer error!\n%s", tostring(err))

@@ -306,7 +306,29 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     -- engine/items/item_effects.asm:1925
     closeBag()
     if ow and ow:hasHiddenItemLeft() then
-      showMessages(game, { t._ItemfinderFoundItemText })
+      -- engine/items/item_effects.asm:1929-1936
+      local Sound = require("src.core.Sound")
+      local names = {}
+      for _ = 1, 4 do
+        names[#names + 1] = "Healing_Machine"
+        names[#names + 1] = "Purchase"
+      end
+      local loop = { game = game, at = 0, src = nil, isOpaque = false }
+      function loop:update()
+        if self.src then
+          local ok, playing = pcall(self.src.isPlaying, self.src)
+          if ok and playing then return end
+        end
+        self.at = self.at + 1
+        self.src = Sound.play(game.data, names[self.at])
+        if self.at >= #names then
+          game.stack:pop()
+          -- engine/items/item_effects.asm:1937-1939
+          showMessages(game, { t._ItemfinderFoundItemText })
+        end
+      end
+      function loop:draw() end
+      game.stack:push(loop)
     else
       showMessages(game, { t._ItemfinderFoundNothingText })
     end
@@ -382,7 +404,8 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
       showUseMessages(game, payload, removeUsed, extra)
       return
     end
-    removeUsed()
+    local removeLater = battle and not picker
+    if not removeLater then removeUsed() end
     if extra and extra.evolveTo then
       -- engine/menus/start_sub_menus.asm:408 .useItem_partyMenu
       local Evolution = require("src.pokemon.Evolution")
@@ -493,16 +516,21 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
       end)
       return
     end
+    -- engine/items/item_effects.asm:1656-1663
     if battle and extra and extra.battleAnim then
-      closePicker()
-      list:close()
       showMessages(game, payload, function()
+        if removeLater then removeUsed() end
+        closePicker()
+        list:close()
         spent(extra.afterMessages or {}, { anim = extra.battleAnim })
       end, TextBox.soundOpts(game, "Heal_Ailment"))
     elseif battle then
-      closePicker()
-      list:close()
-      showUseMessages(game, payload, function() spent({}) end, extra)
+      showUseMessages(game, payload, function()
+        if removeLater then removeUsed() end
+        closePicker()
+        list:close()
+        spent(extra and extra.afterMessages or {})
+      end, extra and { useJingle = extra.useJingle } or nil)
     else
       showUseMessages(game, payload, closePicker, extra)
     end
@@ -557,6 +585,7 @@ local function pickTargetAndUse(game, battle, id, list)
     -- engine/items/item_effects.asm:805 ItemUseMedicine, :1244 .done
     -- engine/items/item_effects.asm:1959
     keepOpen = ItemEffects.isBattleMedicine(id) or wantsMove
+      or id == "ELIXER" or id == "MAX_ELIXER"
       or ((not battle)
           and (ItemEffects.keepsPartyMenuOpen(id) or (def and def.machine ~= nil))),
     onSwitch = function(mon, picker)
@@ -677,6 +706,7 @@ function BagMenu.new(game, opts)
         return
       end
       if battle then -- no tossing mid-battle
+        list.hollowIndex = list.index -- home/list_menu.asm:91
         useItem(game, battle, id, list)
         return
       end

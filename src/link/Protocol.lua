@@ -1146,8 +1146,17 @@ function TradeSession:handle(msg)
       end
     end
     if self.stage == "waitParty" then self.stage = "picking" end
+  elseif (msg.type == "pick" or msg.type == "confirm")
+      and (self.stage == "restart" or self.stage == "declined") then
+    self.pending = self.pending or {}
+    self.pending[#self.pending + 1] = msg
   elseif msg.type == "pick" then
-    self.theirPick = num(msg.index)
+    -- engine/link/cable_club.asm:571
+    if msg.cancel then
+      self.theirCancel = true
+    else
+      self.theirPick = num(msg.index)
+    end
     self:advance()
   elseif msg.type == "confirm" then
     self.theirConfirm = msg.ok
@@ -1173,6 +1182,24 @@ function TradeSession:pick(index)
   return { type = "pick", index = self:wireIndex(index) }
 end
 
+-- engine/link/cable_club.asm:571
+function TradeSession:cancelPick()
+  self.myCancel = true
+  self:advance()
+  return { type = "pick", cancel = true }
+end
+
+-- engine/link/cable_club.asm:532
+function TradeSession:reset()
+  self.myPick, self.theirPick = nil, nil
+  self.myCancel, self.theirCancel = nil, nil
+  self.myConfirm, self.theirConfirm = nil, nil
+  self.stage = "picking"
+  local pending = self.pending
+  self.pending = nil
+  for _, msg in ipairs(pending or {}) do self:handle(msg) end
+end
+
 function TradeSession:confirm(ok)
   self.myConfirm = ok
   self:advance()
@@ -1191,16 +1218,28 @@ function TradeSession:advance()
     self.error = "the other game picked a POKéMON that isn't there"
     return
   end
-  if self.stage == "picking" and self.myPick then
-    self.stage = self.theirPick and "confirming" or "waitPick"
-  elseif self.stage == "waitPick" and self.theirPick then
-    self.stage = "confirming"
+  if self.stage == "picking" and (self.myPick or self.myCancel) then
+    self.stage = "waitPick"
+  end
+  if self.stage == "waitPick" then
+    local theirs = self.theirPick or self.theirCancel
+    if self.myCancel and self.theirCancel then
+      -- engine/link/cable_club.asm:578
+      self.stage = "cancelled"
+      self.mutual = true
+    elseif (self.myCancel or self.theirCancel) and theirs then
+      -- engine/link/cable_club.asm:532
+      self.stage = "restart"
+    elseif self.theirPick then
+      self.stage = "confirming"
+    end
   end
   if self.stage == "confirming" and self.myConfirm ~= nil and self.theirConfirm ~= nil then
     if self.myConfirm and self.theirConfirm then
       self.stage = "done"
     else
-      self.stage = "cancelled"
+      -- engine/link/cable_club.asm:746
+      self.stage = "declined"
     end
   end
 end

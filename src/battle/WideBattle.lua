@@ -206,7 +206,7 @@ local function drawCommandMenu(battle)
   if battle.safari then
     Font.drawBox(0, 13, 38, 5)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(Strings("BALLx"), 16, 112)
+    Font.draw(Strings("BALL") .. "\xc3\x97", 16, 112) -- data/text_boxes.asm:73
     -- wNumSafariBalls immediately after the label, as at hlcoord 7,14
     -- (engine/battle/core.asm:2074-2079) (#540)
     Font.draw(("%2d"):format(battle.safari.balls), 56, 112)
@@ -366,7 +366,7 @@ function WideBattle.draw(battle)
     g.rectangle("fill", 0, 0, WideBattle.WIDTH, WideBattle.HEIGHT)
   end
   -- AskName clears the field the same way the classic layout does
-  if battle.blankForAskName or coveredByOpaqueState(battle) then return end
+  if battle.blankForAskName or battle.blackoutBlank or coveredByOpaqueState(battle) then return end
 
   local fx = battle.fx
   local sx = (fx and fx.shakeX) or 0

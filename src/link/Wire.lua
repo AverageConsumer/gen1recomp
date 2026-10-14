@@ -206,7 +206,8 @@ SCHEMAS.party = function(m)
 end
 
 SCHEMAS.pick = function(m)
-  return { index = Wire.num(m.index, nil, -MAX_INT, MAX_INT) }
+  return { index = Wire.num(m.index, nil, -MAX_INT, MAX_INT),
+           cancel = Wire.bool(m.cancel, nil) }
 end
 
 SCHEMAS.confirm = function(m)

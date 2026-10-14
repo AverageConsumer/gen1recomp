@@ -178,6 +178,10 @@ local M = {
                          gotFlag = "EVENT_GOT_TM27",
                          noRoom = "_ViridianGymGiovanniTM27NoRoomText",
                          deactivate = range("EVENT_BEAT_VIRIDIAN_GYM_TRAINER_", 0, 7),
+                         -- scripts/ViridianGym.asm:164
+                         show = { { "ROUTE_22", "ROUTE22_RIVAL2" } },
+                         events = { "EVENT_2ND_ROUTE22_RIVAL_BATTLE",
+                                    "EVENT_ROUTE22_RIVAL_WANTS_BATTLE" },
                          badgeSound = "Get_Item1", -- sound_level_up -> battle engine: Level_Up
                          tmSound = "Get_Item1",
                          dialogue = {

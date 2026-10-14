@@ -449,6 +449,7 @@ function SlotMachine:update(dt)
       if self.exitTimer <= 0 then self.game.stack:pop() end
       return
     end
+    if self.arrowTimer then self.arrowTimer = self.arrowTimer + 1 end
     if input:wasPressed("a") or input:wasPressed("b") then
       Sound.play(self.game.data, "Press_AB")
       local after = self.afterMessage
@@ -483,6 +484,7 @@ function SlotMachine:update(dt)
         self.flash = false
         self.stage = "message"
         self.afterMessage = "payout"
+        self.arrowTimer = 0 -- engine/slots/slot_machine.asm:631-632
       end
     end
     return
@@ -680,6 +682,11 @@ function SlotMachine:drawBottom()
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(lines[1] or "", firstX, 14 * 8)
   Font.draw(lines[2] or "", 8, 16 * 8)
+  -- engine/slots/slot_machine.asm:631-632
+  if self.winSymbol and self.stage == "message"
+     and (self.arrowTimer or 0) % 60 < 30 then
+    Font.drawCode(0xEE, 18 * 8, 16 * 8)
+  end
   if self.stage == "bet" then
     -- hlcoord 14,11 with b=5 c=4 -- engine/slots/slot_machine.asm:83-86
     Font.drawBox(14, 11, 6, 7)

@@ -118,6 +118,23 @@ YELLOW_EXTRA_SYMBOLS = (
     "PikaPicAnimThunderboltPals",
     # engine/battle/read_trainer_party.asm:87
     "SpecialTrainerMoves",
+    # engine/events/diploma2.asm:6, :51-65, :113-122
+    "DiplomaGraphics", "DiplomaPikachuTiles", "DiplomaMewTiles",
+    "CongratulationsTiles", "DiplomaText", "DiplomaPlayer",
+    "DiplomaCongrats", "DiplomaGameFreak", "DiplomaPlayTime",
+    # engine/printer/printer.asm:634, :721-732
+    "SurfingPikachu2Graphics",
+    "Printer_PrepareSurfingMinigameHighScoreTileMap.Tilemap1",
+    "Printer_PrepareSurfingMinigameHighScoreTileMap.Tilemap2",
+    "Printer_PrepareSurfingMinigameHighScoreTileMap.PikachusBeachString",
+    "Printer_PrepareSurfingMinigameHighScoreTileMap.HiScoreString",
+    "Printer_PrepareSurfingMinigameHighScoreTileMap.PointsString",
+    # engine/printer/printer2.asm:5, :10, :164-177
+    "GFX_ea563", "GFX_ea56b",
+    "Printer_GetMonStats.OT", "Printer_GetMonStats.Stats",
+    "Printer_GetMonStats.Blank",
+    # engine/events/hidden_events/vermilion_gym_trash2.asm:70
+    "GymTrashCans3c",
     # Yellow-only overworld player surf sprite, loaded outside
     # SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) --
     # needs its own extract like RedBikeSprite. (RFC 0001)

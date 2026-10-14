@@ -846,6 +846,28 @@ function RomExtractor:extractBattleAnimations()
       self.rom:byte(deltaSymbol.bank, deltaSymbol.address + index)
   end
 
+  -- data/battle_anims/special_effects.asm:6
+  local routineByAddress = {}
+  for _, routine in ipairs({
+    "AnimationFlashScreen", "DoBlizzardSpecialEffects",
+    "DoExplodeSpecialEffects", "DoRockSlideSpecialEffects",
+    "FlashScreenEveryEightFrameBlocks", "FlashScreenEveryFourFrameBlocks",
+  }) do
+    routineByAddress[self:symbol(routine).address] = routine
+  end
+  local idSymbol = self:symbol("AnimationIdSpecialEffects")
+  local idEffects, idEnded = {}, false
+  for entry = 0, 63 do
+    local at = idSymbol.address + entry * 3
+    local id = self.rom:byte(idSymbol.bank, at)
+    if id == 0xFF then idEnded = true; break end
+    local name = moveNames[id]
+    assert(name, "AnimationIdSpecialEffects: unknown animation id " .. id)
+    local routine = routineByAddress[self.rom:word(idSymbol.bank, at + 1)]
+    if routine then idEffects[name] = routine end
+  end
+  assert(idEnded, "AnimationIdSpecialEffects: unterminated table")
+
   local out = {
     tilesheets = tilesheets,
     baseCoords = baseCoords,
@@ -853,6 +875,7 @@ function RomExtractor:extractBattleAnimations()
     subanims = subanims,
     moveAnims = moveAnims,
     fallingDeltaXs = fallingDeltaXs,
+    idEffects = idEffects,
   }
   self:write("battle_anims", out)
   return out
@@ -1569,6 +1592,31 @@ function RomExtractor:extractText()
       texts[label] = self.rom:readString(s.bank, s.address, self.manifest.charmap)
     end
   end
+  -- engine/link/cable_club.asm:538
+  -- engine/battle/end_of_battle.asm:77-84
+  for _, label in ipairs({ "TradeCenter_SelectMon.statsTrade", "CancelTextString",
+      "TradeCompleted", "TradeCanceled", "WaitingText", "YouWinText", "YouLoseText",
+      "DrawText", "TwoOptionMenuStrings.TradeCancelMenu" }) do
+    local s = self:symbol(label)
+    texts[label] = self.rom:readString(s.bank, s.address, self.manifest.charmap)
+  end
+  -- pokeyellow engine/events/diploma2.asm:51-65
+  -- engine/printer/printer2.asm:164-177
+  if self.symbols.DiplomaText then
+    local s = self:symbol("DiplomaText")
+    texts.DiplomaText = self.rom:readString(s.bank, s.address + 1,
+      self.manifest.charmap, 0x10)
+    for _, label in ipairs({ "DiplomaPlayer", "DiplomaCongrats", "DiplomaGameFreak",
+        "DiplomaPlayTime",
+        "Printer_PrepareSurfingMinigameHighScoreTileMap.PikachusBeachString",
+        "Printer_PrepareSurfingMinigameHighScoreTileMap.HiScoreString",
+        "Printer_PrepareSurfingMinigameHighScoreTileMap.PointsString",
+        "Printer_GetMonStats.OT", "Printer_GetMonStats.Stats",
+        "Printer_GetMonStats.Blank" }) do
+      local sym = self:symbol(label)
+      texts[label] = self.rom:readString(sym.bank, sym.address, self.manifest.charmap)
+    end
+  end
   -- pokered engine/items/item_effects.asm:828
   if self.symbols["ItemUseMedicine.emptyPartyText"] then
     texts["ItemUseMedicine.emptyPartyText"] = self:decodeTextCommands(
@@ -1855,6 +1903,42 @@ function RomExtractor:raw2bpp(label, width, height, relative, options)
   if options.matte then image = ImageWriter.matteColor0(image) end
   self:save(image, relative)
   return image
+end
+
+function RomExtractor:extractYellowPrinterPages()
+  if not self.symbols.DiplomaGraphics then return nil end
+  local function bytesOf(name, count)
+    local symbol = self:symbol(name)
+    return self.rom:bytes(symbol.bank, symbol.address, count)
+  end
+  -- engine/events/diploma2.asm:6
+  self:raw2bpp("DiplomaGraphics", 128, 64, "diploma/yellow_tiles.png",
+    { storedLength = 127 * 16, transparent = false })
+  -- engine/printer/printer.asm:634
+  self:raw2bpp("SurfingPikachu2Graphics", 128, 48, "minigame/hiscore_tiles.png",
+    { transparent = false })
+  -- engine/printer/printer2.asm:5
+  self:raw1bpp("GFX_ea563", 8, 8, "printer/hp.png", false)
+  self:raw1bpp("GFX_ea56b", 8, 8, "printer/lv.png", false)
+  return {
+    diploma = {
+      tiles = "assets/generated/diploma/yellow_tiles.png",
+      -- engine/events/diploma2.asm:113
+      pikachu = bytesOf("DiplomaPikachuTiles", 10 * 12),
+      congrats = bytesOf("CongratulationsTiles", 11),
+      mew = bytesOf("DiplomaMewTiles", 4 * 5),
+    },
+    hiScore = {
+      tiles = "assets/generated/minigame/hiscore_tiles.png",
+      -- engine/printer/printer.asm:721
+      box1 = bytesOf("Printer_PrepareSurfingMinigameHighScoreTileMap.Tilemap1", 3 * 8),
+      box2 = bytesOf("Printer_PrepareSurfingMinigameHighScoreTileMap.Tilemap2", 6 * 16),
+    },
+    monStats = {
+      hp = "assets/generated/printer/hp.png",
+      lv = "assets/generated/printer/lv.png",
+    },
+  }
 end
 
 function RomExtractor:raw1bpp(label, width, height, relative, transparent)
@@ -2182,6 +2266,7 @@ function RomExtractor:extractField()
     end
   end
   self:extractSurfingPikachuTitleArt()
+  local yellowPages = self:extractYellowPrinterPages()
 
   local pikachu
   if self.symbols.PikaPicAnimPointers then
@@ -2287,7 +2372,14 @@ function RomExtractor:extractField()
   local converted = {}
   for index, values in pairs(adjacency) do converted[tonumber(index)] = values end
   data.hiddenExtras.trashCans.adjacent = converted
+  if self.symbols.GymTrashCans3c then
+    -- engine/events/hidden_events/vermilion_gym_trash2.asm:70
+    local cans = self:symbol("GymTrashCans3c")
+    data.hiddenExtras.trashCans.yellowTable =
+      self.rom:bytes(cans.bank, cans.address, 0x280)
+  end
   data.tradeArt = tradeArt
+  data.yellowPages = yellowPages
   data.pikachu = pikachu
   data.source = "canonical Pokemon Red ROM + bundled port metadata"
   self:write("field", data)

@@ -63,9 +63,13 @@ same(actions(pm.subItems), { "stats", "switch", "cancel" },
      "the plain list is PokemonMenuEntries in full (#1833)")
 eq(pm.subItems[3].label, "CANCEL", "CANCEL closes the list")
 
--- CANCEL sits at the bottom, so one wrap upward reaches it
+-- home/window.asm:46
 press(pm, "up")
-eq(pm.subIndex, 3, "up from STATS wraps onto CANCEL")
+eq(pm.subIndex, 1, "up from STATS stays on STATS (no wrap)")
+press(pm, "down")
+press(pm, "down")
+press(pm, "down")
+eq(pm.subIndex, 3, "down stops on CANCEL (no wrap)")
 press(pm, "a")
 eq(#game.stack.states, 0, "choosing CANCEL leaves the party menu (.exitMenu)")
 check(cancelled, "and reports the cancel to the caller")
@@ -94,5 +98,14 @@ game4.stack:push(pm4)
 press(pm4, "a")
 same(actions(pm4.subItems), { "battle_switch", "stats", "cancel" },
      "battle keeps SwitchStatsCancelText's order (data/text_boxes.asm:33)")
+
+-- engine/battle/core.asm:2320-2326
+package.loaded["src.render.TextBox"] = { new = function() return {} end }
+pm4:refuse("There's no will\nto fight!")
+check(not pm4.submenu, "a refusal closes the submenu")
+eq(pm4.subEdge and pm4.subEdge.lx, 12, "but keeps its box at column 11")
+eq(pm4.subEdge and pm4.subEdge.top, 11, "with the top edge on row 11")
+pm4:update(1 / 60)
+check(pm4.subEdge == nil, "the edge goes once the list is redrawn")
 
 T.finish()

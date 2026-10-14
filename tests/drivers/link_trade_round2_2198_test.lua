@@ -61,6 +61,7 @@ return function(game)
       theirs:send(peerTrade:confirm(true))
     elseif peerTrade.stage == "done" then
       peerTrade:apply(nil)
+      theirs:send({ type = "tradeSync" })
       peerRounds = peerRounds + 1
       peerPicked, peerConfirmed = false, false
       peerTrade = Protocol.TradeSession.new(game.data, peerParty,
@@ -119,10 +120,10 @@ return function(game)
         "session=", ls.net:getStatus(), "peerRounds=", peerRounds)
 
   local ok = game.stack:top() == ls
-         and game.save.party[1] and game.save.party[1].species == "RATTATA"
+         and game.save.party[2] and game.save.party[2].species == "RATTATA"
          and ls.net:getStatus() ~= "closed"
-         and (ls.trade.theirParty or {})[1] ~= nil
-         and ls.trade.theirParty[1].species == "SANDSHREW"
+         and (ls.trade.theirParty or {})[2] ~= nil
+         and ls.trade.theirParty[2].species == "SANDSHREW"
          and peerRounds == 2
   U.log(ok and "PASS link_trade_round2_2198" or "FAIL link_trade_round2_2198")
   ls.net:close()

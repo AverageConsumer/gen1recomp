@@ -17,7 +17,7 @@ local Version = {
                           -- refuses to chainload a payload whose minShell
                           -- exceeds the shell it provides.
   modApi = 2,             -- mod API major (manifest `api`)
-  linkProtocol = 2,       -- link handshake wire version (Handshake.PROTOCOL)
+  linkProtocol = 3,       -- link handshake wire version (Handshake.PROTOCOL)
   saveFormat = 5,         -- save.meta.format
   cache = "rom-cache-v5", -- ROM import cache generation (RomImporter marker)
 }

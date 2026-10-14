@@ -484,7 +484,6 @@ function Status.residualStatus(battler, opponent, battle)
   -- the Haze move-forfeit only covers the turn Haze was used; if this
   -- mon had already moved, drop the flag before it leaks into next turn
   battler.skipMove = nil
-  if mon.hp <= 0 then return msgs end
   local record = Status.recordFor(battleStatuses(battle), mon.status)
   if record and record.residual then
     for _, m in ipairs(record.residual(battler, opponent, battle) or {}) do

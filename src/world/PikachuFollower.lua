@@ -346,6 +346,7 @@ function PikachuFollower.onMapEntered(game, ow, opts, viaMapLoad)
   ow.pikachuFanClubScene = nil
   -- home/overworld.asm:1895
   if viaMapLoad and not (opts and opts.keepPikachu) then ow.pikachuPewterSleepScene = nil end
+  if viaMapLoad then ow.pikachuSurfLanding = nil end
   remove(ow)
   if not ModRuntime.call("world.follower.spawn", shouldSpawn, game, ow) then return end
   -- opts.keepPikachu is the follower a connection crossing kept alive:
@@ -626,6 +627,15 @@ function PikachuFollower.update(game, ow)
   if npc then updatePassable(game, ow, npc) end
   if PikachuFollower.isFollowingDisabled(ow) then return end
   if not npc then
+    -- pokeyellow home/overworld.asm:1695
+    if ow.pikachuSurfLanding then
+      if ow.player and ow.player.moving then return end
+      ow.pikachuSurfLanding = nil
+      if ModRuntime.call("world.follower.spawn", shouldSpawn, game, ow) then
+        PikachuFollower.onMapEntered(game, ow, { pikachuSpawn = 3 })
+      end
+      return
+    end
     if ModRuntime.call("world.follower.spawn", shouldSpawn, game, ow) then PikachuFollower.onMapEntered(game, ow) end
     return
   end

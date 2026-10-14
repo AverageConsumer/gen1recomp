@@ -17,6 +17,7 @@ The default. Reproduces the original cartridge, famous bugs included.
 | `focusEnergyBug`            | FOCUS ENERGY quarters the crit rate instead of x4      |
 | `enemyUnlimitedPP`          | Enemies never spend PP, so they never Struggle         |
 | `hyperBeamSkipRechargeOnKO` | HYPER BEAM skips its recharge when the target faints   |
+| `substituteZeroHpBug`       | SUBSTITUTE at exactly 1/4 HP goes up, then the user faints |
 | `randMin` / `randMax`       | Damage random factor 217-255                           |
 
 ## modern_clean
@@ -31,4 +32,5 @@ Keeps the formulas but removes the notorious quirks.
 | `focusEnergyBug`            | Off: FOCUS ENERGY raises the crit rate as intended     |
 | `enemyUnlimitedPP`          | Off: enemies deplete PP and Struggle when empty        |
 | `hyperBeamSkipRechargeOnKO` | Off: HYPER BEAM always recharges, like Gen 2+          |
+| `substituteZeroHpBug`       | Off: SUBSTITUTE fails at exactly 1/4 HP, like Gen 2+   |
 | `randMin` / `randMax`       | Damage random factor 217-255, same as faithful         |

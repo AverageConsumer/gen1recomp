@@ -14,6 +14,7 @@ local data = {
   },
   subanims = {}, frameBlocks = {}, baseCoords = {}, tilesheets = {},
   fallingDeltaXs = deltas,
+  idEffects = {},
 }
 
 local p = AnimPlayer.new(data)

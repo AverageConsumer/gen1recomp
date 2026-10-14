@@ -430,6 +430,10 @@ end
 
 function OverworldState:setMap(mapId, x, y, facing, opts)
   local fromMapId = self.map and self.map.id
+  -- home/overworld.asm:485
+  local fromWarp = self.map and self.player
+    and self.map:warpAtCell(self.player.cellX, self.player.cellY)
+  local fromWarpIdx = fromWarp and fromWarp.index
   if fromMapId and not (opts and opts.checkpoint) then
     Runtime.emit("map.exited", { mapId = fromMapId, toMapId = mapId })
   end
@@ -701,7 +705,7 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
     self.pendingFaceNpc = nil
     local hooks = mapScripts.get(mapId)
     if hooks and hooks.onEnter then
-      hooks.onEnter(Game, self, fromMapId)
+      hooks.onEnter(Game, self, fromMapId, fromWarpIdx)
     end
   end
 
@@ -1672,7 +1676,10 @@ function OverworldState:update(dt)
   end
 
   for _, npc in ipairs(self.npcs) do
-    npc:update(self.map, self.entities)
+    -- engine/overworld/movement.asm:130
+    if not (npc.wanders and self:spriteOutOfView(npc)) then
+      npc:update(self.map, self.entities)
+    end
   end
   require("src.world.PikachuFollower").update(Game, self)
 
@@ -3156,9 +3163,25 @@ function OverworldState:trashCanSwitch(canIndex)
     --   ROM bank's zero padding, so the second switch lands in can 0
     --   regardless of adjacency (the documented GymTrashCans bug)
     save.flags.EVENT_1ST_LOCK_OPENED = true
-    local adj = tc.adjacent[puz.first]
-    local masked = require("bit").band(love.math.random(0, 255), #adj)
-    puz.second = masked == 0 and 0 or adj[masked]
+    local yt = tc.yellowTable
+    if yt then
+      -- pokeyellow engine/events/hidden_events/vermilion_gym_trash2.asm:48-68
+      local row = puz.first * 9 + 1
+      local count = yt[row]
+      local e = 0
+      if count == 2 then
+        e = love.math.random(0, 1)
+      elseif count == 3 then
+        e = love.math.random(0, 255)
+      elseif count == 4 then
+        e = love.math.random(0, 3)
+      end
+      puz.second = { yt[row + 1 + 2 * e], yt[row + 2 + 2 * e] }
+    else
+      local adj = tc.adjacent[puz.first]
+      local masked = require("bit").band(love.math.random(0, 255), #adj)
+      puz.second = masked == 0 and 0 or adj[masked]
+    end
     -- engine/events/hidden_events/vermilion_gym_trash.asm:130 (text_asm tail:
     -- SFX_SWITCH once the text has printed, before the button wait) (#1702)
     Game.stack:push(TextBox.new(Game,
@@ -3168,7 +3191,9 @@ function OverworldState:trashCanSwitch(canIndex)
     return
   end
   -- .trySecondLock
-  if canIndex == puz.second then
+  local second = puz.second
+  if canIndex == second or (type(second) == "table"
+      and (second[1] == canIndex or second[2] == canIndex)) then
     -- .openSecondLock: only VermilionGymTrashSuccessText3 prints
     -- (SuccessText2 is unused in pokered)
     save.flags.EVENT_2ND_LOCK_OPENED = true
@@ -3438,6 +3463,8 @@ function OverworldState:stopSurfingOntoLand()
   if not (p.surfing and p.moving and p.targetX) then return end
   if not self.map:isWalkableCell(p.targetX, p.targetY) then return end
   p.surfing = false
+  -- pokeyellow home/overworld.asm:1696
+  self.pikachuSurfLanding = true
   self:syncSurfingPikachu()
   require("src.core.Music").setSurfing(Game.data, false)
 end
@@ -4446,6 +4473,16 @@ function OverworldState:checkVictoryRewards(trainerClass, partyIndex,
     for _, entry in ipairs(reward.hide) do
       Commands.hide_object(ctx, entry[1], entry[2])
     end
+  end
+  if reward.show then
+    local Commands = require("src.script.Commands")
+    local ctx = { game = Game, save = Game.save, overworld = self }
+    for _, entry in ipairs(reward.show) do
+      Commands.show_object(ctx, entry[1], entry[2])
+    end
+  end
+  for _, flag in ipairs(reward.events or {}) do
+    Flags.set(Game.save, flag)
   end
   if reward.badge then
     Game.save.inventory[reward.badge] = 1

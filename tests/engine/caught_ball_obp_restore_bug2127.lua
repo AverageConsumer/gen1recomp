@@ -28,6 +28,7 @@ local data = {
              { x = 0, y = 8, tile = 4, pal1 = true } },
   },
   baseCoords = { REST = { x = 120, y = 56 } },
+  idEffects = {},
 }
 
 local function obps(sprites)
@@ -59,7 +60,12 @@ T.eq(obps(p:finalSprites()), "e4,e4,obp1",
 
 local prevVersion, prevMode = GameVersion.get(), PaletteFX.mode
 local zone = { { 255, 255, 240 }, { 208, 184, 144 }, { 144, 112, 80 }, { 48, 48, 48 } }
-local fake = { zoneColorsAt = function() return zone end }
+local playerZone = { { 250, 250, 250 }, { 200, 200, 200 }, { 100, 100, 100 }, { 0, 0, 0 } }
+local hudZone = { { 255, 255, 255 }, { 160, 160, 160 }, { 120, 120, 120 }, { 90, 90, 90 } }
+local fake = { zoneColorsAt = function() return zone end,
+               sgbBattlePals = function()
+                 return { [0] = hudZone, [1] = hudZone, [2] = playerZone, [3] = zone }
+               end }
 local function shades(obp)
   local out = BattleState.animSpriteColors(fake, { obp = obp, x = 120, y = 56 }, 112, 40)
   local idx = {}
@@ -76,6 +82,17 @@ for _, v in ipairs({ { "yellow", "ogred" }, { "red", "gbc" }, { "blue", "gbc" } 
   PaletteFX.setMode(v[2])
   T.eq(shades("f0"), "0,3,3", v[1] .. "/" .. v[2] .. " $f0 maps to shades 0,3,3")
   T.eq(shades("e4"), "1,2,3", v[1] .. "/" .. v[2] .. " $e4 maps to the zone's shades 1,2,3")
+end
+-- pokeyellow engine/battle/animations.asm:18-19
+GameVersion.set("yellow")
+PaletteFX.setMode("ogred")
+do
+  local out = BattleState.animSpriteColors(fake, { obp = "f0", x = 40, y = 100 }, 32, 92)
+  T.eq(out and math.floor(out[3][1] * 255 + 0.5), 0,
+    "yellow/ogred colors a sprite left of OAM x 88 from the player mon palette")
+  out = BattleState.animSpriteColors(fake, { obp = "f0", x = 120, y = 90 }, 112, 82)
+  T.eq(out and math.floor(out[3][1] * 255 + 0.5), 48,
+    "and one right of it from the enemy mon palette, whatever zone it sits in")
 end
 -- engine/battle/animations.asm:571-573
 for _, v in ipairs({ { "red", "og" }, { "yellow", "og" }, { "blue", "classic" }, { "red", "og_inv" } }) do

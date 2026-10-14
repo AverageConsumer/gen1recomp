@@ -485,9 +485,27 @@ function LinkBattle.new(game, net, opts)
 
   -- both actions in hand: resolve the turn identically on both machines
   local function resolveLockstep(s, myMsg, theirMsg)
-    if myMsg.kind == "run" or theirMsg.kind == "run" then
-      local who = myMsg.kind == "run" and game.save.player.name or theirName
-      endAsDraw(s, Strings("%s ran from\nthe battle!", who))
+    if myMsg.kind == "run" then
+      -- engine/battle/core.asm:1598
+      local both = theirMsg.kind == "run"
+      endWithResult(s, (both or not opts.cable) and "draw" or "lose")
+      s:act(function() require("src.core.Sound").play(s.data, "Run") end)
+      s:say(s:romText("_GotAwayText", nil))
+      return
+    end
+    if theirMsg.kind == "run" then
+      -- engine/battle/core.asm:254
+      endWithResult(s, opts.cable and "win" or "draw")
+      s:say(s:romText("_EnemyRanText", nil, s.enemy.name))
+      s:act(function()
+        require("src.core.Sound").play(s.data, "Run")
+        local pf = s:picFxFor(s.enemy)
+        if pf then
+          pf.kind, pf.t = "slideOff", 0
+          pf.hidden, pf.persistHide = nil, nil
+        end
+      end)
+      s.queue[#s.queue + 1] = { wait = 24 }
       return
     end
     s.phase = "messages"
@@ -661,7 +679,7 @@ function LinkBattle.new(game, net, opts)
 
   self.openItems = function(s)
     -- engine/battle/core.asm:2178
-    s:say(RomText(game.data, "_ItemsCantBeUsedHereText", "Items can't be\nused here."))
+    s:say(RomText(game.data, "_ItemsCantBeUsedHereText", nil))
     s.phase = "messages"
     s.afterQueue = "menu"
   end
@@ -713,7 +731,7 @@ function LinkBattle.new(game, net, opts)
       end
     end
     -- engine/battle/core.asm:1157
-    s:sayNext(RomText(game.data, "_LinkBattleLostText", "%s lost to\n%s!",
+    s:sayNext(RomText(game.data, "_LinkBattleLostText", nil,
       game.save.player.name, theirName))
     s.result = "lose"
     s.afterQueue = "finish"
@@ -727,7 +745,7 @@ function LinkBattle.new(game, net, opts)
       end
     end
     -- engine/battle/core.asm:934
-    s:sayNext(RomText(game.data, "_TrainerDefeatedText", "%s defeated\n%s!",
+    s:sayNext(RomText(game.data, "_TrainerDefeatedText", nil,
       game.save.player.name, theirName))
     s.result = "win"
     s.afterQueue = "finish"
@@ -750,9 +768,7 @@ function LinkBattle.new(game, net, opts)
       elseif msg.type == "bye" then
         -- only a draw if our own simulation hasn't already decided
         -- (the winner's bye can arrive while we're still animating)
-        if not s.result then
-          endAsDraw(s, Strings("%s left the\nbattle.", theirName))
-        end
+        if not s.result then s.peerLeft = true end
       elseif msg.type == "forfeit" then
         -- the peer's own shot clock ran out; unlike a mutual RUN/desync
         -- draw, this has a definite winner (us)
@@ -768,7 +784,12 @@ function LinkBattle.new(game, net, opts)
         table.insert(s.pendingTournamentMessages, msg)
       end
     end
-    if net.closed and not s.linkEnded and not s.result then
+    local turnPlaying = s.phase == "messages" and s.afterQueue == "linkNext"
+    if s.peerLeft and not s.result and not turnPlaying then
+      s.peerLeft = nil
+      endAsDraw(s, Strings("%s left the\nbattle.", theirName))
+    end
+    if net.closed and not s.linkEnded and not s.result and not turnPlaying then
       endAsDraw(s)
     end
     -- Both early returns below skip baseUpdate, which is where the
@@ -805,6 +826,20 @@ function LinkBattle.new(game, net, opts)
       s.turnClockActive = false
     end
     baseUpdate(s, dt)
+  end
+
+  do
+    local baseDraw = self.draw
+    self.draw = function(s, ...)
+      baseDraw(s, ...)
+      if s.phase == "waitRemote" then
+        -- engine/link/print_waiting_text.asm:1
+        Font.drawBox(3, 10, 13, 3)
+        love.graphics.setColor(0, 0, 0, 1)
+        Font.draw(game.data.text.WaitingText, 32, 88)
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+    end
   end
 
   if opts.turnLimit then

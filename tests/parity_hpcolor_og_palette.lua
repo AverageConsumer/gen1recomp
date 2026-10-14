@@ -228,7 +228,10 @@ for _, c in ipairs(ANIM) do
   local version, mode = c[1], c[2]
   setup(version, mode)
   local zone = PaletteFX.pack(Data).palettes.GREENBAR
-  local fake = { data = Data, zoneColorsAt = function() return zone end }
+  local fake = { data = Data, zoneColorsAt = function() return zone end,
+                 sgbBattlePals = function()
+                   return { [0] = zone, [1] = zone, [2] = zone, [3] = zone }
+                 end }
   local s = { obp = "f0", x = 72, y = 80 }
   local out = BattleState.animSpriteColors(fake, s, 64, 64)
   check(out ~= nil, ("%s/%s animSpriteColors returns a triple"):format(version, mode))

@@ -481,8 +481,24 @@ function PartyMenu:eraseCursors()
   self.cursorsErased = true
 end
 
+-- engine/menus/text_box.asm:397-440
+local function submenuBox(self)
+  local n = #self.subItems
+  local lx = 12
+  for _, entry in ipairs(self.subItems) do
+    local mx = FIELD_MOVE_X[entry.move or entry.action]
+    if mx and mx < lx then lx = mx end
+  end
+  return lx, n > 3 and math.max(0, 16 - n * 2) or 11
+end
+
 -- engine/battle/core.asm:2329
 function PartyMenu:refuse(text)
+  -- engine/battle/core.asm:2404-2408
+  if self.submenu then
+    local lx, top = submenuBox(self)
+    self.subEdge = { lx = lx, top = top }
+  end
   self.submenu = nil
   self.subIndex = 1
   local TextBox = require("src.render.TextBox")
@@ -535,6 +551,7 @@ function PartyMenu:update(dt)
   -- home/window.asm:119
   self.cursorsErased = nil
   self.chosenHollow = nil
+  self.subEdge = nil
   local input = self.game.input
   local party = self.party or self.game.save.party
 
@@ -548,10 +565,11 @@ function PartyMenu:update(dt)
 
   if self.submenu then
     local n = #self.subItems
+    -- home/window.asm:46
     if input:wasPressed("up") then
-      self.subIndex = self.subIndex > 1 and self.subIndex - 1 or n
+      self.subIndex = math.max(1, self.subIndex - 1)
     elseif input:wasPressed("down") then
-      self.subIndex = self.subIndex < n and self.subIndex + 1 or 1
+      self.subIndex = math.min(n, self.subIndex + 1)
     elseif input:wasPressed("b") then
       self.submenu = nil
       self.blink = 0 -- home/window.asm:16
@@ -1091,6 +1109,10 @@ function PartyMenu:draw()
     end
     end
   end
+  local edge = self.subEdge
+  if edge then
+    Font.drawBox(edge.lx - 1, edge.top, 21 - edge.lx, 18 - edge.top)
+  end
   -- every message id prints through PrintText, so it lands in the standard
   -- bottom text box, rows 12-17 (party_menu.asm:174). #147 #210 #1610
   Font.drawBox(0, 12, 20, 6)
@@ -1102,13 +1124,7 @@ function PartyMenu:draw()
   end
   if self.submenu then
     local n = #self.subItems
-    -- engine/menus/text_box.asm:397-440, data/text_boxes.asm:33 #1819
-    local lx = 12
-    for _, entry in ipairs(self.subItems) do
-      local mx = FIELD_MOVE_X[entry.move or entry.action]
-      if mx and mx < lx then lx = mx end
-    end
-    local top = n > 3 and math.max(0, 16 - n * 2) or 11
+    local lx, top = submenuBox(self)
     Font.drawBox(lx - 1, top, 21 - lx, 18 - top)
     local y0 = (18 - n * 2) * 8
     for si, entry in ipairs(self.subItems) do

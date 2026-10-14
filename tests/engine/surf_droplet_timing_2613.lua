@@ -19,6 +19,7 @@ local data = {
   } } },
   frameBlocks = { COLUMN = { { x = 0, y = 0, tile = 5 } } },
   baseCoords = { BASE = { x = 120, y = 40 } },
+  idEffects = {},
 }
 
 for _, id in ipairs({ "SURF", "MIST", "TOXIC" }) do

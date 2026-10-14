@@ -9,7 +9,9 @@ local Font = require("src.render.Font")
 local Handshake = require("src.link.Handshake")
 local Net = require("src.link.Net")
 local Protocol = require("src.link.Protocol")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
+local Sound = require("src.core.Sound")
 local Screens = require("src.ui.Screens")
 local Session = require("src.link.Session")
 local TextBox = require("src.render.TextBox")
@@ -211,7 +213,8 @@ function LinkState:update(dt)
     -- so a final message travelling with the disconnect still counts)
     if status == "closed"
        and not PRE_CONNECT_STAGES[self.stage] and self.stage ~= "addrEntry"
-       and self.stage ~= "notice" and self.stage ~= "battleRunning" then
+       and self.stage ~= "notice" and self.stage ~= "battleRunning"
+       and self.stage ~= "battleResult" then
       self:exitWith(Strings("The link was\nbroken."))
       return
     end
@@ -375,6 +378,7 @@ function LinkState:update(dt)
         strict = Handshake.strict(self.verdict),
         forceLevel = self.forceLevel,
         ruleset = self.rulesetId,
+        cable = true,
       }
       local battle, why
       if self.isHost then
@@ -388,6 +392,8 @@ function LinkState:update(dt)
         return
       end
       self.game.stack:push(battle)
+      -- engine/battle/core.asm:6159
+      self.game.stack:push(LinkState.versus(self.game, battle))
       self.battle = battle
       self.stage = "battleRunning"
     end
@@ -408,8 +414,18 @@ function LinkState:update(dt)
         })
       end
       self.battle = nil
-      self:exitWith(nil) -- battle finished
+      local result = battle and battle.result
+      if result == "win" or result == "lose" or result == "draw" then
+        -- engine/battle/end_of_battle.asm:13
+        self.stage = "battleResult"
+        self.game.stack:push(LinkState.versus(self.game, battle, result))
+      else
+        self:exitWith(nil) -- battle finished
+      end
     end
+
+  elseif self.stage == "battleResult" then
+    if self.game.stack:top() == self then self:exitWith(nil) end
   end
 end
 
@@ -477,25 +493,161 @@ function LinkState:beginRound()
     peerName = self.peerName,
   })
   self.net:send(self.trade:opening())
-  self.index = 1
+  self:resetPickUi()
+end
+
+-- engine/link/cable_club.asm:312
+function LinkState:resetPickUi(keepCancel)
+  if not (keepCancel and self.side == "cancel") then
+    self.side = "mine"
+    self.index = 1
+  end
   self.theirIndex = 1
-  self.side = "mine"
   self.pickChoice = nil
+  self.waitRow = nil
+  self.cancelWaiting = nil
   self.confirmed = nil
+  self.confirmT = nil
+  self.confirmChoice = 1
+  self.willText = nil
+  self.tooBadT = nil
+end
+
+local function textDelay(game, input)
+  local options = game.save and game.save.options
+  local raw = options and options.textSpeed
+  local delay = ({ FAST = 1, MID = 3, SLOW = 5 })[raw] or tonumber(raw) or 3
+  if delay ~= 1 and delay ~= 3 and delay ~= 5 then delay = 3 end
+  if input:isDown("a") or input:isDown("b") then delay = 1 end
+  return delay
+end
+
+local function glyphPrefix(text, n)
+  if n <= 0 then return "" end
+  local spans = Font.split(text)
+  if n >= #spans then return text end
+  return text:sub(1, spans[n].to)
+end
+
+-- home/text.asm:61
+local function placeString(text, x, y)
+  for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+    Font.draw(line, x, y)
+    y = y + 16
+  end
+end
+
+-- engine/link/cable_club.asm:714
+function LinkState:startWillText()
+  local t = self.trade
+  local function nameOf(mon)
+    local def = mon and self.game.data.pokemon[mon.species]
+    return (def and def.name) or (mon and mon.species) or ""
+  end
+  local text = RomText(self.game.data, "_WillBeTradedText", nil,
+    nameOf(t.party[t.myPick]), nameOf((t.theirParty or {})[t.theirPick]))
+  text = text:gsub("{DONE}", ""):gsub("{PROMPT}", "")
+  local lines, seps = {}, {}
+  for line, sep in (text .. "\n"):gmatch("([^\n\v]*)([\n\v])") do
+    lines[#lines + 1] = line
+    seps[#seps + 1] = sep
+  end
+  self.willText = { lines = lines, seps = seps, line = 1, top = 1,
+                    chars = 0, timer = 0 }
+end
+
+-- home/text.asm:262
+function LinkState:updateWillText(input)
+  local w = self.willText
+  if w.done then return end
+  if w.arrow then
+    if input:wasPressed("a") or input:wasPressed("b") then
+      w.arrow = false
+      Sound.play(self.game.data, "Press_AB")
+      w.top = w.line
+      w.line = w.line + 1
+      w.chars = 0
+    end
+    return
+  end
+  w.timer = w.timer + 1
+  local delay = textDelay(self.game, input)
+  while w.timer >= delay and not w.arrow and not w.done do
+    w.timer = w.timer - delay
+    local glyphs = #Font.split(w.lines[w.line] or "")
+    if w.chars < glyphs then
+      w.chars = w.chars + 1
+    elseif w.line >= #w.lines then
+      w.done = true
+    elseif w.seps[w.line] == "\v" then
+      w.arrow = true
+    else
+      w.line = w.line + 1
+      w.chars = 0
+    end
+  end
 end
 
 function LinkState:updateTrade(input)
   if self.roundBusy then return end
   if self.game.linkNet == self.net then self.game.linkNet = nil end
-  for _, msg in ipairs(self.net:poll()) do
+  local batch = self.net:poll()
+  for i, msg in ipairs(batch) do
     local reply = self.trade:handle(msg)
     if reply then self.net:send(reply) end
+    if self.trade.stage == "done" and i < #batch and self.net.unread then
+      self.net:unread({ select(i + 1, unpack(batch)) })
+      break
+    end
   end
   local t = self.trade
 
+  if t.stage == "cancelled" and t.mutual then
+    -- engine/link/cable_club.asm:582
+    self:exitWith(nil)
+    return
+  end
   if t.stage == "cancelled" then
     self:exitWith(t.error and Strings("The trade stopped:\n%s.", t.error)
                   or Strings("The trade was\ncancelled."))
+    return
+  end
+  if t.stage == "restart" then
+    -- engine/link/cable_club.asm:532
+    t:reset()
+    self:resetPickUi(true)
+    return
+  end
+  if t.stage == "declined" then
+    -- engine/link/cable_club.asm:871
+    self.tooBadT = (self.tooBadT or 0) + 1
+    if self.tooBadT >= 100 then
+      t:reset()
+      self:resetPickUi()
+    end
+    return
+  end
+  if t.stage == "confirming" then
+    self.confirmT = (self.confirmT or 0) + 1
+    -- engine/link/cable_club.asm:683
+    if self.confirmT < 100 then return end
+    if not self.willText then self:startWillText() end
+    if not self.willText.done then
+      self:updateWillText(input)
+      return
+    end
+    if self.confirmed == nil then
+      -- engine/menus/text_box.asm:310
+      if input:wasPressed("up") then
+        self.confirmChoice = 1
+      elseif input:wasPressed("down") then
+        self.confirmChoice = 2
+      elseif input:wasPressed("a") or input:wasPressed("b") then
+        local ok = input:wasPressed("a") and self.confirmChoice == 1
+        self.confirmed = ok
+        self.net:send(t:confirm(ok))
+      end
+    end
     return
   end
   if t.stage == "done" then
@@ -528,13 +680,15 @@ function LinkState:updateTrade(input)
       playerOt = game.save.player.name,
       playerOtId = sent.otId or game.save.player.id,
       enemyOtId = received.otId,
+      -- engine/link/cable_club.asm:844
+      external = not self.isHost,
       onDone = function()
         -- engine/link/cable_club.asm:850-866
         local function completed()
-          game.stack:push(TextBox.new(game, Strings("Trade completed!"),
+          game.stack:push(LinkState.tradeEnd(game, again and self.net or nil,
             function()
               if again then self:beginRound() end
-            end, { auto = { delay = 50 } }))
+            end))
         end
         if evoTo then
           require("src.pokemon.Evolution").evolve(game, received, evoTo,
@@ -571,7 +725,8 @@ function LinkState:updateTrade(input)
         self.pickChoice = nil
         self:openStats(self.game.save.party[self.index])
       elseif t:canPick(self.index) then
-        self.pickChoice = nil
+        -- engine/link/cable_club.asm:523
+        self.waitRow = true
         self.side = "mine"
         self.net:send(t:pick(self.index))
       end
@@ -612,30 +767,89 @@ function LinkState:updateTrade(input)
       self.side = "mine"
       self.index = math.max(1, math.min(self.theirIndex, #self.game.save.party))
     end
-  elseif t.stage == "confirming" and self.confirmed == nil
-      and input:wasPressed("b") then
-    -- once confirm=true has been sent to the peer, backing out here
-    -- would desync the two sides (the peer may already be committing
-    -- the trade) -- B is dead after that, matching the A branch's own
-    -- self.confirmed == nil guard
-    self.net:send({ type = "bye" })
-    self:exitWith(Strings("The trade was\ncancelled."))
   elseif t.stage == "picking" and input:wasPressed("a") then
     if self.side == "cancel" then
-      -- engine/link/cable_club.asm:537
-      self.net:send({ type = "bye" })
-      self:exitWith(Strings("The trade was\ncancelled."))
+      -- engine/link/cable_club.asm:571
+      self.cancelWaiting = true
+      self.net:send(t:cancelPick())
     elseif self.side == "theirs" then
       self:openStats((t.theirParty or {})[self.theirIndex])
     else
       self.pickChoice = 1
     end
-  elseif t.stage == "confirming" and self.confirmed == nil then
-    if input:wasPressed("a") then
-      self.confirmed = true
-      self.net:send(t:confirm(true))
+  end
+end
+
+local RESULT_TEXT = { win = "YouWinText", lose = "YouLoseText", draw = "DrawText" }
+
+-- engine/battle/link_battle_versus_text.asm:2
+function LinkState.versus(game, battle, result)
+  local screen = { isOpaque = true, t = 0 }
+  local label = result and RESULT_TEXT[result]
+  local total = label and 350 or 150
+  function screen:update()
+    self.t = self.t + 1
+    if self.t >= total then game.stack:pop() end
+  end
+  function screen:draw()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, 160, 144)
+    Font.drawBox(3, 4, 14, 9)
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.draw((game.save.player and game.save.player.name) or "", 32, 40)
+    Font.draw(battle.opponentName or "", 32, 80)
+    if label and self.t >= 150 then
+      -- engine/battle/end_of_battle.asm:22
+      Font.draw(game.data.text[label], 48, 64)
+    else
+      Font.drawCode(0x69, 72, 64)
+      Font.drawCode(0x6A, 80, 64)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    -- engine/battle/draw_hud_pokeball_gfx.asm:166
+    battle:drawBallRow(battle.playerParty or {}, 72, 48, 8)
+    battle:drawBallRow(battle.enemyParty or {}, 72, 88, 8)
+  end
+  return screen
+end
+
+-- engine/link/cable_club.asm:850-866
+function LinkState.tradeEnd(game, net, onDone)
+  local screen = { isOpaque = true, t = 0, phase = "waiting" }
+  function screen:enter()
+    if net then net:send({ type = "tradeSync" }) end
+  end
+  function screen:update()
+    self.t = self.t + 1
+    if self.phase == "waiting" then
+      -- engine/link/print_waiting_text.asm:17
+      if self.t < 50 then return end
+      if net and net:getStatus() ~= "closed" and not net:take("tradeSync") then
+        return
+      end
+      self.phase, self.t = "pause", 0
+    elseif self.phase == "pause" then
+      if self.t >= 40 then self.phase, self.t = "completed", 0 end
+    elseif self.t >= 50 then
+      game.stack:pop()
+      if onDone then onDone() end
     end
   end
+  function screen:draw()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, 160, 144)
+    if self.phase == "waiting" then
+      CableFrame.box(3, 10, 13, 3)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(game.data.text.WaitingText, 32, 88)
+    elseif self.phase == "completed" then
+      CableFrame.box(0, 12, 20, 6)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(game.data.text.TradeCompleted, 8, 112)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  return screen
 end
 
 -- -------------------------------------------------------------------
@@ -741,15 +955,18 @@ function LinkState:draw()
     for i, mon in ipairs(self.game.save.party) do
       Font.draw(self:listLabel(mon, t, i), 16, i * 8)
       if i == self.index and self.side == "mine" then
-        Font.drawCode(CURSOR, 8, i * 8)
+        -- engine/link/cable_club.asm:460
+        Font.drawCode((self.pickChoice or self.waitRow) and CURSOR_HOLLOW or CURSOR,
+                      8, i * 8)
       end
     end
+    local exchanged = self.waitRow and t.stage ~= "waitPick" and t.stage ~= "picking"
     for i, mon in ipairs(t.theirParty or {}) do
       Font.draw(self:listLabel(mon), 16, 64 + i * 8)
       -- engine/link/cable_club.asm:617
       if self.side == "theirs" and i == self.theirIndex then
         Font.drawCode(CURSOR, 8, 64 + i * 8)
-      elseif t.theirPick == i then
+      elseif exchanged and t.theirPick == i then
         Font.drawCode(CURSOR_HOLLOW, 8, 64 + i * 8)
       end
     end
@@ -757,25 +974,59 @@ function LinkState:draw()
       -- engine/link/cable_club.asm:468
       CableFrame.box(0, 14, 20, 4)
       love.graphics.setColor(0, 0, 0, 1)
-      Font.draw(Strings("STATS"), 16, 128)
-      Font.draw(Strings("TRADE"), 96, 128)
-      Font.drawCode(CURSOR, self.pickChoice == 1 and 8 or 88, 128)
+      Font.draw(self.game.data.text["TradeCenter_SelectMon.statsTrade"], 16, 128)
+      -- engine/link/cable_club.asm:524
+      Font.drawCode(self.waitRow and CURSOR_HOLLOW or CURSOR,
+                    self.pickChoice == 1 and 8 or 88, 128)
     else
       -- engine/link/cable_club.asm:601
       CableFrame.fill(11, 15, 9, 1)
       CableFrame.fill(0, 16, 20, 2)
       CableFrame.box(0, 15, 11, 3)
       love.graphics.setColor(0, 0, 0, 1)
-      Font.draw(Strings("CANCEL"), 16, 128)
+      Font.draw(self.game.data.text.CancelTextString, 16, 128)
       -- engine/link/cable_club.asm:552
-      if self.side == "cancel" then Font.drawCode(CURSOR, 8, 128) end
+      if self.side == "cancel" then
+        -- engine/link/cable_club.asm:572
+        Font.drawCode(self.cancelWaiting and CURSOR_HOLLOW or CURSOR, 8, 128)
+      end
+    end
+    local tooBad = self.confirmed == false or t.stage == "declined"
+    if self.willText or tooBad then
+      -- engine/link/cable_club.asm:690
+      CableFrame.box(0, 12, 20, 6)
+      love.graphics.setColor(0, 0, 0, 1)
+      if tooBad then
+        -- engine/link/cable_club.asm:885
+        placeString(self.game.data.text.TradeCanceled, 8, 112)
+      else
+        local w = self.willText
+        for row = 0, 1 do
+          local index = w.top + row
+          local line = w.lines[index]
+          if line and index <= w.line then
+            Font.draw(index == w.line and glyphPrefix(line, w.chars) or line,
+                      8, 112 + row * 16)
+          end
+        end
+        -- home/text.asm:263
+        if w.arrow then Font.drawCode(0xEE, 144, 128) end
+      end
+    end
+    if t.stage == "confirming" and self.willText and self.willText.done
+       and self.confirmed == nil then
+      -- data/yes_no_menu_strings.asm:15
+      CableFrame.box(10, 7, 9, 5)
+      love.graphics.setColor(0, 0, 0, 1)
+      placeString(self.game.data.text["TwoOptionMenuStrings.TradeCancelMenu"], 96, 64)
+      Font.drawCode(CURSOR, 88, self.confirmChoice == 2 and 80 or 64)
     end
     if t.stage == "waitRecords" or t.stage == "waitParty"
-       or t.stage == "waitPick" or (t.stage == "confirming" and self.confirmed) then
+       or t.stage == "waitPick" or (t.stage == "confirming" and self.confirmed ~= nil) then
       -- engine/link/print_waiting_text.asm
       CableFrame.box(3, 10, 13, 3)
       love.graphics.setColor(0, 0, 0, 1)
-      Font.draw(Strings("Waiting...!"), 32, 88)
+      Font.draw(self.game.data.text.WaitingText, 32, 88)
     end
     love.graphics.setColor(0, 0, 0, 1)
 

@@ -74,8 +74,9 @@ return {
               local Printer = require("src.core.Printer")
               local Diploma = require("src.ui.Diploma")
               local Strings = require("src.core.Strings")
-              local saved, err = Printer.save("diploma", 160, 144, function()
-                Diploma.render(game)
+              local saved, err = Printer.save("diploma", 160,
+                Diploma.printHeight(game), function()
+                Diploma.renderPrint(game)
               end)
               -- the PRNT stand-in always reports where the PNG landed
               game.stack:push(TextBox.new(game, saved

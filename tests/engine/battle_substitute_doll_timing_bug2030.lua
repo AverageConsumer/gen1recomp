@@ -122,7 +122,7 @@ do
     if case == "already" then
       battle.enemy.substituteHP = 10
     else
-      battle.enemy.mon.hp = math.floor(battle.enemy.mon.stats.hp / 4)
+      battle.enemy.mon.hp = math.floor(battle.enemy.mon.stats.hp / 4) - 1
     end
     battle:performMove(battle.enemy, battle.player,
                        { id = "FIX_SUBSTITUTE", pp = 10 })

@@ -184,6 +184,29 @@ function BattleTransition.gridOrder(style, cols, rows)
   return hit or nil
 end
 
+local maskCache = setmetatable({}, { __mode = "k" })
+function BattleTransition.letterboxMask(order, padL, padT, lbCols, lbRows)
+  local byOrder = maskCache[order]
+  if not byOrder then
+    byOrder = {}
+    maskCache[order] = byOrder
+  end
+  local key = padL .. ":" .. padT .. ":" .. lbCols .. ":" .. lbRows
+  local mask = byOrder[key]
+  if not mask then
+    mask = { count = 0 }
+    for i, t in ipairs(order) do
+      local x, y = t[1] - padL, t[2] - padT
+      if x >= 0 and x < lbCols and y >= 0 and y < lbRows then
+        mask[i] = true
+        mask.count = mask.count + 1
+      end
+    end
+    byOrder[key] = mask
+  end
+  return mask
+end
+
 -- Wipe lengths, taken from pokered-c's battle_transition.c frame budget --
 -- derived from battle_transitions.asm and then checked on a live
 -- side-by-side against the ROM.  Each wipe is `steps x frames-per-step`:

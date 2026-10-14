@@ -12,6 +12,7 @@ local PaletteFX = require("src.render.PaletteFX")
 local Sprites = require("src.pokemon.Sprites")
 local SpriteRenderer = require("src.render.SpriteRenderer")
 local Strings = require("src.core.Strings")
+local TileAtlas = require("src.render.TileAtlas")
 
 -- engine/events/diploma.asm:65
 local OBP0_90 = { { 255, 255, 255 }, { 255, 255, 255 },
@@ -139,8 +140,103 @@ function Diploma:update()
   end
 end
 
+local function yellowPages(game)
+  local field = GameVersion.isYellow() and game.data and game.data.field
+  return field and field.yellowPages and field.yellowPages.diploma
+end
+
+local function drawLinesDouble(text, x, y)
+  local row = 0
+  for line in (text .. "\n"):gmatch("(.-)\n") do
+    Font.draw(line, x, y + row * 16)
+    row = row + 1
+  end
+end
+
+-- pokeyellow engine/events/diploma2.asm:125-146
+local function yellowBorders(img, borderRow)
+  love.graphics.setColor(1, 1, 1, 1)
+  for x = 0, 19 do
+    TileAtlas.draw(img, x % 2 == 0 and 0x02 or 0x01, x * 8, borderRow * 8)
+  end
+  for y = 0, 17 do
+    local id = y % 2 == 0 and 0x04 or 0x03
+    TileAtlas.draw(img, id, 0, y * 8)
+    TileAtlas.draw(img, id, 152, y * 8)
+  end
+  TileAtlas.draw(img, 0x00, 0, borderRow * 8)
+  TileAtlas.draw(img, 0x00, 152, borderRow * 8)
+end
+
+-- pokeyellow engine/events/diploma2.asm:3
+local function renderYellowTop(game, pages)
+  local t = game.data.text
+  local img = TileAtlas.image(pages.tiles)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.rectangle("fill", 0, 0, 160, 144)
+  yellowBorders(img, 0)
+  TileAtlas.draw(img, 0x10, 40, 16)
+  TileAtlas.draw(img, 0x10, (6 + Font.glyphCount(t.DiplomaText)) * 8, 16)
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw(t.DiplomaText, 48, 16)
+  Font.draw(t.DiplomaPlayer, 24, 32)
+  Font.draw(playerName(game), 80, 32)
+  drawLinesDouble(t.DiplomaCongrats, 16, 48)
+  Font.draw(t.DiplomaGameFreak, 72, 128)
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function ownedCount(game)
+  local dex = game.save.pokedex
+  local owned = 0
+  for _ in pairs(dex and dex.owned or {}) do owned = owned + 1 end
+  return owned
+end
+
+-- pokeyellow engine/events/diploma2.asm:67
+local function renderYellowBottom(game, pages)
+  local t = game.data.text
+  local img = TileAtlas.image(pages.tiles)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.rectangle("fill", 0, 0, 160, 144)
+  yellowBorders(img, 17)
+  TileAtlas.box(img, pages.pikachu, 6, 2, 10, 12)
+  TileAtlas.box(img, pages.congrats, 5, 13, 1, 11)
+  local secs = math.floor(tonumber(game.save.playTime) or 0)
+  local hours = tostring(math.min(255, math.floor(secs / 3600)))
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw(t.DiplomaPlayTime, 16, 120)
+  Font.draw(hours, 96, 120)
+  love.graphics.setColor(1, 1, 1, 1)
+  TileAtlas.draw(img, 0x16, (12 + #hours) * 8, 120)
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw(("%02d"):format(math.floor(secs / 60) % 60), (13 + #hours) * 8, 120)
+  love.graphics.setColor(1, 1, 1, 1)
+  -- pokeyellow engine/events/diploma2.asm:104-110
+  if ownedCount(game) == 151 then
+    TileAtlas.box(img, pages.mew, 2, 0, 4, 5)
+  end
+end
+
+function Diploma.printHeight(game)
+  return yellowPages(game) and 288 or 144
+end
+
+-- pokeyellow engine/printer/printer.asm:160
+function Diploma.renderPrint(game)
+  local pages = yellowPages(game)
+  if not pages then return Diploma.render(game) end
+  renderYellowTop(game, pages)
+  love.graphics.push()
+  love.graphics.translate(0, 144)
+  renderYellowBottom(game, pages)
+  love.graphics.pop()
+end
+
 -- the DisplayDiploma / DisplayDiplomaTop layout (hlcoord tiles -> x*8, y*8)
 function Diploma.render(game)
+  local pages = yellowPages(game)
+  if pages then return renderYellowTop(game, pages) end
   local frame = loadFrame()
   local circle = tryImage("assets/generated/trainer_card/circle_tile.png")
 

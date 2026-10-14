@@ -1024,6 +1024,27 @@ def extract_battle_anims(
             delta_symbol.bank, delta_symbol.address, 64))
     }
 
+    # data/battle_anims/special_effects.asm:6
+    routine_by_address = {}
+    for routine in (
+            "AnimationFlashScreen", "DoBlizzardSpecialEffects",
+            "DoExplodeSpecialEffects", "DoRockSlideSpecialEffects",
+            "FlashScreenEveryEightFrameBlocks",
+            "FlashScreenEveryFourFrameBlocks"):
+        routine_by_address[_symbol(symbols, routine).address] = routine
+    id_symbol = _symbol(symbols, "AnimationIdSpecialEffects")
+    id_effects = {}
+    for entry in range(64):
+        at = id_symbol.address + entry * 3
+        anim_id = rom.byte(id_symbol.bank, at)
+        if anim_id == 0xFF:
+            break
+        routine = routine_by_address.get(rom.word(id_symbol.bank, at + 1))
+        if routine:
+            id_effects[move_names[anim_id - 1]] = routine
+    else:
+        raise ValueError("AnimationIdSpecialEffects: unterminated table")
+
     out = {
         "tilesheets": tilesheets,
         "baseCoords": base_coords,
@@ -1031,6 +1052,7 @@ def extract_battle_anims(
         "subanims": subanims,
         "moveAnims": move_anims,
         "fallingDeltaXs": falling_delta_xs,
+        "idEffects": id_effects,
     }
     util.write_lua(
         os.path.join(out_dir, "battle_anims.lua"), out,

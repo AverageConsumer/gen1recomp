@@ -311,7 +311,10 @@ local function getImage(path, pal, trueColor)
         pad = h - 1 - bottom
         padL = left
         -- engine/battle/scale_sprites.asm:1-3
-        if w == BACK_PIC_SIZE and h == BACK_PIC_SIZE and path:find("/battle/back/", 1, true) then
+        -- engine/battle/core.asm:6202-6212
+        if w == BACK_PIC_SIZE and h == BACK_PIC_SIZE
+           and (path:find("/battle/back/", 1, true)
+                or path:find("/battle/%a+b%.png$")) then
           pad, padL, backCrop = BACK_PIC_SIZE - BACK_PIC_CROP, 0, true
         end
       end
@@ -3079,7 +3082,8 @@ end
 function BattleState:residualFor(b, opp)
   if self.result then return end
   if self.player ~= b and self.enemy ~= b then return end
-  if b.mon.hp <= 0 or opp.mon.hp <= 0 then return end
+  if opp.mon.hp <= 0 then return end
+  if b.mon.hp <= 0 and b.faintQueued then return end
   -- engine/battle/core.asm:435-473
   if b.residualDone then return end
   b.residualDone = true
@@ -3267,6 +3271,8 @@ function BattleState:endOfTurn()
       if b.mon.hp <= 0 then
         self:onFaint(b)
       end
+    elseif sweep and b.mon.hp <= 0 and not b.faintQueued then
+      self:onFaint(b)
     end
     -- the Haze move-forfeit only covers the turn Haze was used; if the
     -- cured mon had already moved, drop the flag before next turn
@@ -3550,7 +3556,7 @@ function BattleState:applyAnimEffect(ev)
                      { dy = 1, frames = 3 }, { dy = 0, frames = 3 } }
   elseif e == "SE_SHAKE_ENEMY_HUD" then
     -- engine/battle/animations.asm:2472
-    local prog = { { dx = 0, frames = 20 } }
+    local prog = { { dx = 0, frames = 19 } }
     for _ = 1, 8 do
       prog[#prog + 1] = { dx = 2, frames = 2 }
       prog[#prog + 1] = { dx = -2, frames = 2 }
@@ -3808,8 +3814,10 @@ function BattleState:queueSendOutAnim(append)
   local pikachu = self:starterPikachuSendOut()
   if not pikachu then
     if append then
+      table.insert(self.queue, { wait = Timing.SEND_OUT_PIC_LOAD })
       table.insert(self.queue, { anim = "POOF_ANIM", attackerIsPlayer = false })
     else
+      self:waitNext(Timing.SEND_OUT_PIC_LOAD)
       self:animNext("POOF_ANIM", false)
     end
   end
@@ -5430,7 +5438,7 @@ function BattleState:safariAction(choice)
   end
   -- engine/items/item_effects.asm:1479
   table.insert(self.queue, { anim = choice == "bait" and "BAIT_ANIM" or "ROCK_ANIM",
-                             attackerIsPlayer = true })
+                             attackerIsPlayer = true, animDelayed = true })
   table.insert(self.queue, { wait = 70 })
   self:act(function() self:safariEnemyTurn() end)
 end
@@ -6022,6 +6030,8 @@ function BattleState:finish()
   if self.result == "lose" and self.kind ~= "link" and not self.demo
      and not BattleState.isOaksLabStarterRival(self) then
     local game, onFinish, Music = self.game, self.onFinish, require("src.core.Music")
+    -- engine/battle/end_of_battle.asm:72
+    self.blackoutBlank = true
     -- home/overworld.asm:759
     game.stack:push(require("src.render.Transition").new(game, function()
       Music.restoreMap(self.data)
@@ -6326,8 +6336,24 @@ end
 -- pic effects (slides/squish/blink/minimize; see applyAnimEffect)
 -- offset, clip or replace the pic, and an active BGP fade swaps in a
 -- shade-remapped recolor of it.
+-- engine/battle/animations.asm:1564-1615
+local function squishColumns(passes)
+  local cols = { 1, 2, 3, 4, 5, 6, 7 }
+  for p = 1, passes do
+    if p % 2 == 1 then
+      cols[4], cols[5], cols[6], cols[7] = cols[5], cols[6], cols[7], nil
+    else
+      cols[4], cols[3], cols[2], cols[1] = cols[3], cols[2], cols[1], nil
+    end
+  end
+  return cols
+end
+BattleState._squishColumns = squishColumns
+
 function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
   local img = self:picImage(battler.sprite)
+  -- engine/battle/scale_sprites.asm:1-3
+  local crop = battler.isPlayer and imageBackCrop[battler.sprite] and BACK_PIC_CROP
   shakeX, shakeY = shakeX or 0, shakeY or 0
   if battler.substituteHP and not battler.substitutePending
      and not self:fxFaintActive(battler)
@@ -6362,15 +6388,25 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
       end
       return
     end
-    local visible = img:getHeight() - math.floor(off / scale)
+    local visible = (crop or img:getHeight()) - math.floor(off / scale)
     if visible > 0 then
-      local quad = self:picQuad(battler, 0, 0, img:getWidth(), visible,
+      local quad = self:picQuad(battler, 0, 0, crop or img:getWidth(), visible,
                                 img:getWidth(), img:getHeight())
       love.graphics.draw(img, quad, x, y + off, 0, scale, scale)
     end
     return
   end
   if battler.fainted then return end
+
+  local function drawWhole(dx, dy, sx)
+    if crop then
+      local quad = self:picQuad(battler, 0, 0, crop, crop,
+                                img:getWidth(), img:getHeight())
+      love.graphics.draw(img, quad, dx, dy, 0, sx, scale)
+    else
+      love.graphics.draw(img, dx, dy, 0, sx, scale)
+    end
+  end
 
   -- MarowakAnim's rOBP1 fades (updateFx): alpha over the paper is what those
   -- palette shifts look like, and the test has to sit ahead of the plain
@@ -6379,7 +6415,7 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
   if fadePf and fadePf.fade then
     local cr, cg, cb, ca = love.graphics.getColor()
     love.graphics.setColor(cr, cg, cb, ca * fadePf.fade)
-    love.graphics.draw(img, x, y, 0, scale, scale)
+    drawWhole(x, y, scale)
     love.graphics.setColor(cr, cg, cb, ca)
     return
   end
@@ -6387,13 +6423,7 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
   local pf = self.picFx and self.picFx[battler]
   if not pf or (not pf.kind and not pf.hidden and not pf.minimized
                 and (pf.ox or 0) == 0 and (pf.oy or 0) == 0) then
-    if battler.isPlayer and imageBackCrop[img] then
-      local quad = self:picQuad(battler, 0, 0, BACK_PIC_CROP, BACK_PIC_CROP,
-                                img:getWidth(), img:getHeight())
-      love.graphics.draw(img, quad, x, y, 0, scale, scale)
-    else
-      love.graphics.draw(img, x, y, 0, scale, scale)
-    end
+    drawWhole(x, y, scale)
     return
   end
   if pf.hidden then return end
@@ -6402,10 +6432,12 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
     return
   end
 
-  local w, h = img:getWidth(), img:getHeight()
+  local sw, sh = img:getWidth(), img:getHeight()
+  local w, h = crop or sw, crop or sh
   local ox, oy = pf.ox or 0, pf.oy or 0
   local k, t = pf.kind, pf.t or 0
   local xscale = 1
+  local squishCols
   -- while an SE effect displaces the pic, confine it to its side's
   -- tile window like the GB tilemap does (the pic can never overwrite
   -- the HUD columns or the text box rows)
@@ -6432,16 +6464,21 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
     local dir = battler.isPlayer and -1 or 1
     ox = ox + dir * 8 * math.min(4, math.floor(t / 4) + 1)
   elseif k == "slideDown" then
-    oy = oy + 8 * math.min(7, math.floor(t / 3) + 1)
+    -- engine/battle/animations.asm:1183-1198
+    oy = oy + 8 * math.min(6, math.floor(t / 3))
   elseif k == "slideDownHide" then
     oy = oy + 16 * (math.floor(t / 8) + 1)
   elseif k == "bounce" then
-    -- 5 back-to-back AnimationSlideMonDown passes
-    oy = oy + 8 * math.min(7, math.floor((t % 21) / 3) + 1)
+    -- engine/battle/animations.asm:2010-2020
+    oy = oy + 8 * math.min(6, math.floor((t % 21) / 3))
   elseif k == "shakeBF" then
     ox = ox + ((math.floor(t / 3) % 2 == 0) and -8 or 8)
   elseif k == "squish" then
-    xscale = math.max(0, 7 - 2 * (math.floor(t / 6) + 1)) / 7
+    squishCols = squishColumns(math.min(8, math.floor(t / 3) + 1))
+    xscale = 0
+    for d = 1, 7 do
+      if squishCols[d] then xscale = 1 end
+    end
   elseif k == "blink" then
     -- skip; falls through to the scissor-restore below instead of an
     -- early return that would leave the pic-window scissor stuck
@@ -6456,7 +6493,7 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
     -- sink below the baseline (AnimationSlideMonDown-style row clip)
     local visible = h - math.floor(oy / scale)
     if visible > 0 then
-      local quad = self:picQuad(battler, 0, 0, w, visible, w, h)
+      local quad = self:picQuad(battler, 0, 0, w, visible, sw, sh)
       love.graphics.draw(img, quad, x + ox, y + oy, 0, scale, scale)
     end
   elseif k == "slideUp" then
@@ -6467,16 +6504,25 @@ function BattleState:drawBattlerPic(battler, x, y, scale, shakeX, shakeY)
     local step = math.min(7, math.floor((t - 1) / 2) + 1)
     local visible = math.floor(h * step / 7)
     if visible > 0 then
-      local quad = self:picQuad(battler, 0, h - visible, w, visible, w, h)
+      local quad = self:picQuad(battler, 0, h - visible, w, visible, sw, sh)
       love.graphics.draw(img, quad, x + ox,
                          y + (h - visible) * scale, 0, scale, scale)
     end
-  elseif xscale < 1 then
-    -- AnimationSquishMonPic: columns collapse toward the middle
-    love.graphics.draw(img, x + w * scale * (1 - xscale) / 2, y,
-                       0, scale * xscale, scale)
+  elseif squishCols then
+    local boxX = BattleState.picSlotOrigin(battler.isPlayer) + shakeX
+    for d = 1, 7 do
+      local s = squishCols[d]
+      if s then
+        local a = (boxX + (s - 1) * 8 - x) / scale
+        local qa, qb = math.max(0, a), math.min(w, a + 8 / scale)
+        if qb > qa then
+          love.graphics.draw(img, self:picQuad(battler, qa, 0, qb - qa, h, sw, sh),
+            boxX + (d - 1) * 8 + (qa - a) * scale, y, 0, scale, scale)
+        end
+      end
+    end
   else
-    love.graphics.draw(img, x + ox, y + oy, 0, scale, scale)
+    drawWhole(x + ox, y + oy, scale)
   end
   if clip then
     if scx then
@@ -6718,6 +6764,14 @@ function BattleState:animSpriteColors(s, px, py, memo)
   if PaletteFX.usesSpriteObp() then
     -- engine/battle/init_battle_variables.asm:18
     P = PaletteFX.ogObjBase()
+  elseif PaletteFX.usesYellowCgb() then
+    -- pokeyellow engine/battle/animations.asm:18-19
+    local pals = memo and memo.pals
+    if pals == nil then
+      pals = self:sgbBattlePals() or false
+      if memo then memo.pals = pals end
+    end
+    P = pals and pals[(s.x or 0) < 88 and 2 or 3] or nil
   elseif memo then
     local pals = memo.pals
     if pals == nil then
@@ -6925,8 +6979,15 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
     local dx, dy = BattleState.backPlacement(img:getWidth(), img:getHeight(),
       pad, padL, s)
     -- picOffset: SlideTrainerPicOffScreen walking the back pic off the left
-    love.graphics.draw(img, dx + slide + sx + self:picOffset("back"),
-                       dy + sy, 0, s, s)
+    if imageBackCrop[self.playerBackPic] then
+      -- engine/battle/core.asm:6212
+      love.graphics.draw(img, self:picQuad(self, 0, 0, BACK_PIC_CROP,
+          BACK_PIC_CROP, img:getWidth(), img:getHeight()),
+        dx + slide + sx + self:picOffset("back"), dy + sy, 0, s, s)
+    else
+      love.graphics.draw(img, dx + slide + sx + self:picOffset("back"),
+                         dy + sy, 0, s, s)
+    end
   elseif onlySide ~= "enemy"
      and self.player and self.player.sprite and not hidePlayer
      and not self.sendingOut and not self:fxHidden(self.player) then
@@ -6948,9 +7009,16 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
         -- (hlcoord 3,7 / 4,9 vs 2,7 / 3,9, core.asm:1770-1788) (#1563)
         local shrinkX = self.shrinkOut
           and self.shrinkOut.battler == self.player and 8 or 0
-        love.graphics.draw(img,
-          8 + shrinkX - padL * s + img:getWidth() * s * (1 - gs) / 2 + sx,
-          96 - (img:getHeight() - pad) * eff + sy, 0, eff, eff)
+        local gx = 8 + shrinkX - padL * s + img:getWidth() * s * (1 - gs) / 2 + sx
+        local gy = 96 - (img:getHeight() - pad) * eff + sy
+        if imageBackCrop[self.player.sprite] then
+          -- engine/battle/scale_sprites.asm:1-3
+          love.graphics.draw(img, self:picQuad(self.player, 0, 0,
+            BACK_PIC_CROP, BACK_PIC_CROP, img:getWidth(), img:getHeight()),
+            gx, gy, 0, eff, eff)
+        else
+          love.graphics.draw(img, gx, gy, 0, eff, eff)
+        end
       end
     else
       local dx, dy = BattleState.backPlacement(img:getWidth(),
@@ -7195,7 +7263,8 @@ function BattleState:drawTextArea()
       -- SAFARI_BATTLE_MENU_TEMPLATE: full-width box, "BALLx  BAIT /
       -- THROW ROCK  RUN" from (2,14)
       box(0, 12, 20, 6)
-      text(Strings("BALLx"), 16, 112); text(Strings("BAIT"), 112, 112)
+      -- data/text_boxes.asm:73
+      text(Strings("BALL") .. "\xc3\x97", 16, 112); text(Strings("BAIT"), 112, 112)
       text(Strings("THROW ROCK"), 16, 128); text(Strings("RUN", "battle"), 112, 128)
       -- DisplayBattleMenu .safariLeftColumn / .safariRightColumn print
       -- wNumSafariBalls at hlcoord 7,14 with `lb bc, 1, 2` -- one byte, two
@@ -7300,7 +7369,7 @@ end
 function BattleState:drawClassic()
   -- AskName: ClearSprites + wild ClearScreenArea -- white field under the
   -- nickname TextBox / YES/NO (naming_screen.asm); overlays draw on top.
-  if self.blankForAskName then
+  if self.blankForAskName or self.blackoutBlank then
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.rectangle("fill", 0, 0, 160, 144)
     return

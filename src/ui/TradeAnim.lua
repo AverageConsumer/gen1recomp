@@ -114,6 +114,22 @@ local SEQ = {
   "done",
 }
 
+-- engine/movie/trade.asm:91
+local SEQ_EXTERNAL = {
+  "will_trade",
+  "farewell",
+  "transfer_lr",
+  "open_cable2",
+  "show_enemy",
+  "show_player",
+  "open_cable",
+  "ball_enter",
+  "transfer_rl",
+  "delay",
+  "went_to",
+  "done",
+}
+
 -- FrameBlocks 03..08 definition for move_anim_0.png (128x40, 16 tiles/row, 8x8 per tile)
 local FRAME_BLOCKS = {
   -- FrameBlock03: Pokeball normal (16x16)
@@ -243,8 +259,10 @@ function TradeAnim.new(game, opts)
   self.sentSprite, self.sentSpriteTrueColor = spriteOf(game, self.sent)
   self.recvSprite, self.recvSpriteTrueColor = spriteOf(game, self.received)
 
+  self.external = opts.external and true or false
+  self.seqList = self.external and SEQ_EXTERNAL or SEQ
   self.seq = 1
-  self.phase = SEQ[1]
+  self.phase = self.seqList[1]
   self.t = 0
   self.scx = 0
   self.ballX = 0
@@ -273,7 +291,7 @@ end
 
 function TradeAnim:advance()
   self.seq = self.seq + 1
-  self.phase = SEQ[self.seq] or "done"
+  self.phase = self.seqList[self.seq] or "done"
   self.t = 0
   self.scx = 0
   self.sub = nil
@@ -649,6 +667,32 @@ function TradeAnim:update(dt)
       end
     end
 
+  elseif p == "will_trade" then
+    -- engine/movie/trade.asm:845
+    if not self.sub then
+      self.sub = "will_text"
+      self.t = 0
+      self.dialogText = expand(self.game, "_TradeWillTradeText", {
+        ["RAM:wLinkEnemyTrainerName"] = self.enemyName,
+        ["RAM:wNameBuffer"] = speciesName(self.game, self.received),
+      })
+    end
+    if self.sub == "will_text" then
+      if skip or self.t >= 80 then
+        self.sub = "for_text"
+        self.t = 0
+        self.dialogText = expand(self.game, "_TradeforText", {
+          ["RAM:wStringBuffer"] = speciesName(self.game, self.sent),
+        })
+      end
+    elseif self.sub == "for_text" then
+      if skip or self.t >= 80 then
+        self.dialogText = nil
+        self.sub = nil
+        self:advance()
+      end
+    end
+
   elseif p == "farewell" then
     if not self.sub then
       self.sub = "farewell_text"
@@ -767,10 +811,36 @@ function TradeAnim:update(dt)
         })
       end
     elseif self.sub == "take_care" then
-      if skip or self.t >= 80 then
+      if (skip or self.t >= 80) and self.external then
+        -- engine/movie/trade.asm:770
+        self.sub = "ext_hold"
+        self.t = 0
+      elseif skip or self.t >= 80 then
         self.sub = "delay_end"
         self.t = 0
         self.dialogText = nil
+      end
+    elseif self.sub == "ext_hold" then
+      if skip or self.t >= 50 then
+        self.sub = "ext_slide"
+        self.t = 0
+        self.slidingBox = true
+      end
+    elseif self.sub == "ext_slide" then
+      self.wx = math.min(160, self.t * 2)
+      if skip or self.wx >= 160 then
+        self.wx = 160
+        self.sub = "ext_end"
+        self.t = 0
+        self.monVisible = false
+        self.dialogText = nil
+      end
+    elseif self.sub == "ext_end" then
+      if skip or self.t >= 10 then
+        self.slidingBox = false
+        self.sub = nil
+        self.monVisible = true
+        self:advance()
       end
     elseif self.sub == "delay_end" then
       if skip or self.t >= 100 then
@@ -906,7 +976,8 @@ function TradeAnim:drawLeftGB()
   self:drawGameBoy(40, 24)
   Font.drawBox(4, 12, 9, 4)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(self.playerName, 40, 112)
+  -- engine/movie/trade.asm:204
+  Font.draw(self.external and self.enemyName or self.playerName, 40, 112)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -924,7 +995,7 @@ function TradeAnim:drawRightGB()
   self:drawGameBoy(56, 64)
   Font.drawBox(6, 0, 9, 4)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(self.enemyName, 56, 16)
+  Font.draw(self.external and self.playerName or self.enemyName, 56, 16)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1019,8 +1090,10 @@ function TradeAnim:draw()
     love.graphics.translate(256, 0)
     self:drawRightGB()
     love.graphics.pop()
-    local mon = p == "transfer_lr" and self.sent or self.received
-    self:drawIconInBubble(mon, self.monX, self.monY)
+    -- engine/movie/trade.asm:11
+    local leftMon = self.external and self.received or self.sent
+    local rightMon = self.external and self.sent or self.received
+    self:drawIconInBubble(p == "transfer_lr" and leftMon or rightMon, self.monX, self.monY)
 
   elseif p == "show_enemy" then
     if self.cableSlideOut and self.img.openCable then
@@ -1030,10 +1103,11 @@ function TradeAnim:draw()
       love.graphics.pop()
     end
     if self.monVisible and self.recvSprite then
-      love.graphics.draw(self.recvSprite, 56 + self.recvSprite:getWidth(), 16, 0, -1, 1)
+      local dx = self.slidingBox and self.wx or 0
+      love.graphics.draw(self.recvSprite, 56 + dx + self.recvSprite:getWidth(), 16, 0, -1, 1)
       if self.recvSpriteTrueColor then
         require("src.render.PaletteFX").markTrueColor(
-          56, 16, self.recvSprite:getDimensions())
+          56 + dx, 16, self.recvSprite:getDimensions())
       end
     end
     if self.boxVisible and self.sub ~= "take_care" and self.sub ~= "delay_end" then

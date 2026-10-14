@@ -75,17 +75,49 @@ do
   check(anyText(tb, "SUBSTITUTE"), "the failure text still prints")
 end
 
--- Exact quarter HP is also not enough: accepting it would leave the user at
--- 0 HP with substituteHP set, so the next trainer-battle turn cannot advance.
+local function runFnsUntil(tb, stop)
+  local i = 1
+  while i <= #tb.queue and not stop() do
+    local row = tb.queue[i]
+    if row.fn then
+      table.remove(tb.queue, i)
+      tb.nextInsert = i - 1
+      row.fn()
+    else
+      i = i + 1
+    end
+  end
+end
+
+-- engine/battle/move_effects/substitute.asm:39-40
 do
   local tb = freshBattle()
   local cost = math.floor(tb.enemy.mon.stats.hp / 4)
   tb.enemy.mon.hp = cost
   tb:performMove(tb.enemy, tb.player, { id = "SUBSTITUTE", pp = 10 }, false)
-  check(tb.enemy.substituteHP == nil and tb.enemy.mon.hp == cost,
-        "exact quarter HP cannot create a zero-HP substitute")
-  check(not anyAnim(tb, "SUBSTITUTE"),
-        "the exact-boundary failure plays no animation")
+  check(tb.enemy.substituteHP ~= nil and tb.enemy.mon.hp == 0,
+        "exact quarter HP builds the substitute and leaves 0 HP")
+  check(anyAnim(tb, "SUBSTITUTE"), "and the doll animation plays")
+  tb.queue, tb.nextInsert = {}, 0
+  tb:residualFor(tb.enemy, tb.player)
+  runFnsUntil(tb, function() return tb.enemy.faintQueued end)
+  check(tb.enemy.faintQueued == true,
+        "HandlePoisonBurnLeechSeed faints the 0-HP user right after its move")
+end
+
+-- engine/battle/core.asm:479-495
+do
+  local tb = freshBattle()
+  local cost = math.floor(tb.enemy.mon.stats.hp / 4)
+  tb.enemy.mon.hp = cost
+  tb.enemy.mon.status = "PSN"
+  tb:performMove(tb.enemy, tb.player, { id = "SUBSTITUTE", pp = 10 }, false)
+  tb.queue, tb.nextInsert = {}, 0
+  tb:residualFor(tb.enemy, tb.player)
+  check(anyText(tb, "hurt by poison"),
+        "a poisoned 0-HP user still prints the poison line")
+  runFnsUntil(tb, function() return tb.enemy.faintQueued end)
+  check(tb.enemy.faintQueued == true, "then faints")
 end
 
 -- .alreadyHasSubstitute: same, with a doll already standing

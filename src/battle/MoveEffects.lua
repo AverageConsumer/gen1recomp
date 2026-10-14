@@ -347,15 +347,14 @@ MoveEffects.primary = {
                failed = true }
     end
     local cost = math.floor(user.mon.stats.hp / 4)
-    -- A Substitute costs one quarter of max HP, rounded down. Do not let
-    -- the cost consume the user's last HP: the move must fail at the exact
-    -- boundary as well as below it, or the next turn's HP guard can leave a
-    -- trainer battle unable to progress.
-    if user.mon.hp <= cost then
+    -- ../pokered/engine/battle/move_effects/substitute.asm:34-40
+    local zeroHpBug = not (battle.ruleset and battle.ruleset.substituteZeroHpBug == false)
+    if user.mon.hp < cost or (not zeroHpBug and user.mon.hp == cost) then
       return { romText(battle.data, "_TooWeakSubstituteText", "Too weak to make\na SUBSTITUTE!"),
                failed = true }
     end
     user.mon.hp = user.mon.hp - cost
+    -- ../pokered/engine/battle/core.asm:4874-4877
     user.substituteHP = cost + 1
     -- ../pokered/engine/battle/move_effects/substitute.asm:47-55
     user.substitutePending = true

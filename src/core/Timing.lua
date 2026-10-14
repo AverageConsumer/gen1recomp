@@ -93,6 +93,7 @@ Timing.TRAINER_INTRO_SFX_GAP = 20
 
 Timing.BATTLE_START_SENDOUT = 40 -- engine/battle/core.asm:155-156
 Timing.MOVE_ANIM_PRE        = Timing.DELAY3 -- core.asm:6638 PlayMoveAnimation
+Timing.SEND_OUT_PIC_LOAD    = 27 -- engine/battle/core.asm:1732 LoadMonBackPic
 -- animations.asm:431-433 (pokeyellow animations.asm:445-446)
 Timing.MOVE_ANIM_OFF        = 30
 

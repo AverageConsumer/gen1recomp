@@ -80,39 +80,26 @@ return {
       TEXT_SUMMERBEACHHOUSE_PRINTER = function(game, ow, npc, done)
         local t = game.data.text
         if not surfingPikachu(game) then
-          push(game, t._SummerBeachHousePrinterText1
-            or "It's some sort of\na machine...", done)
+          push(game, t._SummerBeachHousePrinterText1, done)
           return
         end
-        push(game, t._SummerBeachHousePrinterText2
-          or "SUMMER BEACH HOUSE\nPRINTER, it says.", function()
+        push(game, t._SummerBeachHousePrinterText2, function()
           if not ow.surfedThisVisit then
             done()
             return
           end
-          push(game, t._SummerBeachHousePrinterText3
-            or "The Hi-Score is\nshown.\fPRINT it out?", nil, { choice = function(yes)
+          push(game, t._SummerBeachHousePrinterText3, nil, { choice = function(yes)
+              local SurfHiScore = require("src.ui.SurfHiScore")
               if not yes then
-                done()
+                -- scripts/SummerBeachHouse.asm:174
+                game.stack:push(SurfHiScore.new(game, done))
                 return
               end
-              -- PrintSurfingMinigameHighScore -> PNG stand-in
+              -- scripts/SummerBeachHouse_2.asm:7
               local Printer = require("src.core.Printer")
-              local Font = require("src.render.Font")
               local Strings = require("src.core.Strings")
-              local hi = game.save.surfingHighScore or 0
-              local name = game.save.player.name or "RED"
-              local saved, err = Printer.save("surf_hiscore", 160, 64,
-                function()
-                  love.graphics.setColor(1, 1, 1, 1)
-                  love.graphics.rectangle("fill", 0, 0, 160, 64)
-                  love.graphics.setColor(0, 0, 0, 1)
-                  love.graphics.rectangle("line", 2.5, 2.5, 155, 59)
-                  Font.draw(Strings("SUMMER BEACH HOUSE"), 8, 10)
-                  Font.draw(Strings("SURFING Hi-Score"), 8, 24)
-                  Font.draw(name, 8, 40)
-                  Font.draw(Strings("%d pts", hi), 96, 40)
-                end)
+              local saved, err = Printer.save("surf_hiscore", 160, 144,
+                function() SurfHiScore.render(game) end)
               push(game, saved
                 and (Strings("Printed!\f") .. Printer.savedWhereText(saved))
                 or Strings("Printer error!\n%s", tostring(err)), done)

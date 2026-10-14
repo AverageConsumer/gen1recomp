@@ -48,7 +48,10 @@ local function finishedSession(result, isHost)
       playerParty = { { species = "RATTATA", hp = 3 } },
       enemyParty = { { species = "PIDGEY", hp = 0 } },
     },
-    game = { input = {}, stack = { top = function() return ls end } },
+    game = { input = {}, stack = {
+      top = function() return ls end,
+      push = function(_, screen) ls.resultScreen = screen end,
+    } },
   }, { __index = LinkState })
   -- the real exit unwinds the whole link stack; the event is what is under
   -- test, so record the exit rather than run it
@@ -65,6 +68,8 @@ T.check(not Runtime.wants("link.battle_ended"),
   "with nothing subscribed the event is not wanted, so no payload is built")
 local quiet = finishedSession("win", true)
 quiet:update(0)
+T.check(quiet.resultScreen ~= nil, "the result box goes up before the unwind")
+quiet:update(0)
 T.check(quiet.exited, "with no mod loaded the finished battle still unwinds")
 T.eq(quiet.battle, nil, "and lets go of the battle")
 vanilla.release()
@@ -76,6 +81,7 @@ T.eq(#run.errors, 0,
   "the public outcome probe loads clean (" .. tostring(run.errors[1]) .. ")")
 
 local session = finishedSession("win", true)
+session:update(0)
 session:update(0)
 local out = run.loader.exports.outcome_probe or {}
 T.eq(out.seen, 1, "a finished link battle raises the event once")
@@ -93,6 +99,7 @@ T.eq(session.battle, nil, "and the battle is released")
 
 -- the guest side says so
 local guest = finishedSession("lose", false)
+guest:update(0)
 guest:update(0)
 T.eq(run.loader.exports.outcome_probe.seen, 2, "the guest reports too")
 T.eq(run.loader.exports.outcome_probe.role, "guest", "as the guest")

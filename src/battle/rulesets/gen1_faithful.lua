@@ -31,4 +31,6 @@ return {
   zeroDamageMiss = true,
   -- engine/battle/core.asm:6283,6326 and effects.asm:414-415
   statusPenaltyIsBaked = true,
+  -- engine/battle/move_effects/substitute.asm:39-40
+  substituteZeroHpBug = true,
 }

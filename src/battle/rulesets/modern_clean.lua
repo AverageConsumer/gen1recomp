@@ -26,4 +26,6 @@ return {
   healHpLowByteBug = false,
   -- engine/battle/move_effects/heal.asm:29
   toxicFlagSurvivesCure = false,
+  -- engine/battle/move_effects/substitute.asm:39-40
+  substituteZeroHpBug = false,
 }

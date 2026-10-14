@@ -11,4 +11,5 @@ return {
   subanims = {},
   tilesheets = {},
   baseCoords = {},
+  idEffects = {},
 }

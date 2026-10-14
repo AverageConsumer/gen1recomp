@@ -84,7 +84,7 @@ local SE_FRAMES = {
   SE_DARKEN_MON_PALETTE = 0,
   SE_RESET_SCREEN_PALETTE = 0,
   SE_SHAKE_SCREEN = 72,            -- PredefShakeScreenHorizontally b=8: sum 9f
-  SE_SHAKE_ENEMY_HUD = 60,         -- engine/battle/animations.asm:2472
+  SE_SHAKE_ENEMY_HUD = 69,         -- engine/battle/animations.asm:2472
   SE_DELAY_ANIMATION_10 = 10,
   SE_SLIDE_MON_OFF = 24,           -- 8 tile steps x 3f (wSlideMonDelay)
   SE_SLIDE_ENEMY_MON_OFF = 24,     -- same routine, turn flipped
@@ -96,7 +96,7 @@ local SE_FRAMES = {
   SE_RESET_MON_POSITION = 3,
   SE_SHAKE_BACK_AND_FORTH = 96,    -- 16 loops x 2 redraws x Delay3
   SE_BOUNCE_UP_AND_DOWN = 108,     -- 5 x AnimationSlideMonDown + Delay3
-  SE_SQUISH_MON_PIC = 26,          -- 4 loops x 2 x Delay3 + 2f
+  SE_SQUISH_MON_PIC = 25,          -- engine/battle/animations.asm:1564-1590
   SE_MINIMIZE_MON = 6,
   SE_SHOW_MON_PIC = 3, SE_SHOW_ENEMY_MON_PIC = 3,
   SE_HIDE_MON_PIC = 3, SE_HIDE_ENEMY_MON_PIC = 3,
@@ -109,18 +109,14 @@ local SE_FRAMES = {
   SE_WAVY_SCREEN = 128,
 }
 
--- data/battle_anims/special_effects.asm AnimationIdSpecialEffects:
--- per-frame-block effects keyed on the animation id.  "flash" =
--- AnimationFlashScreen after every frame block.
-local ANIM_ID_FX = {
-  MEGA_PUNCH = "flash", GUILLOTINE = "flash", MEGA_KICK = "flash",
-  HEADBUTT = "flash", DISABLE = "flash", BUBBLEBEAM = "flash",
-  REFLECT = "flash", SPORE = "flash",
-  BLIZZARD = "blizzard",           -- flash at counters 13/9/5/1
-  HYPER_BEAM = "every4",           -- flash when counter % 4 == 0
-  THUNDERBOLT = "every8",          -- flash when counter % 8 == 0
-  SELFDESTRUCT = "explode", EXPLOSION = "explode",
-  ROCK_SLIDE = "rockslide",        -- 1px shakes at 8-11, flash at 1
+-- engine/battle/animations.asm:666
+local ID_FX_KIND = {
+  AnimationFlashScreen = "flash",
+  DoBlizzardSpecialEffects = "blizzard",
+  FlashScreenEveryFourFrameBlocks = "every4",
+  FlashScreenEveryEightFrameBlocks = "every8",
+  DoExplodeSpecialEffects = "explode",
+  DoRockSlideSpecialEffects = "rockslide",
 }
 
 -- Anim tiles load at vSprites tile $31 (LoadMoveAnimationTiles), so the
@@ -450,11 +446,7 @@ function AnimPlayer:start(moveId, attackerIsPlayer, opts)
     emit(4)
   end
 
-  local idFx = ANIM_ID_FX[moveId]
-  -- pokeyellow data/battle_anims/special_effects.asm:21
-  if moveId == "SPORE" and require("src.core.GameVersion").isYellow() then
-    idFx = "every4"
-  end
+  local idFx = ID_FX_KIND[self.data.idEffects[moveId]]
 
   -- DoBallTossSpecialEffects (:685): while a Master or Ultra ball is
   -- tossed (wCurItem <= ULTRA_BALL), the per-block special effect XORs

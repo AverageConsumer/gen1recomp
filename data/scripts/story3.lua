@@ -275,7 +275,8 @@ local function elevatorFloors(elevatorMapId, game)
   return floors
 end
 
-local function elevatorSeedExit(ow, floors, fromMapId)
+local function elevatorSeedExit(ow, floors, fromMapId, fromWarpIdx,
+                                floorWarps, elevatorMapId)
   -- Seed a walk-out destination on entry (before the panel is ever
   -- read): entry floor when known, else the first listed floor (1F).
   -- Choosing a floor rewrites it again; B-cancel / no-key leave
@@ -287,6 +288,13 @@ local function elevatorSeedExit(ow, floors, fromMapId)
     for _, f in ipairs(floors) do
       if f.map == fromMapId then exitFloor = f break end
     end
+  end
+  -- scripts/RocketHideoutElevator.asm:17
+  local fromWarp = fromWarpIdx and exitFloor and exitFloor.map == fromMapId
+    and floorWarps and floorWarps[fromWarpIdx]
+  if fromWarp and fromWarp.destMap == elevatorMapId then
+    exitFloor = { map = exitFloor.map, x = fromWarp.x, y = fromWarp.y,
+                  token = exitFloor.token, warpIdx = fromWarpIdx }
   end
   elevatorSetExit(ow, exitFloor)
   return exitFloor
@@ -361,8 +369,10 @@ local function elevator(elevatorMapId, panelText, keyGate, preFrames)
     -- B-cancel can still walk out onto a real map.  Silph's ROM car warps
     -- default to UNUSED_MAP_ED, which is not in Data.maps -- Warp.resolve
     -- asserted and hard-crashed (#123).
-    onEnter = function(game, ow, fromMapId)
-      elevatorSeedExit(ow, elevatorFloors(elevatorMapId, game), fromMapId)
+    onEnter = function(game, ow, fromMapId, fromWarpIdx)
+      local fromDef = fromMapId and game.data.maps[fromMapId]
+      elevatorSeedExit(ow, elevatorFloors(elevatorMapId, game), fromMapId,
+        fromWarpIdx, fromDef and fromDef.warps, elevatorMapId)
     end,
     talk = { [panelText] = panel },
   }

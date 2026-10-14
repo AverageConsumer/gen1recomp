@@ -422,7 +422,40 @@ tC:pick(1)
 tC:handle({ type = "pick", index = 1 })
 tC:confirm(true)
 tC:handle({ type = "confirm", ok = false })
-eq(tC.stage, "cancelled", "declined trade cancels")
+eq(tC.stage, "declined", "a declined trade says so instead of closing the link")
+tC:handle({ type = "pick", index = 1 })
+eq(tC.theirPick, 1, "a pick from the next round waits for the reset")
+tC:reset()
+eq(tC.stage, "picking", "and the reset puts both games back in the list")
+eq(tC.theirPick, 1, "with the early pick replayed")
+
+local function pickPair()
+  local a = Protocol.TradeSession.new(Data, partyA)
+  local b = Protocol.TradeSession.new(Data, partyB)
+  a:handle({ type = "party", mons = Protocol.packParty(partyB) })
+  b:handle({ type = "party", mons = Protocol.packParty(partyA) })
+  return a, b
+end
+local function wired(msg) return require("src.link.Wire").sanitize(msg) end
+local cA, cB = pickPair()
+local cancelMsg = cA:cancelPick()
+eq(cA.stage, "waitPick", "CANCEL waits for the other game")
+eq(wired(cancelMsg).cancel, true, "the cancel survives the wire")
+local pickMsg = cB:pick(1)
+cB:handle(wired(cancelMsg))
+cA:handle(wired(pickMsg))
+eq(cA.stage .. "," .. cB.stage, "restart,restart",
+   "one CANCEL against a pick sends both back to the list")
+local mA, mB = pickPair()
+local mcA, mcB = mA:cancelPick(), mB:cancelPick()
+mA:handle(wired(mcB))
+mB:handle(wired(mcA))
+eq(mA.stage .. "," .. tostring(mA.mutual) .. "," .. mB.stage, "cancelled,true,cancelled",
+   "only a CANCEL from both games leaves the trade center")
+eq((require("src.link.Handshake").checkCompat(
+  { protocol = 3, engineVersion = "1.0.0", fingerprint = "f" },
+  { protocol = 2, engineVersion = "1.0.1", fingerprint = "f" })),
+  "refused", "a build on the old trade wire does not pair")
 
 -- TradeCenter_PrintPartyListNames (engine/link/cable_club.asm:657) reads
 local LinkStateMod = require("src.link.LinkState")
@@ -513,6 +546,37 @@ check(not leftoverMismatch, "no desync detected across the whole battle")
 eq(gameA.save.money, 3000, "no prize money in link battles")
 eq(gameA.save.party[1].hp, gameA.save.party[1].stats.hp,
    "the real party is untouched (battle used clamped copies)")
+
+do
+  -- engine/battle/core.asm:1598
+  local gR, gS = makeFakeGame("CHARIZARD"), makeFakeGame("BLASTOISE")
+  gS.save.player.name = "BLUE"
+  local nR, nS = Net.loopbackPair()
+  local pR, pS = Protocol.packParty(gR.save.party), Protocol.packParty(gS.save.party)
+  local bR = LinkBattle.newHost(gR, nR, { myParty = pR, theirParty = pS,
+    theirName = "BLUE", seed = 4242, cable = true })
+  local bS = LinkBattle.newGuest(gS, nS, { myParty = pS, theirParty = pR,
+    theirName = "RED", seed = 4242, cable = true })
+  local rR, rS
+  bR.onFinish = function(r) rR = r end
+  bS.onFinish = function(r) rS = r end
+  gR.stack:push(bR)
+  gS.stack:push(bS)
+  local ran, n = false, 0
+  while (rR == nil or rS == nil) and n < 20000 do
+    n = n + 1
+    if not ran and bR.phase == "menu" then
+      ran = true
+      bR:tryRun()
+    end
+    Input.pressed = (ran or n % 2 == 0) and { a = true } or {}
+    gR.stack:update(1 / 60)
+    Input.pressed = { a = true }
+    gS.stack:update(1 / 60)
+  end
+  eq(tostring(rR) .. "/" .. tostring(rS), "lose/win",
+     "on the cable RUN loses for the runner and wins for the other game")
+end
 
 -- ---------------------------------------------------------------- forced-level ("auto 50") matches
 -- online matches/tournaments may force every participant's real level to a

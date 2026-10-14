@@ -78,4 +78,28 @@ do
   end
 end
 
+-- scripts/RocketHideoutElevator.asm:17
+do
+  local game = { data = Data }
+  local want = { ROCKET_HIDEOUT_B1F = 3, ROCKET_HIDEOUT_B2F = 3, ROCKET_HIDEOUT_B4F = 2 }
+  for mapId, warpIdx in pairs(want) do
+    eq(Data.maps[mapId].warps[warpIdx].destMap, "ROCKET_HIDEOUT_ELEVATOR",
+       mapId .. ": the left-hand door also leads into the car")
+    local ow = { map = { def = { warps = { {}, {} } } } }
+    story3.ROCKET_HIDEOUT_ELEVATOR.onEnter(game, ow, mapId, warpIdx)
+    eq(ow.map.def.warps[1].destWarp, warpIdx,
+       mapId .. ": walking out without riding returns to the entry door")
+  end
+end
+
+-- scripts/ViridianGym.asm:164
+do
+  local reward = require("data.scripts.victories")["OPP_GIOVANNI#3"]
+  local shown
+  for _, e in ipairs(reward.show or {}) do
+    if e[1] == "ROUTE_22" and e[2] == "ROUTE22_RIVAL2" then shown = true end
+  end
+  check(shown, "beating Giovanni shows the Route 22 rival before the 2nd battle")
+end
+
 S.finish()

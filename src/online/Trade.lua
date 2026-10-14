@@ -1362,6 +1362,7 @@ function Remote:update()
     end
   end
   if not self.phase and session.stage == "done" then self:_confirmBarrier() end
+  if session.stage == "declined" then session.stage = "cancelled" end
   if (self.link.closed or self.link.paired == false) and self:_open() then
     self:_cancel(LEFT)
   end
@@ -1386,6 +1387,7 @@ end
 function Remote:confirm(ok)
   self:_send(self.session:confirm(ok and true or false))
   if not self.phase and self.session.stage == "done" then self:_confirmBarrier() end
+  if self.session.stage == "declined" then self.session.stage = "cancelled" end
   return true
 end
 

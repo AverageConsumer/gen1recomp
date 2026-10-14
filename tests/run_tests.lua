@@ -464,13 +464,17 @@ check(misted2.stages.attack == nil
       and mistMsgs[1]:find("But, it failed!", 1, true) ~= nil,
       "primary stat drop blocked by MIST prints But, it failed!")
 
--- Substitute boundary: the move must fail when its quarter-HP cost would
--- consume all current HP, preventing a zero-HP user with a live substitute.
+-- engine/battle/move_effects/substitute.asm:39-40
 local subUser = { mon = { stats = { hp = 40 }, hp = 10 }, name = "SUBBY" }
-local subMsgs = MoveEffects.primary.SUBSTITUTE_EFFECT(sideRng, subUser)
-check(subUser.substituteHP == nil and subUser.mon.hp == 10
-      and subMsgs[1]:find("weak", 1, true) ~= nil,
-      "substitute fails at exactly 1/4 max HP")
+MoveEffects.primary.SUBSTITUTE_EFFECT(sideRng, subUser)
+check(subUser.substituteHP ~= nil and subUser.mon.hp == 0,
+      "substitute built at exactly 1/4 max HP leaves 0 HP")
+local subUserClean = { mon = { stats = { hp = 40 }, hp = 10 }, name = "SUBBY" }
+local subMsgsClean = MoveEffects.primary.SUBSTITUTE_EFFECT(
+  { rng = sideRng.rng, ruleset = { substituteZeroHpBug = false } }, subUserClean)
+check(subUserClean.substituteHP == nil and subUserClean.mon.hp == 10
+      and subMsgsClean[1]:find("weak", 1, true) ~= nil,
+      "modern_clean refuses the substitute at exactly 1/4 max HP")
 local subUser2 = { mon = { stats = { hp = 40 }, hp = 9 }, name = "SUBBY" }
 local subMsgs2 = MoveEffects.primary.SUBSTITUTE_EFFECT(sideRng, subUser2)
 check(subUser2.substituteHP == nil and subUser2.mon.hp == 9

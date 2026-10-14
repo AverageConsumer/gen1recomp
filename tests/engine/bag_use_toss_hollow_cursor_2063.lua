@@ -212,14 +212,14 @@ do
   end
 end
 
--- the in-battle bag has no option box either (core.asm:2210-2234)
+-- core.asm:2210-2234
 do
   local game = freshGame()
   local battle = { isBattle = true }
   local list = openOn(game, byId("FIX_TM"), { battle = battle })
   if check(list ~= nil, "the bag opened mid-battle") then
     pressA(game, list)
-    check(list.hollowIndex == nil, "the in-battle row keeps the filled '▶'")
+    eq(list.hollowIndex, list.index, "the in-battle row goes hollow '▷'")
     check(getmetatable(game.stack:top()) ~= Menu, "and no USE/TOSS box appeared")
   end
 end

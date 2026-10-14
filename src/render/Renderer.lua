@@ -432,7 +432,20 @@ function Renderer:drawBattleWipe(wipe, ww, wh, ox, oy, vpw, vph, Sx, Sy, wx, wy)
   local BattleTransition = require("src.render.BattleTransition")
   local order = BattleTransition.gridOrder(wipe.style, cols, rows)
 
-  if order then
+  if order and wipe.style == "spiralin" then
+    -- engine/battle/battle_transitions.asm:243-260
+    local inLb = BattleTransition.letterboxMask(order, padL, padT, lbCols, lbRows)
+    local n = math.floor(inLb.count * prog + 1e-6)
+    local seen = 0
+    for i = 1, #order do
+      if inLb[i] then
+        seen = seen + 1
+        if seen > n then break end
+      end
+      local t = order[i]
+      love.graphics.rectangle("fill", x0 + t[1] * TW, y0 + t[2] * TH, TW, TH)
+    end
+  elseif order then
     local n = math.floor(#order * prog + 1e-6)
     for i = 1, n do
       local t = order[i]

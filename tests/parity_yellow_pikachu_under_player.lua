@@ -55,6 +55,21 @@ check(pika and not Follower.underPlayer(ow, pika), "a warp spawn beside the play
 pika:draw(0, 0)
 eq(draws, 3, "and draws")
 
+-- pokeyellow home/overworld.asm:1695
+ow.npcs, ow.entities = {}, {}
+ow.player = { cellX = 5, cellY = 10, facing = "down", targetX = 5, targetY = 11,
+              moving = true }
+ow.pikachuSurfLanding = true
+Follower.update(game, ow)
+check(not Follower.current(ow), "no follower during the step off the water")
+ow.player.cellY, ow.player.targetX, ow.player.targetY = 11, nil, nil
+ow.player.moving = false
+Follower.update(game, ow)
+pika = Follower.current(ow)
+eq(pika and pika.cellY, 11, "after the step Pikachu spawns on the land tile, not the water")
+eq(pika and pika.facing, "down", "spawn state 3 faces down")
+check(pika and Follower.underPlayer(ow, pika), "and stays hidden under the player")
+
 NPC.draw = realDraw
 Follower.setShouldSpawn(restore)
 S.finish()
