@@ -5,6 +5,7 @@ local GamepadMap = require("src.core.GamepadMap")
 local PadHints = require("src.core.PadHints")
 
 local Input = {}
+local press, release
 
 local DEFAULT_BINDINGS = {
   up = "up", w = "up",
@@ -63,10 +64,7 @@ Input.PAD_ACTIONS = { speedUp = true, speedDown = true }
 local STICK_DEFAULT_BINDINGS = {
   leftstick_up = "up", leftstick_down = "down",
   leftstick_left = "left", leftstick_right = "right",
-  rightstick_up = "up", rightstick_down = "down",
-  rightstick_left = "left", rightstick_right = "right",
   lsup = "up", lsdown = "down", lsleft = "left", lsright = "right",
-  rsup = "up", rsdown = "down", rsleft = "left", rsright = "right",
 }
 
 local POLLABLE_PAD_BUTTONS = {
@@ -155,6 +153,44 @@ function Input:applyBindings(overlay)
   self.keyBindings, self.padBindings, self.joyBindings = keys, pads, joys
   self.padActions, self.explicitPadActions, self.joyActions = acts, explicit, joyActs
   self.padPoll = poll
+
+  local effectiveSticks = {}
+  for k, v in pairs(STICK_DEFAULT_BINDINGS) do effectiveSticks[k] = v end
+
+  for button, action in pairs(pads) do
+    -- Rule A: Competing stick bound to directional action
+    local isRightStick = button:sub(1, 10) == "rightstick" or button:sub(1, 2) == "rs"
+    if isRightStick and (action == "up" or action == "down" or action == "left" or action == "right") then
+      effectiveSticks["leftstick_" .. action] = nil
+      effectiveSticks["ls" .. action] = nil
+    end
+    -- Rule B: Left stick bound to an arbitrary action (normalize long/short aliases)
+    local lsDir = button:match("^leftstick_(%a+)$") or button:match("^ls(%a+)$")
+    if lsDir then
+      effectiveSticks["leftstick_" .. lsDir] = nil
+      effectiveSticks["ls" .. lsDir] = nil
+    end
+  end
+  self.effectiveStickBindings = effectiveSticks
+
+  if release and self.sources then
+    local stickDirs = { "up", "down", "left", "right" }
+    for _, dir in ipairs(stickDirs) do
+      local sourcesToClear = {
+        "pad:leftstick_" .. dir,
+        "pad:rightstick_" .. dir,
+        "pad:ls" .. dir,
+        "pad:rs" .. dir,
+      }
+      for _, src in ipairs(sourcesToClear) do
+        for btn, sources in pairs(self.sources) do
+          if sources[src] then release(self, btn, src) end
+        end
+      end
+    end
+  end
+  self.stickDir = nil
+  self.rightStickDir = nil
 end
 
 function Input.hotkeyKey(key)
@@ -272,7 +308,7 @@ end
 -- same GB button. Track them individually so releasing one doesn't clear
 -- a hold another source still owns, and so a press+release that both land
 -- before the next FixedStep can't be revived when step() drains the queue.
-local function press(self, btn, source)
+press = function(self, btn, source)
   local sources = self.sources[btn]
   if not sources then
     sources = {}
@@ -285,7 +321,7 @@ local function press(self, btn, source)
   self.state[btn] = true
 end
 
-local function release(self, btn, source)
+release = function(self, btn, source)
   local sources = self.sources[btn]
   if sources then
     sources[source] = nil
@@ -531,7 +567,7 @@ function Input:gamepadpressed(joystick, button)
   button = GamepadMap.normalizePad and GamepadMap.normalizePad(button) or GamepadMap.TRIGGER_AXES[button] or button
   if self.padSuppress then self.padSuppress[button] = nil end
   noteCapture(self, "pad", "pressed", button)
-  local btn = self.padBindings[button] or STICK_DEFAULT_BINDINGS[button]
+  local btn = self.padBindings[button] or (self.effectiveStickBindings and self.effectiveStickBindings[button])
   if btn and not self:padAction(button, self.shoulderGameplay) then
     press(self, btn, "pad:" .. button)
   end

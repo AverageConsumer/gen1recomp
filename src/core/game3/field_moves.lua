@@ -276,11 +276,28 @@ local function textKey(key)
 end
 FieldMoves.textKey = textKey
 
+local TEXT_FALLBACKS = {
+  NO_SWEET_SCENT_MONS  = "Looks like there's nothing here…",
+  CANT_USE_HERE        = "Can't use that here.",
+  NOT_ENOUGH_HP        = "Not enough HP.",
+  TREE_CAN_BE_CUT      = "This tree looks like it can be CUT down!",
+  MON_MAY_SMASH_ROCK   = "This rock looks like it can be smashed with a POKéMON move!",
+  MON_MAY_PUSH_BOULDER = "It's a big boulder, but a POKéMON may be able to push it aside.",
+  CUT_NOTHING          = "There's nothing to CUT here.",
+  FLASH_IN_USE         = "FLASH is already in use.",
+  ALREADY_SURFING      = "You're already surfing.",
+  CANT_SURF_HERE       = "You can't surf here.",
+}
+
 FieldMoves.TEXT = setmetatable({}, {
   __index = function(_, key)
     local k = textKey(key)
-    if k then return lazyReq("src.core.game3.rom_text").ascii(k) end
-    return nil
+    local okRt, RomText = pcall(lazyReq, "src.core.game3.rom_text")
+    if okRt and RomText and k and RomText.has and RomText.has(k) then
+      local okAscii, res = pcall(RomText.ascii, k)
+      if okAscii and res then return res end
+    end
+    return TEXT_FALLBACKS[key] or nil
   end,
 })
 
@@ -672,9 +689,35 @@ function FieldMoves.teleportFromMenu(ctx)
   }
 end
 
+local function hasMovePp(mon, moveIdentifier)
+  if not mon then return false end
+  local targetId = FieldMoves.normalizeMoveId(moveIdentifier)
+  local moves = mon.moves or {}
+  for idx, m in ipairs(moves) do
+    local mId = FieldMoves.normalizeMoveId(m)
+    if mId == targetId then
+      if type(m) == "table" and m.pp ~= nil then
+        return (tonumber(m.pp) or 0) > 0
+      end
+      if type(mon.pp) == "table" and mon.pp[idx] ~= nil then
+        return (tonumber(mon.pp[idx]) or 0) > 0
+      end
+      return true
+    end
+  end
+  return false
+end
+FieldMoves.hasMovePp = hasMovePp
+
 --- Sweet Scent from Party Menu
 function FieldMoves.sweetScentFromMenu(ctx)
   local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "SWEET_SCENT")
+  if not mon then
+    return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
+  end
+  if not hasMovePp(mon, "SWEET_SCENT") then
+    return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
+  end
 
   return {
     ok = true,
@@ -682,7 +725,8 @@ function FieldMoves.sweetScentFromMenu(ctx)
     mon = mon,
     se = FieldMoves.SE.SWEET_SCENT,
     hasEncounter = ctx.hasWildEncounters == true,
-    failText = FieldMoves.TEXT.NO_SWEET_SCENT_MONS,
+    failText = FieldMoves.TEXT.NO_SWEET_SCENT_MONS or "Looks like there's nothing here…",
+    failKey = FieldMoves.textKey("NO_SWEET_SCENT_MONS"),
   }
 end
 
