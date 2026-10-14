@@ -1,22 +1,16 @@
--- Projects a mod's `pokemon` registry dexEntry onto the #DEX screen's own
--- data table.
---
--- data.gen2Pokedex.entries[species] (data/generated/pokedex.lua,
--- RomExtractorGen2:extractPokedex) is what src/ui/gen2/PokedexMenu.lua
--- actually reads for the KIND label and the two description pages
--- (entry.kind, entry.text, entry.text2) -- a table loaded straight from
--- disk in Game2:load, BEFORE mods:load runs, and never routed through a
--- registry.  The `pokemon` registry's own merge target is the separate
--- data.pokemon table (src/mods/Schemas.lua, R.pokemon: `target = "pokemon"`),
--- which mod.content.pokemon:patch(id, { dexEntry = { kind = ..., text = ...,
--- text2 = ... } }) already reaches -- so a translation mod's #DEX text was
--- silently invisible in-game despite validating against the registry.
---
--- This is the missing link: called once after the merge (src/core/Game2.lua),
--- the same way ItemEffects.applyHeldItems projects held_items onto
--- data.gen2HeldItems.  height/weight/dex stay untouched -- game state, not
--- text a translation carries.
 local PokedexText = {}
+
+local M_PER_INCH = 0.0254
+local KG_PER_LB = 0.45359237
+
+local function nativeHeight(m)
+  local inches = math.floor(m / M_PER_INCH + 0.5)
+  return math.floor(inches / 12) * 100 + inches % 12
+end
+
+local function metricHeight(h)
+  return (math.floor(h / 100) * 12 + h % 100) * M_PER_INCH
+end
 
 function PokedexText.apply(data)
   local dex = data and data.gen2Pokedex
@@ -26,12 +20,29 @@ function PokedexText.apply(data)
   for species, entry in pairs(dex.entries) do
     local def = pokemon[species]
     local override = def and def.dexEntry
-    if override and (override.kind or override.text or override.text2 or override.heightM) then
+    if override and (override.kind or override.text or override.text2
+        or override.heightM or override.weightKg
+        or override.height or override.weight) then
       if override.kind then entry.kind = override.kind end
       if override.text then entry.text = override.text end
       if override.text2 then entry.text2 = override.text2 end
-      if override.heightM and override.weightKg then
-        entry.heightM, entry.weightKg = override.heightM, override.weightKg
+      if override.height then
+        entry.height = override.height
+        if entry.heightM then entry.heightM = metricHeight(override.height) end
+      end
+      if override.weight then
+        entry.weight = override.weight
+        if entry.weightKg then entry.weightKg = override.weight / 10 * KG_PER_LB end
+      end
+      if override.heightM then
+        entry.heightM = override.heightM
+        if not override.height then entry.height = nativeHeight(override.heightM) end
+      end
+      if override.weightKg then
+        entry.weightKg = override.weightKg
+        if not override.weight then
+          entry.weight = math.floor(override.weightKg / KG_PER_LB * 10 + 0.5)
+        end
       end
       count = count + 1
     end

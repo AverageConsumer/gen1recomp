@@ -77,6 +77,28 @@ do
   eq(abra.text2, "English text two.", "text2 is left alone when the patch omits it")
 end
 
+do
+  local data = {
+    pokemon = {
+      CHIKORITA = { name = "CHIKORITA", dexEntry = { height = 305, weight = 1234 } },
+      BAYLEEF = { name = "BAYLEEF", dexEntry = { heightM = 1.2, weightKg = 15.8 } },
+    },
+    gen2Pokedex = { entries = {
+      CHIKORITA = { id = "CHIKORITA", dex = 152, kind = "LEAF", height = 270, weight = 142 },
+      BAYLEEF = { id = "BAYLEEF", dex = 153, kind = "LEAF", height = 311, weight = 349 },
+    } },
+  }
+  eq(PokedexText.apply(data), 2, "native and metric size patches both count")
+  local c = data.gen2Pokedex.entries.CHIKORITA
+  eq(c.height, 305, "native height is applied")
+  eq(c.weight, 1234, "native weight is applied")
+  eq(c.kind, "LEAF", "kind untouched by a size-only patch")
+  local b = data.gen2Pokedex.entries.BAYLEEF
+  eq(b.height, 311, "1.2 m converts to 3'11\"")
+  eq(b.weight, 348, "15.8 kg converts to tenths of a pound")
+  eq(b.heightM, 1.2, "metric height is kept for the metric screen")
+end
+
 -- Missing tables at every level answer 0 rather than raising -- a Gen 1 boot,
 -- or a Gold boot with no mods loaded, never calls this with a shaped table.
 do

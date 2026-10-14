@@ -35,9 +35,9 @@ function H.move(ctx)
   return nil
 end
 
-function H.attackAnim(ctx)
+function H.attackAnim(ctx, turn)
   local M = H.move(ctx)
-  if M and M.attackAnimation then M:attackAnimation() end
+  if M and M.attackAnimation then M:attackAnimation(turn) end
 end
 
 function H.accuracy(ctx, mode)

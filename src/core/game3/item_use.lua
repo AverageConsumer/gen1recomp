@@ -719,6 +719,47 @@ local function vitamin_stat_name(session, key)
   return RomText.plain((rse and VITAMIN_STAT_TEXT_RSE or VITAMIN_STAT_TEXT)[key])
 end
 
+-- pokeemerald/src/data/pokemon/item_effects.h:347
+local function ev_berry(itemId, session)
+  local e = ItemUse.effect(itemId, session)
+  if type(e) ~= "table" then return nil end
+  local e4, e5 = tonumber(e[5]) or 0, tonumber(e[6]) or 0
+  local key = bit.band(e4, 0x1) ~= 0 and "hp" or bit.band(e4, 0x2) ~= 0 and "atk"
+    or bit.band(e5, 0x1) ~= 0 and "def" or bit.band(e5, 0x2) ~= 0 and "spe"
+    or bit.band(e5, 0x4) ~= 0 and "spd" or bit.band(e5, 0x8) ~= 0 and "spa"
+  if not key then return nil end
+  local change = tonumber(e[7]) or 0
+  if change >= 0x80 then change = change - 0x100 end
+  if change >= 0 then return nil end
+  local friendship = {}
+  for i = 1, 3 do
+    local v = tonumber(e[7 + i]) or 0
+    friendship[i] = v >= 0x80 and v - 0x100 or v
+  end
+  return key, change, friendship
+end
+
+-- pokeemerald/src/party_menu.c:4482 ItemUseCB_ReduceEV
+local function use_ev_berry(session, mon, key, change, friendship)
+  local oldFriendship = Pokemon.friendshipOf(mon)
+  local oldEv = tonumber(Pokemon.evsOf(mon)[key]) or 0
+  Pokemon.lowerEvFromItem(mon, key, change)
+  Pokemon.itemFriendship(mon, friendship, { mapSec = Pokemon.currentMapSec(session) })
+  local newFriendship = Pokemon.friendshipOf(mon)
+  local newEv = tonumber(Pokemon.evsOf(mon)[key]) or 0
+  if oldFriendship == newFriendship and oldEv == newEv then
+    return false, "no_effect", wont_have_effect()
+  end
+  local name = vitamin_stat_name(session, key)
+  local text
+  if oldFriendship ~= newFriendship then
+    text = mon_text(oldEv ~= newEv and "gText_PkmnFriendlyBaseVar2Fell" or "gText_PkmnFriendlyBaseVar2CantFall", mon, name)
+  else
+    text = mon_text("gText_PkmnAdoresBaseVar2Fell", mon, name)
+  end
+  return true, "vitamin", text
+end
+
 function ItemUse.useVitamin(session, mon, itemId)
   if not mon then return false, "none", no_pokemon_text() end
   local num = ItemsData.toNumericId(itemId) or tonumber(itemId)
@@ -728,6 +769,10 @@ function ItemUse.useVitamin(session, mon, itemId)
   if enigma then
     e = ItemUse.effect(itemId, session)
     key = ({[12] = "atk", [13] = "hp", [14] = "spa", [15] = "spd", [16] = "spe", [17] = "def"})[require("src.core.game3.rs.enigma").effectType(e)]
+  end
+  if not key and not enigma then
+    local bkey, change, friendship = ev_berry(itemId, session)
+    if bkey then return use_ev_berry(session, mon, bkey, change, friendship) end
   end
   if not key then
     return false, "no_effect", wont_have_effect()

@@ -296,9 +296,9 @@ function Party.giveEgg(session, species, opts)
   species = tonumber(species) or 1
   local ok, code, egg = Party.giveMon(session, species, 5, "EGG", opts)
   if ok and egg then
-    egg.isEgg = true
     egg.name = "EGG"
     egg.nickname = "EGG"
+    require("src.core.game3.breeding").applyEggData(egg, true)
   end
   return ok, code, egg
 end

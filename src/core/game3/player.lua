@@ -536,7 +536,8 @@ local function beginStep(tx, ty, run, ledge)
   -- pret GroundEffect_StepOnTallGrass when entering a grass cell.
   local okFx, FieldEffects = pcall(lazyReq, "src.core.game3.field_effects")
   if okFx and FieldEffects then
-    if Collision.isGrass and Collision.isGrass(tx, ty) then
+    -- pokeemerald/src/event_object_movement.c:8056
+    if not (ledge and FieldEffects.rse()) and Collision.isGrass and Collision.isGrass(tx, ty) then
       FieldEffects.tallGrassAt(tx, ty, false)
     else
       FieldEffects.leaveTallGrass()

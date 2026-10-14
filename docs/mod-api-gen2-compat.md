@@ -904,11 +904,18 @@ the same as "the hook sees everything":
 so twelve sit in `game.data` on a Gold boot with no registry pointing at them:
 `gen2Marts`, `gen2Roofs`, `gen2StdScripts`, `gen2EventTables` (the phone book,
 in-game trades, elevator labels, decoration descriptions), `gen2InitialEvents`,
-`gen2Pokedex`, `gen2MenuGfx`, `gen2Intro`, `gen2Credits`, `gen2Diploma`,
-`gen2Trade`, and `gen2Scripts` (which the `map_scripts` registry does reach, so
-it is the one of the twelve that is not out of reach). Naming registries for the
-rest is new API surface rather than a routing change, so it is deliberately not
-done yet.
+`gen2Pokedex` (its kind, height, weight and text are reachable through the
+`pokemon` registry's `dexEntry`, see below), `gen2MenuGfx`, `gen2Intro`,
+`gen2Credits`, `gen2Diploma`, `gen2Trade`, and `gen2Scripts` (which the
+`map_scripts` registry does reach, so it is the one of the twelve that is not
+out of reach). Naming registries for the rest is new API surface rather than a
+routing change, so it is deliberately not done yet.
+
+`mod.content.pokemon:patch(id, { dexEntry = { kind, text, text2, height,
+weight, heightM, weightKg } })` is folded into `data.gen2Pokedex.entries[id]`
+after the merge. `height` is feet * 100 + inches (211 is 2'11") and `weight`
+is tenths of a pound, Gold's own units; `heightM` / `weightKg` are converted to
+them when the native pair is not given.
 
 ## Testing a Gen 2 mod
 

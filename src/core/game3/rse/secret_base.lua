@@ -1155,6 +1155,8 @@ function SB.perStep(game, data)
     end
   elseif Decor.isBeh(beh, "SECRET_BASE_GLITTER_MAT") then
     high(SB.HIGH.USED_GLITTER_MAT)
+    -- pokeruby/src/secret_base.c:1192
+    FldeffMisc.glitterMatSparkle()
   elseif Decor.isBeh(beh, "SECRET_BASE_BALLOON") then
     FldeffMisc.popBalloon(mid, x, y)
     if midIn(mid, BALLOONS) then
@@ -1167,6 +1169,8 @@ function SB.perStep(game, data)
     FldeffMisc.shatterBreakableDoor(x, y)
   elseif Decor.isBeh(beh, "SECRET_BASE_SOUND_MAT") then
     low(SB.LOW.USED_NOTE_MAT)
+    -- pokeruby/src/secret_base.c:1198
+    FldeffMisc.musicNoteMat(mid)
   elseif Decor.isBeh(beh, "SECRET_BASE_JUMP_MAT") then
     high(SB.HIGH.USED_JUMP_MAT)
   elseif Decor.isBeh(beh, "SECRET_BASE_SPIN_MAT") then

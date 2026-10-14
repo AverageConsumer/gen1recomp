@@ -48,7 +48,7 @@ function Hazards.spikes(ctx)
   if n >= 3 then return H.sayFail(ctx) end
   Hazards.set(side, n + 1)
   H.attackAnim(ctx)
-  ctx.adapter:sayText("STRINGID_SPIKESSCATTERED")
+  ctx.adapter:sayText("STRINGID_SPIKESSCATTERED", { def = ctx.target })
 end
 
 return Hazards

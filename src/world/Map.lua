@@ -157,14 +157,11 @@ function Map.isOutside(def, tilesets)
   return false
 end
 
--- FLY destination (LoadTownMap_Fly / BuildFlyLocationsList): the eleven
--- towns, map indices 0..NUM_CITY_MAPS-1.  ROUTE_4 and ROUTE_10 are outdoor
--- and have fly warps but are not towns, so the outdoor test alone offered
--- their Pokemon Centers as fly targets (#788).  Maps without a vanilla
--- index (mod-authored) keep the old outdoor/PLATEAU surface test, which is
--- how a mod adds its own fly town.
+-- engine/items/town_map.asm:254 BuildFlyLocationsList
+local MOD_MAP_INDEX = 1000
+
 function Map.isFlyTown(def)
-  if def.index ~= nil then return def.index < NUM_CITY_MAPS end
+  if def.index ~= nil and def.index < MOD_MAP_INDEX then return def.index < NUM_CITY_MAPS end
   return Map.isOutdoor(def) or def.tileset == "PLATEAU"
 end
 

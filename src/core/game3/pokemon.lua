@@ -959,6 +959,17 @@ Pokemon.VITAMIN_FRIENDSHIP_CHANGE = { 5, 3, 2 }
 -- pokefirered/src/data/pokemon/item_effects.h:225 STAT_BOOST_FRIENDSHIP_CHANGE
 Pokemon.STAT_BOOST_FRIENDSHIP_CHANGE = { 1, 1, 0 }
 
+local function recalc_after_ev(mon)
+  -- pokefirered/src/pokemon.c:2155
+  local oldMaxHp = tonumber(mon.maxHp) or 0
+  local oldHp = tonumber(mon.hp) or 0
+  Pokemon.applyStats(mon)
+  local newMaxHp = tonumber(mon.maxHp) or oldMaxHp
+  if oldHp ~= 0 or oldMaxHp ~= 0 then
+    mon.hp = math.max(0, math.min(newMaxHp, oldHp + (newMaxHp - oldMaxHp)))
+  end
+end
+
 -- pokefirered/src/pokemon.c:4229
 function Pokemon.raiseEvFromItem(mon, statKey, amount)
   local evs = Pokemon.evsOf(mon)
@@ -976,15 +987,19 @@ function Pokemon.raiseEvFromItem(mon, statKey, amount)
     delta = Pokemon.MAX_TOTAL_EVS - evCount
   end
   evs[statKey] = data + delta
-  -- pokefirered/src/pokemon.c:2155
-  local oldMaxHp = tonumber(mon.maxHp) or 0
-  local oldHp = tonumber(mon.hp) or 0
-  Pokemon.applyStats(mon)
-  local newMaxHp = tonumber(mon.maxHp) or oldMaxHp
-  if oldHp ~= 0 or oldMaxHp ~= 0 then
-    mon.hp = math.max(0, math.min(newMaxHp, oldHp + (newMaxHp - oldMaxHp)))
-  end
+  recalc_after_ev(mon)
   return delta
+end
+
+-- pokeemerald/src/pokemon.c:4990
+function Pokemon.lowerEvFromItem(mon, statKey, amount)
+  local evs = Pokemon.evsOf(mon)
+  local data = tonumber(evs[statKey]) or 0
+  if data == 0 then return 0 end
+  local new = math.max(0, data + math.floor(tonumber(amount) or 0))
+  evs[statKey] = new
+  recalc_after_ev(mon)
+  return data - new
 end
 
 -- The ROM's English name for a move or ability number, whatever a mod renamed

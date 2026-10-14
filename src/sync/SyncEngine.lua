@@ -103,13 +103,13 @@ local function slotForPlaythrough(options, version, playthroughId)
     and options.playthroughIds or {}
   local byVersion = type(root[version]) == "table" and root[version] or nil
   for slotId, id in pairs(byVersion or {}) do
-    if id == playthroughId then return version, slotId end
+    if id == playthroughId and tostring(slotId):match("^slot%d+$") then return version, slotId end
   end
   local bestKey, bestSlot
   for key, byScope in pairs(root) do
     if key ~= version and cartOfScope(key) and type(byScope) == "table" then
       for slotId, id in pairs(byScope) do
-        if id == playthroughId and slotId ~= "legacy"
+        if id == playthroughId and tostring(slotId):match("^slot%d+$")
             and (bestKey == nil or key < bestKey) then
           bestKey, bestSlot = key, slotId
         end

@@ -187,11 +187,46 @@ end
 -- pokefirered/src/metatile_behavior.c:620
 local function never() return false end
 
--- pokefirered/src/field_player_avatar.c:433 ForcedMovement_MatJump
-local function matJump() return false end
+-- pokeemerald/src/field_player_avatar.c:1556 PlayerAvatar_DoSecretBaseMatJump
+local function matJump()
+  local P = player()
+  local hops = 0
+  local function hop()
+    hops = hops + 1
+    se(lazyReq("src.core.game3.se_ids").SE_LEDGE)
+    -- pokeemerald/src/event_object_movement.c:6291
+    P.startAction({ frames = 16, jump = "high", done = hops < 2 and hop or nil })
+  end
+  hop()
+  return true
+end
 
--- pokefirered/src/field_player_avatar.c:439 ForcedMovement_MatSpin
-local function matSpin() return false end
+-- pokeemerald/src/field_player_avatar.c:1601
+local SPIN_NEXT = { down = "left", up = "right", left = "up", right = "down" }
+local OPPOSITE = { down = "up", up = "down", left = "right", right = "left" }
+-- pokeemerald/src/field_player_avatar.c:1619
+local SPIN_DELAYS = { 1, 1, 2, 4, 8 }
+
+-- pokeemerald/src/field_player_avatar.c:1589 PlayerAvatar_SecretBaseMatSpinStep0
+local function matSpin()
+  local P = player()
+  local start = P.moveDir or P.facing
+  local cur, count = start, 0
+  se(lazyReq("src.core.game3.se_ids").SE_WARP_IN)
+  local function turn()
+    cur = SPIN_NEXT[cur]
+    P.scriptFace(cur)
+    if cur == start then count = count + 1 end
+    if count > 3 and cur == OPPOSITE[start] then
+      -- pokeemerald/src/field_player_avatar.c:1635
+      P.startAction({ frames = 1, done = function() P.scriptStep(OPPOSITE[start], false, false, false, 32) end })
+      return
+    end
+    P.startAction({ frames = 1 + SPIN_DELAYS[count + 1], done = turn })
+  end
+  turn()
+  return true
+end
 
 -- pokeemerald/src/field_player_avatar.c:567 ForcedMovement_MuddySlope
 local function muddySlope(game)

@@ -1215,10 +1215,7 @@ local function areaContext(s)
   local r = s.session and s.session.roamer
   if type(r) == "table" and (tonumber(r.species) or nativeRs()) then
     local g, n
-    if r.map then
-      local key = MapCatalog.slotKeyFor and MapCatalog.slotKeyFor(r.map)
-      if type(key) == "string" then g, n = key:match("^(%d+):(%d+)$") end
-    end
+    if r.map then g, n = MapCatalog.groupNumFor(r.map) end
     roamer = { species = nativeRs() and Gfx.manifest().area.roamerSpecies or tonumber(r.species), active = r.active ~= false, group = tonumber(g), num = tonumber(n) }
   end
   local area = Gfx.manifest().area

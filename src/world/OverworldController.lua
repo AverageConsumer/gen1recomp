@@ -1257,6 +1257,7 @@ function OverworldState:isDungeonTransitionMap()
     if m == self.map.id then return true end
   end
   local idx = self.map.def.index
+  if not idx then return false end
   for _, r in ipairs(dm.ranges) do
     local first = Game.data.maps[r.first]
     local last = Game.data.maps[r.last]

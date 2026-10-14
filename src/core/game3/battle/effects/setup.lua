@@ -245,6 +245,7 @@ function Setup.futureSight(ctx)
 end
 
 -- pokefirered/data/battle_scripts_1.s:1478
+-- pokeemerald/data/battle_scripts_1.s:1492
 function Setup.curse(ctx)
   local ad, user = ctx.adapter, ctx.user
   if H.hasType(ctx, user, Types.ID.GHOST) then
@@ -268,7 +269,7 @@ function Setup.curse(ctx)
   if (s.speed or 0) <= -6 and (s.attack or 0) >= 6 and (s.defense or 0) >= 6 then
     return H.sayFail(ctx)
   end
-  H.attackAnim(ctx)
+  H.attackAnim(ctx, 1)
   Secondary.changeStat(ad, user, "speed", -1, { user = true, allowPtr = true, curse = true, noAnim = true, noMsg = (s.speed or 0) <= -6 })
   Secondary.changeStat(ad, user, "attack", 1, { user = true, allowPtr = true, noAnim = true, noMsg = (s.attack or 0) >= 6 })
   Secondary.changeStat(ad, user, "defense", 1, { user = true, allowPtr = true, noAnim = true, noMsg = (s.defense or 0) >= 6 })

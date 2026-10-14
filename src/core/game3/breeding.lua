@@ -473,6 +473,7 @@ function Breeding.applyEggData(egg, setHotSpringsLocation)
   egg.level = EGG_HATCH_LEVEL
   egg.metLevel = 0
   egg.pokeball = ITEM_POKE_BALL
+  egg.language = 1
   egg.isEgg = true
   if setHotSpringsLocation then
     -- pokefirered/src/daycare.c:1106 METLOC_SPECIAL_EGG

@@ -74,10 +74,12 @@ end
 
 function SizeRecord.sessionOf(ctx)
   if ctx and ctx.session then return ctx.session end
+  local rt = package.loaded["src.core.game3.runtime"]
+  local live = rt and rt.getSession and rt.getSession()
+  if live then return live end
   local Space = package.loaded["src.core.game3.scripting.space"]
   if Space and Space.store and Space.store.flags then return Space.store end
-  local rt = package.loaded["src.core.game3.runtime"]
-  return rt and rt.getSession and rt.getSession() or nil
+  return nil
 end
 
 local function scriptStore(session, ctx)
